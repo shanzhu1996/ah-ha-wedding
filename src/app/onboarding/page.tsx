@@ -1,0 +1,426 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Heart, ArrowRight, ArrowLeft, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { createClient } from "@/lib/supabase/client";
+import type { WeddingStyle } from "@/types/database";
+
+const weddingStyles: { value: WeddingStyle; label: string; emoji: string }[] = [
+  { value: "rustic", label: "Rustic", emoji: "🌾" },
+  { value: "modern", label: "Modern", emoji: "🏙" },
+  { value: "classic", label: "Classic", emoji: "🏛" },
+  { value: "bohemian", label: "Bohemian", emoji: "🌿" },
+  { value: "minimalist", label: "Minimalist", emoji: "◻" },
+  { value: "glam", label: "Glam", emoji: "✨" },
+  { value: "cultural", label: "Cultural", emoji: "🎎" },
+  { value: "other", label: "Other", emoji: "💫" },
+];
+
+const TOTAL_STEPS = 3;
+
+export default function OnboardingPage() {
+  const router = useRouter();
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [showCelebration, setShowCelebration] = useState(false);
+
+  // Step 1
+  const [partner1Name, setPartner1Name] = useState("");
+  const [partner2Name, setPartner2Name] = useState("");
+  const [weddingDate, setWeddingDate] = useState("");
+  const [venueName, setVenueName] = useState("");
+  const [venueAddress, setVenueAddress] = useState("");
+  const [venueType, setVenueType] = useState<string>("");
+
+  // Step 2
+  const [guestCount, setGuestCount] = useState("");
+  const [budget, setBudget] = useState("");
+  const [style, setStyle] = useState<WeddingStyle | "">("");
+  const [bridalPartySize, setBridalPartySize] = useState("");
+  const [ceremonyStyle, setCeremonyStyle] = useState("");
+  const [receptionFormat, setReceptionFormat] = useState("");
+
+  // Step 3
+  const [colorPalette, setColorPalette] = useState("");
+  const [culturalElements, setCulturalElements] = useState("");
+  const [venueCurfew, setVenueCurfew] = useState("");
+  const [honeymoonDeparture, setHoneymoonDeparture] = useState("");
+
+  async function handleFinish() {
+    setLoading(true);
+    const supabase = createClient();
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const colors = colorPalette
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
+
+    // Use RPC function to atomically create wedding + add user as owner
+    const { data: weddingId, error } = await supabase.rpc(
+      "create_wedding_with_owner",
+      {
+        p_partner1_name: partner1Name,
+        p_partner2_name: partner2Name,
+        p_wedding_date: weddingDate || null,
+        p_venue_name: venueName || null,
+        p_venue_address: venueAddress || null,
+        p_venue_indoor_outdoor: (venueType as "indoor" | "outdoor" | "mixed") || null,
+        p_guest_count_estimate: guestCount ? parseInt(guestCount) : null,
+        p_budget_total: budget ? parseFloat(budget) : null,
+        p_style: (style as WeddingStyle) || null,
+        p_color_palette: colors.length > 0 ? colors : null,
+        p_bridal_party_size: bridalPartySize ? parseInt(bridalPartySize) : null,
+        p_ceremony_style: ceremonyStyle || null,
+        p_reception_format: receptionFormat || null,
+        p_cultural_elements: culturalElements || null,
+        p_venue_curfew: venueCurfew || null,
+        p_honeymoon_departure: honeymoonDeparture || null,
+      }
+    );
+
+    if (error || !weddingId) {
+      console.error(error);
+      setLoading(false);
+      return;
+    }
+
+    setShowCelebration(true);
+    setTimeout(() => {
+      router.push("/dashboard");
+    }, 2000);
+  }
+
+  if (showCelebration) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-muted/30">
+        <div className="text-center animate-fade-in-up">
+          <Heart className="h-16 w-16 text-primary fill-primary mx-auto mb-4 animate-heartbeat" />
+          <h1 className="text-3xl font-bold font-[family-name:var(--font-heading)] mb-2">
+            You&apos;re all set!
+          </h1>
+          <p className="text-muted-foreground text-lg">
+            Let&apos;s plan the most beautiful day of your life.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-muted/30">
+      <div className="w-full max-w-lg">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <Heart className="h-8 w-8 text-primary fill-primary mx-auto mb-2" />
+          <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)]">
+            Let&apos;s set up your wedding
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Step {step} of {TOTAL_STEPS}
+          </p>
+          {/* Progress */}
+          <div className="flex gap-2 justify-center mt-4">
+            {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
+              <div
+                key={i}
+                className={`h-1.5 w-12 rounded-full transition-colors ${
+                  i < step ? "bg-primary" : "bg-border"
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-card border rounded-xl p-6 shadow-sm">
+          {/* Step 1: The Basics */}
+          {step === 1 && (
+            <div className="space-y-4">
+              <h2 className="font-semibold text-lg mb-4">The Basics</h2>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="p1">Partner 1</Label>
+                  <Input
+                    id="p1"
+                    placeholder="First name"
+                    value={partner1Name}
+                    onChange={(e) => setPartner1Name(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="p2">Partner 2</Label>
+                  <Input
+                    id="p2"
+                    placeholder="First name"
+                    value={partner2Name}
+                    onChange={(e) => setPartner2Name(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="date">Wedding Date</Label>
+                <Input
+                  id="date"
+                  type="date"
+                  value={weddingDate}
+                  onChange={(e) => setWeddingDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="venue">Venue Name</Label>
+                <Input
+                  id="venue"
+                  placeholder="The Grand Ballroom"
+                  value={venueName}
+                  onChange={(e) => setVenueName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="venueAddr">Venue Address</Label>
+                <Input
+                  id="venueAddr"
+                  placeholder="123 Wedding Lane, City, State"
+                  value={venueAddress}
+                  onChange={(e) => setVenueAddress(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Indoor / Outdoor</Label>
+                <Select value={venueType} onValueChange={(v) => setVenueType(v ?? "")}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="indoor">Indoor</SelectItem>
+                    <SelectItem value="outdoor">Outdoor</SelectItem>
+                    <SelectItem value="mixed">Mixed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Style & Structure */}
+          {step === 2 && (
+            <div className="space-y-4">
+              <h2 className="font-semibold text-lg mb-4">Style & Structure</h2>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="guests">Guest Count (est.)</Label>
+                  <Input
+                    id="guests"
+                    type="number"
+                    placeholder="150"
+                    value={guestCount}
+                    onChange={(e) => setGuestCount(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="budget">Budget ($)</Label>
+                  <Input
+                    id="budget"
+                    type="number"
+                    placeholder="30000"
+                    value={budget}
+                    onChange={(e) => setBudget(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Wedding Style</Label>
+                <div className="grid grid-cols-4 gap-2">
+                  {weddingStyles.map((s) => (
+                    <button
+                      key={s.value}
+                      type="button"
+                      onClick={() => setStyle(s.value)}
+                      className={`border rounded-lg p-3 text-center text-sm transition-colors hover:border-primary ${
+                        style === s.value
+                          ? "border-primary bg-primary/5 ring-1 ring-primary"
+                          : ""
+                      }`}
+                    >
+                      <div className="text-xl mb-1">{s.emoji}</div>
+                      <div className="font-medium">{s.label}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="partySize">Bridal Party Size</Label>
+                <Input
+                  id="partySize"
+                  type="number"
+                  placeholder="6"
+                  value={bridalPartySize}
+                  onChange={(e) => setBridalPartySize(e.target.value)}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Ceremony Style</Label>
+                  <Select value={ceremonyStyle} onValueChange={(v) => setCeremonyStyle(v ?? "")}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="religious">Religious</SelectItem>
+                      <SelectItem value="secular">Secular</SelectItem>
+                      <SelectItem value="non-traditional">Non-traditional</SelectItem>
+                      <SelectItem value="cultural">Cultural</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Reception Format</Label>
+                  <Select
+                    value={receptionFormat}
+                    onValueChange={(v) => setReceptionFormat(v ?? "")}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sit-down">Sit-down Dinner</SelectItem>
+                      <SelectItem value="buffet">Buffet</SelectItem>
+                      <SelectItem value="cocktail">Cocktail Style</SelectItem>
+                      <SelectItem value="family-style">Family Style</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Preferences */}
+          {step === 3 && (
+            <div className="space-y-4">
+              <h2 className="font-semibold text-lg mb-4">Final Details</h2>
+              <div className="space-y-2">
+                <Label htmlFor="colors">Color Palette</Label>
+                <Input
+                  id="colors"
+                  placeholder="Dusty rose, sage green, gold (comma separated)"
+                  value={colorPalette}
+                  onChange={(e) => setColorPalette(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="cultural">
+                  Cultural or Religious Elements
+                </Label>
+                <Textarea
+                  id="cultural"
+                  placeholder="Hora, tea ceremony, jumping the broom, etc."
+                  value={culturalElements}
+                  onChange={(e) => setCulturalElements(e.target.value)}
+                  rows={3}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="curfew">Venue Curfew</Label>
+                  <Input
+                    id="curfew"
+                    type="time"
+                    value={venueCurfew}
+                    onChange={(e) => setVenueCurfew(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Honeymoon Departure</Label>
+                  <Select
+                    value={honeymoonDeparture}
+                    onValueChange={(v) => setHoneymoonDeparture(v ?? "")}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="same-night">Same night</SelectItem>
+                      <SelectItem value="next-morning">Next morning</SelectItem>
+                      <SelectItem value="few-days">Few days later</SelectItem>
+                      <SelectItem value="no-honeymoon">No honeymoon yet</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Navigation */}
+          <div className="flex justify-between mt-6 pt-4 border-t">
+            {step > 1 ? (
+              <Button
+                variant="ghost"
+                onClick={() => setStep(step - 1)}
+                className="gap-1"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Button>
+            ) : (
+              <div />
+            )}
+            {step < TOTAL_STEPS ? (
+              <Button
+                onClick={() => setStep(step + 1)}
+                disabled={step === 1 && (!partner1Name || !partner2Name)}
+                className="gap-1"
+              >
+                Next
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button
+                onClick={handleFinish}
+                disabled={loading}
+                className="gap-1"
+              >
+                {loading ? (
+                  "Creating..."
+                ) : (
+                  <>
+                    <Check className="h-4 w-4" />
+                    Start Planning
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Skip */}
+        <p className="text-center mt-4">
+          <button
+            onClick={() => {
+              if (step < TOTAL_STEPS) setStep(step + 1);
+              else handleFinish();
+            }}
+            className="text-sm text-muted-foreground hover:underline"
+          >
+            Skip for now
+          </button>
+        </p>
+      </div>
+    </div>
+  );
+}
