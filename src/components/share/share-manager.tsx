@@ -80,6 +80,7 @@ interface ShareManagerProps {
 const ROLE_OPTIONS = [
   "Best Man",
   "Maid of Honor",
+  "Honor Attendant",
   "Bridesmaid",
   "Groomsman",
   "Usher",
@@ -104,7 +105,7 @@ export function ShareManager({
 
   // Form state
   const [name, setName] = useState("");
-  const [role, setRole] = useState("Bridesmaid");
+  const [role, setRole] = useState("Honor Attendant");
   const [contact, setContact] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -115,7 +116,7 @@ export function ShareManager({
 
   function resetForm() {
     setName("");
-    setRole("Bridesmaid");
+    setRole("Honor Attendant");
     setContact("");
     setNotes("");
     setEditingTask(null);
@@ -194,7 +195,7 @@ export function ShareManager({
         title.includes("cake") ||
         title.includes("send-off") ||
         title.includes("photos") ||
-        title.includes("bridal party") ||
+        title.includes("wedding party") ||
         title.includes("getting ready") ||
         title.includes("welcome") ||
         title.includes("toast") ||
@@ -384,7 +385,7 @@ export function ShareManager({
               <Input
                 value={previewRole}
                 onChange={(e) => setPreviewRole(e.target.value)}
-                placeholder="e.g. Bridesmaid"
+                placeholder="e.g. Honor Attendant"
               />
             </div>
           </div>
@@ -492,7 +493,7 @@ export function ShareManager({
             </div>
             <div className="space-y-2">
               <Label>Role *</Label>
-              <Select value={role} onValueChange={(v) => setRole(v ?? "Bridesmaid")}>
+              <Select value={role} onValueChange={(v) => setRole(v ?? "Honor Attendant")}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>

@@ -100,3 +100,41 @@ export async function getWeddingStats(weddingId: string) {
     upcomingTasks: upcoming,
   };
 }
+
+export async function getCompletedFeatures(weddingId: string): Promise<Set<string>> {
+  const supabase = await createClient();
+
+  const [vendors, guests, budget, timeline, shopping, moodboard, music, tables, packing, delegation] =
+    await Promise.all([
+      supabase.from("vendors").select("id").eq("wedding_id", weddingId).limit(1),
+      supabase.from("guests").select("id").eq("wedding_id", weddingId).limit(1),
+      supabase.from("budget_items").select("id").eq("wedding_id", weddingId).limit(1),
+      supabase.from("timeline_events").select("id").eq("wedding_id", weddingId).limit(1),
+      supabase.from("shopping_items").select("id").eq("wedding_id", weddingId).limit(1),
+      supabase.from("moodboard_sections").select("id").eq("wedding_id", weddingId).limit(1),
+      supabase.from("music_selections").select("id").eq("wedding_id", weddingId).limit(1),
+      supabase.from("tables").select("id").eq("wedding_id", weddingId).limit(1),
+      supabase.from("packing_boxes").select("id").eq("wedding_id", weddingId).limit(1),
+      supabase.from("delegation_tasks").select("id").eq("wedding_id", weddingId).limit(1),
+    ]);
+
+  const completed = new Set<string>();
+  if ((vendors.data || []).length > 0) completed.add("vendors");
+  if ((guests.data || []).length > 0) completed.add("guests");
+  if ((budget.data || []).length > 0) completed.add("budget");
+  if ((timeline.data || []).length > 0) completed.add("timeline");
+  if ((shopping.data || []).length > 0) completed.add("shopping");
+  if ((moodboard.data || []).length > 0) completed.add("moodboard");
+  if ((music.data || []).length > 0) completed.add("music");
+  if ((tables.data || []).length > 0) completed.add("seating");
+  if ((packing.data || []).length > 0) completed.add("packing");
+  if ((delegation.data || []).length > 0) completed.add("share");
+
+  // These are static/reference pages — mark as "started" once user has content
+  // Tips, Booklets, Website, Post-Wedding: mark as started if they've reached Phase 3+
+  if (completed.size >= 6) {
+    completed.add("tips");
+  }
+
+  return completed;
+}

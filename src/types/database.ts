@@ -60,6 +60,8 @@ export interface Database {
           style: WeddingStyle | null;
           color_palette: string[] | null;
           bridal_party_size: number | null;
+          partner1_attire: "dress" | "suit" | "undecided" | null;
+          partner2_attire: "dress" | "suit" | "undecided" | null;
           ceremony_style: string | null;
           reception_format: string | null;
           cultural_elements: string | null;

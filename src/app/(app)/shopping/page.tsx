@@ -29,6 +29,10 @@ export default async function ShoppingPage() {
         items={items || []}
         weddingId={wedding.id}
         weddingStyle={wedding.style}
+        partner1Name={wedding.partner1_name}
+        partner2Name={wedding.partner2_name}
+        partner1Attire={wedding.partner1_attire}
+        partner2Attire={wedding.partner2_attire}
       />
     </div>
   );

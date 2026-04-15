@@ -22,8 +22,10 @@ export default async function WebsitePage() {
           Wedding Website
         </h1>
         <p className="text-muted-foreground mt-1">
-          Build a beautiful wedding website and download it as an HTML file you
-          can host anywhere.
+          Your wedding website is where guests go for everything — the
+          date, venue, dress code, schedule, registry, and travel info.
+          Send the link with your save-the-dates so guests have one place
+          to find all the details and RSVP.
         </p>
       </div>
       <WebsiteBuilder

@@ -1,21 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Plus,
   Upload,
   Search,
-  UserCheck,
-  UserX,
-  Clock,
   Trash2,
   Edit,
   Filter,
   ClipboardList,
+  ChevronDown,
+  ChevronRight,
+  UtensilsCrossed,
+  X,
+  Lightbulb,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +36,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
 
@@ -55,6 +64,7 @@ interface Guest {
 interface GuestManagerProps {
   guests: Guest[];
   weddingId: string;
+  receptionFormat: string | null;
 }
 
 const rsvpColors: Record<string, string> = {
@@ -64,7 +74,16 @@ const rsvpColors: Record<string, string> = {
   no_response: "bg-gray-100 text-gray-800",
 };
 
-export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerProps) {
+const rsvpCycle: Record<string, string> = {
+  pending: "confirmed",
+  confirmed: "declined",
+  declined: "pending",
+  no_response: "pending",
+};
+
+const NON_PLATED_FORMATS = ["buffet", "cocktail", "family-style"];
+
+export function GuestManager({ guests: initialGuests, weddingId, receptionFormat }: GuestManagerProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [filterRsvp, setFilterRsvp] = useState<string>("all");
@@ -74,6 +93,8 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
   const [saving, setSaving] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [bulkSuccessCount, setBulkSuccessCount] = useState<number | null>(null);
+  const [showContactSection, setShowContactSection] = useState(false);
+  const [rsvpTipDismissed, setRsvpTipDismissed] = useState(true);
 
   // Form state
   const [firstName, setFirstName] = useState("");
@@ -89,12 +110,24 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
   const [relationshipTag, setRelationshipTag] = useState("");
   const [notes, setNotes] = useState("");
 
+  const showMealChoice = !NON_PLATED_FORMATS.includes(receptionFormat ?? "");
+
+  // Check localStorage for RSVP tip dismissal
+  useEffect(() => {
+    setRsvpTipDismissed(localStorage.getItem("ahha-rsvp-tip-dismissed") === "true");
+  }, []);
+
   // Stats
   const confirmed = initialGuests.filter((g) => g.rsvp_status === "confirmed").length;
   const declined = initialGuests.filter((g) => g.rsvp_status === "declined").length;
   const pending = initialGuests.filter(
     (g) => g.rsvp_status === "pending" || g.rsvp_status === "no_response"
   ).length;
+
+  // Caterer count: confirmed guests + their plus-ones
+  const confirmedGuests = initialGuests.filter((g) => g.rsvp_status === "confirmed");
+  const confirmedPlusOnes = confirmedGuests.filter((g) => g.plus_one).length;
+  const catererCount = confirmed + confirmedPlusOnes;
 
   // Filtered guests
   const filtered = initialGuests.filter((g) => {
@@ -119,6 +152,7 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
     setRelationshipTag("");
     setNotes("");
     setEditingGuest(null);
+    setShowContactSection(false);
   }
 
   function openEdit(guest: Guest) {
@@ -135,6 +169,9 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
     setAddress(guest.address || "");
     setRelationshipTag(guest.relationship_tag || "");
     setNotes(guest.notes || "");
+    // Expand contact section if any contact data exists
+    const hasContactData = !!(guest.email || guest.phone || guest.address || guest.notes || guest.relationship_tag);
+    setShowContactSection(hasContactData);
     setShowDialog(true);
   }
 
@@ -167,6 +204,12 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
     setSaving(false);
     setShowDialog(false);
     resetForm();
+    router.refresh();
+  }
+
+  async function quickRsvpUpdate(id: string, newStatus: string) {
+    const supabase = createClient();
+    await supabase.from("guests").update({ rsvp_status: newStatus }).eq("id", id);
     router.refresh();
   }
 
@@ -211,8 +254,36 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
     router.refresh();
   }
 
+  function dismissRsvpTip() {
+    localStorage.setItem("ahha-rsvp-tip-dismissed", "true");
+    setRsvpTipDismissed(true);
+  }
+
   return (
-    <>
+    <TooltipProvider>
+      {/* RSVP Connection Banner */}
+      {!rsvpTipDismissed && initialGuests.length > 0 && (
+        <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 flex items-center gap-3">
+          <Lightbulb className="h-4 w-4 text-blue-500 shrink-0" />
+          <p className="text-sm text-blue-800 flex-1">
+            <span className="font-medium">Tip:</span> Build your wedding website with a built-in RSVP form — guests can respond online.
+          </p>
+          <Link
+            href="/website"
+            className="text-sm font-medium text-blue-700 hover:text-blue-900 whitespace-nowrap"
+          >
+            Build Website &rarr;
+          </Link>
+          <button
+            type="button"
+            onClick={dismissRsvpTip}
+            className="text-blue-400 hover:text-blue-600"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Bulk Add Success Banner */}
       {bulkSuccessCount !== null && (
         <div className="animate-fade-in-up rounded-lg bg-green-50 border border-green-200 p-4 flex items-center gap-3">
@@ -224,7 +295,7 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
       )}
 
       {/* RSVP Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className={`grid gap-4 ${confirmed > 0 ? "grid-cols-5" : "grid-cols-4"}`}>
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold">{initialGuests.length}</div>
@@ -249,6 +320,20 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
             <p className="text-xs text-muted-foreground">Declined</p>
           </CardContent>
         </Card>
+        {confirmed > 0 && (
+          <Card>
+            <CardContent className="p-4 text-center">
+              <div className="flex items-center justify-center gap-1.5">
+                <UtensilsCrossed className="h-4 w-4 text-muted-foreground" />
+                <span className="text-2xl font-bold">{catererCount}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Caterer Count</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {confirmed} confirmed + {confirmedPlusOnes} plus-one{confirmedPlusOnes !== 1 ? "s" : ""}
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Actions */}
@@ -342,8 +427,19 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
               <tr>
                 <th className="text-left px-4 py-3 font-medium">Name</th>
                 <th className="text-left px-4 py-3 font-medium">RSVP</th>
-                <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Meal</th>
-                <th className="text-left px-4 py-3 font-medium hidden lg:table-cell">Group</th>
+                <th className="text-left px-4 py-3 font-medium hidden md:table-cell">
+                  {showMealChoice ? "Meal" : "Dietary"}
+                </th>
+                <th className="text-left px-4 py-3 font-medium hidden lg:table-cell">
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help border-b border-dashed border-muted-foreground/50">
+                      Group
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Helps with seating assignments</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </th>
                 <th className="text-left px-4 py-3 font-medium hidden lg:table-cell">Plus One</th>
                 <th className="text-right px-4 py-3 font-medium w-20"></th>
               </tr>
@@ -355,32 +451,54 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
                     <div className="font-medium">
                       {guest.first_name} {guest.last_name}
                     </div>
-                    {guest.dietary_restrictions && (
+                    {guest.dietary_restrictions && showMealChoice && (
                       <span className="text-xs text-muted-foreground">
                         {guest.dietary_restrictions}
                       </span>
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <Badge
-                      variant="secondary"
-                      className={`text-xs ${rsvpColors[guest.rsvp_status] || ""}`}
+                    <Select
+                      value={guest.rsvp_status}
+                      onValueChange={(v) => v && quickRsvpUpdate(guest.id, v)}
                     >
-                      {guest.rsvp_status === "no_response"
-                        ? "No response"
-                        : guest.rsvp_status}
-                    </Badge>
+                      <SelectTrigger className={`h-auto py-1 px-2.5 w-auto text-[11px] font-semibold rounded-full border-0 shadow-none cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-current/20 transition-all [&>svg]:hidden ${rsvpColors[guest.rsvp_status] || ""}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent align="start">
+                        <SelectItem value="pending">
+                          <span className="flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full bg-yellow-400" />
+                            Pending
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="confirmed">
+                          <span className="flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full bg-green-500" />
+                            Confirmed
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="declined">
+                          <span className="flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full bg-red-400" />
+                            Declined
+                          </span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                   </td>
                   <td className="px-4 py-3 hidden md:table-cell text-muted-foreground">
-                    {guest.meal_choice || "—"}
+                    {showMealChoice
+                      ? (guest.meal_choice || "Not set")
+                      : (guest.dietary_restrictions || "\u2014")}
                   </td>
                   <td className="px-4 py-3 hidden lg:table-cell text-muted-foreground">
-                    {guest.relationship_tag || "—"}
+                    {guest.relationship_tag || "\u2014"}
                   </td>
                   <td className="px-4 py-3 hidden lg:table-cell text-muted-foreground">
                     {guest.plus_one
                       ? guest.plus_one_name || "Yes"
-                      : "—"}
+                      : "No"}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
@@ -418,6 +536,7 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Names side by side */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>First Name *</Label>
@@ -436,46 +555,8 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>RSVP Status</Label>
-                <Select value={rsvpStatus} onValueChange={(v) => setRsvpStatus(v ?? "pending")}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="confirmed">Confirmed</SelectItem>
-                    <SelectItem value="declined">Declined</SelectItem>
-                    <SelectItem value="no_response">No Response</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Meal Choice</Label>
-                <Select value={mealChoice} onValueChange={(v) => setMealChoice(v ?? "")}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="meat">Meat</SelectItem>
-                    <SelectItem value="fish">Fish</SelectItem>
-                    <SelectItem value="vegetarian">Vegetarian</SelectItem>
-                    <SelectItem value="vegan">Vegan</SelectItem>
-                    <SelectItem value="kids">Kids</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Dietary Restrictions</Label>
-              <Input
-                value={dietary}
-                onChange={(e) => setDietary(e.target.value)}
-                placeholder="Gluten-free, nut allergy, etc."
-              />
-            </div>
+
+            {/* Plus One */}
             <div className="flex items-center gap-2">
               <Checkbox
                 id="plusOne"
@@ -495,47 +576,116 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
                 />
               </div>
             )}
-            <div className="grid grid-cols-2 gap-4">
+
+            {/* RSVP Status — only when editing */}
+            {editingGuest && (
               <div className="space-y-2">
-                <Label>Email</Label>
-                <Input
-                  type="email"
-                  value={guestEmail}
-                  onChange={(e) => setGuestEmail(e.target.value)}
-                />
+                <Label>RSVP Status</Label>
+                <Select value={rsvpStatus} onValueChange={(v) => setRsvpStatus(v ?? "pending")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="confirmed">Confirmed</SelectItem>
+                    <SelectItem value="declined">Declined</SelectItem>
+                    <SelectItem value="no_response">No Response</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+            )}
+
+            {/* Dietary restrictions - always visible */}
+            <div className="space-y-2">
+              <Label>Dietary restrictions / allergies</Label>
+              <Input
+                value={dietary}
+                onChange={(e) => setDietary(e.target.value)}
+                placeholder="e.g., gluten-free, nut allergy, vegan"
+              />
+            </div>
+
+            {/* Meal Choice - only for plated dinners */}
+            {showMealChoice && (
               <div className="space-y-2">
-                <Label>Phone</Label>
-                <Input
-                  value={guestPhone}
-                  onChange={(e) => setGuestPhone(e.target.value)}
-                />
+                <Label>Meal Choice</Label>
+                <Select value={mealChoice} onValueChange={(v) => setMealChoice(v ?? "")}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="meat">Meat</SelectItem>
+                    <SelectItem value="fish">Fish</SelectItem>
+                    <SelectItem value="vegetarian">Vegetarian</SelectItem>
+                    <SelectItem value="vegan">Vegan</SelectItem>
+                    <SelectItem value="kids">Kids</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Address</Label>
-              <Input
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="For invitation & thank-you cards"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Relationship Group</Label>
-              <Input
-                value={relationshipTag}
-                onChange={(e) => setRelationshipTag(e.target.value)}
-                placeholder="Bride's family, Groom's college friends, etc."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Notes</Label>
-              <Textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={2}
-              />
-            </div>
+            )}
+
+            {/* Collapsible Contact & Address section */}
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setShowContactSection(!showContactSection)}
+            >
+              {showContactSection ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5" />
+              )}
+              {showContactSection ? "Hide details" : "More details"}
+            </button>
+
+            {showContactSection && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Relationship Group</Label>
+                  <Input
+                    value={relationshipTag}
+                    onChange={(e) => setRelationshipTag(e.target.value)}
+                    placeholder="e.g., Family, College friends, Work"
+                  />
+                  <p className="text-xs text-muted-foreground">Helps organize seating later</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Email</Label>
+                    <Input
+                      type="email"
+                      value={guestEmail}
+                      onChange={(e) => setGuestEmail(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Phone</Label>
+                    <Input
+                      value={guestPhone}
+                      onChange={(e) => setGuestPhone(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Address</Label>
+                  <Input
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="For invitation & thank-you cards"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Notes</Label>
+                  <Textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={2}
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => { setShowDialog(false); resetForm(); }}>
                 Cancel
@@ -555,7 +705,7 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
             <DialogTitle>Bulk Add Guests</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Paste one guest name per line. You can edit details after adding.
+            Paste your guest list — one name per line. Copy from Google Sheets, Excel, your Notes app, or anywhere else. You can edit details after adding.
           </p>
           <Textarea
             value={bulkText}
@@ -573,6 +723,6 @@ export function GuestManager({ guests: initialGuests, weddingId }: GuestManagerP
           </div>
         </DialogContent>
       </Dialog>
-    </>
+    </TooltipProvider>
   );
 }

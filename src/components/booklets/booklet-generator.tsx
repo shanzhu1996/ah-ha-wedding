@@ -366,7 +366,7 @@ export function BookletGenerator({
           <div className="space-y-3">
             <h4 className="font-semibold text-sm">Hair &amp; Makeup Schedule</h4>
             <p className="text-sm text-muted-foreground">
-              Please coordinate the hair and makeup schedule with the bridal
+              Please coordinate the hair and makeup schedule with the wedding
               party. Allow time for each person and build in buffer for touch-ups
               before the first look or ceremony.
             </p>

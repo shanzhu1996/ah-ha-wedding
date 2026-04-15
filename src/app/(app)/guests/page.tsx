@@ -21,10 +21,10 @@ export default async function GuestsPage() {
           Guest List
         </h1>
         <p className="text-muted-foreground mt-1">
-          Manage your guest list, track RSVPs, and organize meal choices.
+          Your guest list connects to everything — seating chart, caterer headcount, and thank-you cards after the wedding. Add everyone you&apos;re inviting, then track RSVPs as they come in.
         </p>
       </div>
-      <GuestManager guests={guests || []} weddingId={wedding.id} />
+      <GuestManager guests={guests || []} weddingId={wedding.id} receptionFormat={wedding.reception_format} />
     </div>
   );
 }

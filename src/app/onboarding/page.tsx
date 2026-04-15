@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -48,7 +49,9 @@ export default function OnboardingPage() {
   const [guestCount, setGuestCount] = useState("");
   const [budget, setBudget] = useState("");
   const [style, setStyle] = useState<WeddingStyle | "">("");
-  const [bridalPartySize, setBridalPartySize] = useState("");
+  const [weddingPartySize, setWeddingPartySize] = useState("");
+  const [partner1Attire, setPartner1Attire] = useState("undecided");
+  const [partner2Attire, setPartner2Attire] = useState("undecided");
   const [ceremonyStyle, setCeremonyStyle] = useState("");
   const [receptionFormat, setReceptionFormat] = useState("");
 
@@ -57,6 +60,13 @@ export default function OnboardingPage() {
   const [culturalElements, setCulturalElements] = useState("");
   const [venueCurfew, setVenueCurfew] = useState("");
   const [honeymoonDeparture, setHoneymoonDeparture] = useState("");
+
+  // Sub-events
+  const [hasEngagementParty, setHasEngagementParty] = useState(false);
+  const [hasRehearsalDinner, setHasRehearsalDinner] = useState(false);
+  const [hasBridalShower, setHasBridalShower] = useState(false);
+  const [hasBachelorBachelorette, setHasBachelorBachelorette] = useState(false);
+  const [hasHoneymoon, setHasHoneymoon] = useState(false);
 
   async function handleFinish() {
     setLoading(true);
@@ -86,7 +96,9 @@ export default function OnboardingPage() {
         p_budget_total: budget ? parseFloat(budget) : null,
         p_style: (style as WeddingStyle) || null,
         p_color_palette: colors.length > 0 ? colors : null,
-        p_bridal_party_size: bridalPartySize ? parseInt(bridalPartySize) : null,
+        p_bridal_party_size: weddingPartySize ? parseInt(weddingPartySize) : null,
+        p_partner1_attire: partner1Attire !== "undecided" ? partner1Attire : null,
+        p_partner2_attire: partner2Attire !== "undecided" ? partner2Attire : null,
         p_ceremony_style: ceremonyStyle || null,
         p_reception_format: receptionFormat || null,
         p_cultural_elements: culturalElements || null,
@@ -100,6 +112,15 @@ export default function OnboardingPage() {
       setLoading(false);
       return;
     }
+
+    // Save sub-event preferences
+    localStorage.setItem(`ahha-sub-events-${weddingId}`, JSON.stringify({
+      engagementParty: hasEngagementParty,
+      rehearsalDinner: hasRehearsalDinner,
+      bridalShower: hasBridalShower,
+      bachelorBachelorette: hasBachelorBachelorette,
+      honeymoon: hasHoneymoon,
+    }));
 
     setShowCelebration(true);
     setTimeout(() => {
@@ -265,14 +286,62 @@ export default function OnboardingPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="partySize">Bridal Party Size</Label>
+                <Label htmlFor="partySize">Wedding Party Size</Label>
                 <Input
                   id="partySize"
                   type="number"
                   placeholder="6"
-                  value={bridalPartySize}
-                  onChange={(e) => setBridalPartySize(e.target.value)}
+                  value={weddingPartySize}
+                  onChange={(e) => setWeddingPartySize(e.target.value)}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>What will {partner1Name || "Partner 1"} be wearing?</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { value: "dress", label: "Dress / Gown", emoji: "\uD83D\uDC57" },
+                    { value: "suit", label: "Suit / Tux", emoji: "\uD83E\uDD35" },
+                    { value: "undecided", label: "Not sure yet", emoji: "\uD83E\uDD37" },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setPartner1Attire(opt.value)}
+                      className={`border rounded-lg p-3 text-center text-sm transition-colors hover:border-primary ${
+                        partner1Attire === opt.value
+                          ? "border-primary bg-primary/5 ring-1 ring-primary"
+                          : ""
+                      }`}
+                    >
+                      <div className="text-xl mb-1">{opt.emoji}</div>
+                      <div className="font-medium">{opt.label}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>What will {partner2Name || "Partner 2"} be wearing?</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { value: "dress", label: "Dress / Gown", emoji: "\uD83D\uDC57" },
+                    { value: "suit", label: "Suit / Tux", emoji: "\uD83E\uDD35" },
+                    { value: "undecided", label: "Not sure yet", emoji: "\uD83E\uDD37" },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setPartner2Attire(opt.value)}
+                      className={`border rounded-lg p-3 text-center text-sm transition-colors hover:border-primary ${
+                        partner2Attire === opt.value
+                          ? "border-primary bg-primary/5 ring-1 ring-primary"
+                          : ""
+                      }`}
+                    >
+                      <div className="text-xl mb-1">{opt.emoji}</div>
+                      <div className="font-medium">{opt.label}</div>
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -314,6 +383,32 @@ export default function OnboardingPage() {
           {step === 3 && (
             <div className="space-y-4">
               <h2 className="font-semibold text-lg mb-4">Final Details</h2>
+              <div className="space-y-3">
+                <Label>What else are you planning?</Label>
+                <p className="text-xs text-muted-foreground -mt-1">We&apos;ll add relevant tasks to your timeline.</p>
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <Checkbox id="engagement" checked={hasEngagementParty} onCheckedChange={(v) => setHasEngagementParty(!!v)} />
+                    <Label htmlFor="engagement" className="font-normal text-sm">Engagement party</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox id="rehearsal" checked={hasRehearsalDinner} onCheckedChange={(v) => setHasRehearsalDinner(!!v)} />
+                    <Label htmlFor="rehearsal" className="font-normal text-sm">Rehearsal dinner</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox id="shower" checked={hasBridalShower} onCheckedChange={(v) => setHasBridalShower(!!v)} />
+                    <Label htmlFor="shower" className="font-normal text-sm">Wedding shower</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox id="bachelor" checked={hasBachelorBachelorette} onCheckedChange={(v) => setHasBachelorBachelorette(!!v)} />
+                    <Label htmlFor="bachelor" className="font-normal text-sm">Bachelor / bachelorette</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox id="honeymoonPlan" checked={hasHoneymoon} onCheckedChange={(v) => setHasHoneymoon(!!v)} />
+                    <Label htmlFor="honeymoonPlan" className="font-normal text-sm">Honeymoon</Label>
+                  </div>
+                </div>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="colors">Color Palette</Label>
                 <Input

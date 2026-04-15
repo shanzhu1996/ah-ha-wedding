@@ -80,6 +80,12 @@ export function SettingsManager({ wedding, userEmail }: SettingsManagerProps) {
   const [bridalPartySize, setBridalPartySize] = useState(
     wedding.bridal_party_size?.toString() ?? ""
   );
+  const [partner1Attire, setPartner1Attire] = useState(
+    wedding.partner1_attire ?? "undecided"
+  );
+  const [partner2Attire, setPartner2Attire] = useState(
+    wedding.partner2_attire ?? "undecided"
+  );
   const [ceremonyStyle, setCeremonyStyle] = useState(
     wedding.ceremony_style ?? ""
   );
@@ -121,6 +127,14 @@ export function SettingsManager({ wedding, userEmail }: SettingsManagerProps) {
         budget_total: budgetTotal ? parseFloat(budgetTotal) : null,
         style: (style as WeddingStyle) || null,
         bridal_party_size: bridalPartySize ? parseInt(bridalPartySize) : null,
+        partner1_attire:
+          (partner1Attire as "dress" | "suit" | "undecided") !== "undecided"
+            ? (partner1Attire as "dress" | "suit")
+            : null,
+        partner2_attire:
+          (partner2Attire as "dress" | "suit" | "undecided") !== "undecided"
+            ? (partner2Attire as "dress" | "suit")
+            : null,
         ceremony_style: ceremonyStyle || null,
         reception_format: receptionFormat || null,
         color_palette: colors.length > 0 ? colors : null,
@@ -287,9 +301,9 @@ export function SettingsManager({ wedding, userEmail }: SettingsManagerProps) {
             </Select>
           </div>
 
-          {/* Bridal Party Size */}
+          {/* Wedding Party Size */}
           <div className="space-y-2">
-            <Label htmlFor="bridalPartySize">Bridal Party Size</Label>
+            <Label htmlFor="bridalPartySize">Wedding Party Size</Label>
             <Input
               id="bridalPartySize"
               type="number"
@@ -297,6 +311,58 @@ export function SettingsManager({ wedding, userEmail }: SettingsManagerProps) {
               value={bridalPartySize}
               onChange={(e) => setBridalPartySize(e.target.value)}
             />
+          </div>
+
+          {/* Attire */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>What will {partner1Name || "Partner 1"} be wearing?</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: "dress", label: "Dress / Gown", emoji: "\uD83D\uDC57" },
+                  { value: "suit", label: "Suit / Tux", emoji: "\uD83E\uDD35" },
+                  { value: "undecided", label: "Not sure yet", emoji: "\uD83E\uDD37" },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setPartner1Attire(opt.value)}
+                    className={`border rounded-lg p-3 text-center text-sm transition-colors hover:border-primary ${
+                      partner1Attire === opt.value
+                        ? "border-primary bg-primary/5 ring-1 ring-primary"
+                        : ""
+                    }`}
+                  >
+                    <div className="text-xl mb-1">{opt.emoji}</div>
+                    <div className="font-medium">{opt.label}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>What will {partner2Name || "Partner 2"} be wearing?</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: "dress", label: "Dress / Gown", emoji: "\uD83D\uDC57" },
+                  { value: "suit", label: "Suit / Tux", emoji: "\uD83E\uDD35" },
+                  { value: "undecided", label: "Not sure yet", emoji: "\uD83E\uDD37" },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setPartner2Attire(opt.value)}
+                    className={`border rounded-lg p-3 text-center text-sm transition-colors hover:border-primary ${
+                      partner2Attire === opt.value
+                        ? "border-primary bg-primary/5 ring-1 ring-primary"
+                        : ""
+                    }`}
+                  >
+                    <div className="text-xl mb-1">{opt.emoji}</div>
+                    <div className="font-medium">{opt.label}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Ceremony & Reception */}

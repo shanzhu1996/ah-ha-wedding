@@ -121,7 +121,7 @@ const categories: KitCategory[] = [
       "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400",
     items: [
       "Pressed powder",
-      "Lipstick (bride's shade)",
+      "Lipstick / lip color (your shade)",
       "Makeup wipes",
       "Cotton swabs",
       "Setting spray",

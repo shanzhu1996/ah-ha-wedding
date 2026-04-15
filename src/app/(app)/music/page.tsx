@@ -21,7 +21,10 @@ export default async function MusicPage() {
           Music
         </h1>
         <p className="text-muted-foreground mt-1">
-          Plan ceremony, cocktail hour, and reception music by phase.
+          Your DJ or band needs to know what to play, when to play it, and
+          what to never play. Plan songs for every moment — ceremony
+          processional, cocktail hour, dinner, first dance, open
+          dancing — and export the list straight to your DJ.
         </p>
       </div>
       <MusicManager songs={songs || []} weddingId={wedding.id} />

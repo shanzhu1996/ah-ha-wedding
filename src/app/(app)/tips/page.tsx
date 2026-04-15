@@ -83,7 +83,7 @@ const dayOfTips = [
   { icon: Mic, tip: "Use a microphone for vows" },
   {
     icon: Shirt,
-    tip: "Sew dress weights into hem for outdoor ceremonies",
+    tip: "Sew weights into outfit hem (for lightweight fabrics outdoors)",
   },
   {
     icon: Utensils,
@@ -95,7 +95,7 @@ const dayOfTips = [
   },
   {
     icon: Clock,
-    tip: "Brief wedding party with printed timeline cards",
+    tip: "Brief your wedding party with printed timeline cards",
   },
   {
     icon: CreditCard,

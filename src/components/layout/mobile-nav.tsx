@@ -19,6 +19,7 @@ import {
   Globe,
   PartyPopper,
   Settings,
+  Palette,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -37,19 +38,47 @@ const primaryTabs = [
   { href: "/shopping", icon: CheckSquare, label: "Shopping" },
 ];
 
-const moreItems = [
-  { href: "/vendors", icon: Users, label: "Vendors" },
-  { href: "/budget", icon: Wallet, label: "Budget" },
-  { href: "/seating", icon: Layout, label: "Seating" },
-  { href: "/music", icon: Music, label: "Music" },
-  { href: "/tips", icon: Sparkles, label: "Tips" },
-  { href: "/booklets", icon: BookOpen, label: "Booklets" },
-  { href: "/packing", icon: Package, label: "Packing" },
-  { href: "/share", icon: Share2, label: "Share" },
-  { href: "/website", icon: Globe, label: "Website" },
-  { href: "/postwedding", icon: PartyPopper, label: "Post-Wedding" },
-  { href: "/settings", icon: Settings, label: "Settings" },
+const moreGroups = [
+  {
+    title: "Get Started",
+    items: [
+      { href: "/vendors", icon: Users, label: "Vendors" },
+    ],
+  },
+  {
+    title: "Set the Vibe",
+    items: [
+      { href: "/moodboard", icon: Palette, label: "Moodboard" },
+      { href: "/music", icon: Music, label: "Music" },
+      { href: "/seating", icon: Layout, label: "Seating" },
+      { href: "/website", icon: Globe, label: "Website" },
+    ],
+  },
+  {
+    title: "Money & Shopping",
+    items: [
+      { href: "/budget", icon: Wallet, label: "Budget" },
+    ],
+  },
+  {
+    title: "Final Prep",
+    items: [
+      { href: "/tips", icon: Sparkles, label: "Tips" },
+      { href: "/booklets", icon: BookOpen, label: "Booklets" },
+      { href: "/packing", icon: Package, label: "Packing" },
+      { href: "/share", icon: Share2, label: "Share" },
+    ],
+  },
+  {
+    title: "",
+    items: [
+      { href: "/postwedding", icon: PartyPopper, label: "Post-Wedding" },
+      { href: "/settings", icon: Settings, label: "Settings" },
+    ],
+  },
 ];
+
+const moreItems = moreGroups.flatMap((g) => g.items);
 
 export function MobileNav() {
   const pathname = usePathname();
@@ -95,25 +124,36 @@ export function MobileNav() {
               <SheetTitle>More Tools</SheetTitle>
             </SheetHeader>
             <ScrollArea className="flex-1 px-4 pb-4">
-              <div className="grid grid-cols-3 gap-3">
-                {moreItems.map((item) => {
-                  const isActive = pathname === item.href;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        "flex flex-col items-center gap-2 rounded-lg p-3 text-center transition-colors",
-                        isActive
-                          ? "bg-primary/10 text-primary"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                    >
-                      <item.icon className="h-5 w-5" />
-                      <span className="text-xs font-medium">{item.label}</span>
-                    </Link>
-                  );
-                })}
+              <div className="space-y-4">
+                {moreGroups.map((group) => (
+                  <div key={group.title || "other"}>
+                    {group.title && (
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2 px-1">
+                        {group.title}
+                      </p>
+                    )}
+                    <div className="grid grid-cols-3 gap-2">
+                      {group.items.map((item) => {
+                        const isActive = pathname === item.href;
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            className={cn(
+                              "flex flex-col items-center gap-2 rounded-lg p-3 text-center transition-colors",
+                              isActive
+                                ? "bg-primary/10 text-primary"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                            )}
+                          >
+                            <item.icon className="h-5 w-5" />
+                            <span className="text-xs font-medium">{item.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </ScrollArea>
           </SheetContent>

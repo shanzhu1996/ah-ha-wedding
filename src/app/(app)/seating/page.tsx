@@ -29,7 +29,10 @@ export default async function SeatingPage() {
           Seating Chart
         </h1>
         <p className="text-muted-foreground mt-1">
-          Assign guests to tables and manage your reception layout.
+          The seating chart decides who sits where at your reception. It
+          goes to your coordinator, caterer, and stationer (for escort
+          cards). Group guests by family and friends so everyone has people
+          they know at their table — no awkward strangers.
         </p>
       </div>
       <SeatingManager

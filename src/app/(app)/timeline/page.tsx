@@ -21,7 +21,11 @@ export default async function TimelinePage() {
           Timeline
         </h1>
         <p className="text-muted-foreground mt-1">
-          Your pre-wedding checklist and day-of schedule.
+          Two timelines in one. The pre-wedding checklist tells you what to
+          do and when — from ordering invitations to final fittings. The
+          day-of schedule maps every moment hour by hour, and gets shared
+          with your DJ, photographer, coordinator, and every vendor so the
+          day runs smoothly.
         </p>
       </div>
       <TimelineManager
