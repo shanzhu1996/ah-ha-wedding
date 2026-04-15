@@ -1133,31 +1133,55 @@ export function TimelineManager({
                                       })()
                                     )}
                                   </div>
-                                  <div className={`flex gap-0.5 shrink-0 transition-opacity ${
-                                    menuEventId === event.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                                  }`}>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7"
-                                      title="Assign"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setMenuEventId(event.id);
-                                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                        setMenuPos({ x: rect.left, y: rect.bottom + 4 });
-                                      }}
-                                    >
-                                      <UserPlus className="h-3.5 w-3.5" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7 text-destructive"
-                                      onClick={() => deleteEvent(event.id)}
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    {/* Assigned name — always visible */}
+                                    {event.assigned_to && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setMenuEventId(event.id);
+                                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                          setMenuPos({ x: rect.left, y: rect.bottom + 4 });
+                                        }}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border border-amber-200/80 bg-amber-50/80 text-amber-800 hover:bg-amber-100 transition-colors"
+                                        title="Click to reassign"
+                                      >
+                                        {event.assigned_to === "partner1"
+                                          ? partner1Name
+                                          : event.assigned_to === "partner2"
+                                          ? partner2Name
+                                          : event.assigned_to === "together"
+                                          ? `${partner1Name} & ${partner2Name}`
+                                          : event.assigned_to}
+                                      </button>
+                                    )}
+                                    {/* Assign + Delete — hover visible */}
+                                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 md:opacity-30 md:hover:opacity-100 transition-opacity">
+                                      {!event.assigned_to && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          title="Assign"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setMenuEventId(event.id);
+                                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                            setMenuPos({ x: rect.left, y: rect.bottom + 4 });
+                                          }}
+                                        >
+                                          <UserPlus className="h-3.5 w-3.5" />
+                                        </Button>
+                                      )}
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-destructive"
+                                        onClick={() => deleteEvent(event.id)}
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
                                   </div>
                                 </div>
                                 </AssignContextMenu>
