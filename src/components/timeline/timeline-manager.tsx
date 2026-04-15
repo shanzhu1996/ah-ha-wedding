@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   format,
   subMonths,
@@ -19,9 +20,7 @@ import {
   Trash2,
   CalendarDays,
   Clock,
-  AlertTriangle,
-  AlertCircle,
-  Flame,
+
   UserPlus,
   RefreshCw,
   ChevronDown,
@@ -80,79 +79,85 @@ interface TimelineManagerProps {
 
 type Priority = "critical" | "high" | "normal" | "low";
 
-const priorityConfig: Record<
-  Priority,
-  { label: string; color: string; icon: typeof Flame; bgColor: string; borderColor: string }
-> = {
-  critical: {
-    label: "Critical",
-    color: "text-red-700",
-    bgColor: "bg-red-50",
-    borderColor: "border-red-200",
-    icon: Flame,
-  },
-  high: {
-    label: "High",
-    color: "text-amber-700",
-    bgColor: "bg-amber-50",
-    borderColor: "border-amber-200",
-    icon: AlertTriangle,
-  },
-  normal: {
-    label: "Normal",
-    color: "text-blue-700",
-    bgColor: "bg-blue-50",
-    borderColor: "border-blue-200",
-    icon: Circle,
-  },
-  low: {
-    label: "Low",
-    color: "text-gray-500",
-    bgColor: "bg-gray-50",
-    borderColor: "border-gray-200",
-    icon: Circle,
-  },
-};
 
 interface TaskDef {
   idealMonthsBefore: number;
   title: string;
   description: string;
+  link?: string;
+  optional?: boolean;
 }
 
 const TASK_DEFINITIONS: TaskDef[] = [
-  { idealMonthsBefore: 12, title: "Start outfit shopping", description: "Wedding outfits can take 6-9 months to order + alterations." },
-  { idealMonthsBefore: 10, title: "Book engagement photoshoot", description: "Great for save-the-dates and wedding website." },
-  { idealMonthsBefore: 10, title: "Finalize guest list draft", description: "This drives venue size, catering count, and stationery orders." },
-  { idealMonthsBefore: 8, title: "Send save-the-dates", description: "Earlier for destination weddings." },
-  { idealMonthsBefore: 8, title: "Set up wedding registry", description: "Guests will want this for engagement parties and showers." },
-  { idealMonthsBefore: 8, title: "Book hotel room blocks", description: "Popular hotels sell out fast. Don't leave this late." },
-  { idealMonthsBefore: 7, title: "Start planning honeymoon", description: "Book flights and accommodations." },
-  { idealMonthsBefore: 6, title: "Order wedding invitations", description: "Full stationery suite: invites, RSVP, detail cards." },
-  { idealMonthsBefore: 5, title: "Order wedding party attire", description: "Allow time for ordering and alterations." },
-  { idealMonthsBefore: 4, title: "Schedule hair and makeup trial", description: "Test your look before committing." },
-  { idealMonthsBefore: 4, title: "Purchase wedding bands", description: "Allow time for sizing and engraving." },
-  { idealMonthsBefore: 3, title: "Send wedding invitations", description: "8-10 weeks before the wedding." },
-  { idealMonthsBefore: 3, title: "Begin writing vows", description: "Use dedicated vow books, not loose paper." },
-  { idealMonthsBefore: 2, title: "Apply for marriage license", description: "Check your state's requirements and validity period." },
-  { idealMonthsBefore: 2, title: "Finalize ceremony details with officiant", description: "Script, readings, unity ceremony." },
-  { idealMonthsBefore: 2, title: "Start seating chart", description: "Begin early even before all RSVPs are in — this takes the most time." },
-  { idealMonthsBefore: 1.5, title: "RSVP deadline", description: "Follow up with non-responders a few days after." },
-  { idealMonthsBefore: 1, title: "Final outfit fitting", description: "Break in your wedding shoes starting now." },
-  { idealMonthsBefore: 1, title: "Confirm all vendor details", description: "Delivery times, setup needs, final payments." },
-  { idealMonthsBefore: 1, title: "Submit final headcount to caterer", description: "Include vendor meals." },
-  { idealMonthsBefore: 1, title: "Prepare emergency kit", description: "Start a week early to catch missing items." },
-  { idealMonthsBefore: 1, title: "Prepare vendor tip envelopes", description: "Cash in labeled envelopes." },
-  { idealMonthsBefore: 0.5, title: "Confirm arrival times with every vendor", description: "One final check." },
-  { idealMonthsBefore: 0.5, title: "Print programs, menus, escort cards, table numbers", description: "All day-of paper goods." },
-  { idealMonthsBefore: 0.5, title: "Finalize playlist with DJ", description: "Must-play, do-not-play, and announcement scripts." },
-  { idealMonthsBefore: 0.25, title: "Rehearsal and rehearsal dinner", description: "Confirm all wedding party members have their attire." },
-  { idealMonthsBefore: 0.25, title: "Pack wedding day bags and boxes", description: "Use the Packing module to organize." },
-  { idealMonthsBefore: 0.25, title: "Delegate day-of responsibilities", description: "Who handles tips, photos wrangling, card box, etc." },
-  { idealMonthsBefore: 0.03, title: "Deliver welcome bags to hotel", description: "For out-of-town guests." },
-  { idealMonthsBefore: 0.03, title: "Drop off decor at venue (if allowed)", description: "Confirm venue access time." },
-  { idealMonthsBefore: 0, title: "Wedding day!", description: "Eat breakfast. Hydrate. Enjoy every moment." },
+  // 10-12 months
+  { idealMonthsBefore: 12, title: "Start outfit shopping", description: "Wedding outfits can take 6-9 months to order + 2 months for alterations. Start early so you're not rushed.", link: "/shopping" },
+  { idealMonthsBefore: 10, title: "Build your moodboard", description: "Collect visual inspiration for colors, flowers, and style. You'll share this with your florist, photographer, and planner.", link: "/moodboard" },
+  { idealMonthsBefore: 10, title: "Finalize guest list draft", description: "This number drives everything — venue size, catering count, invitation orders, and budget. Start with a rough list and refine.", link: "/guests" },
+  { idealMonthsBefore: 10, title: "Book engagement photoshoot", description: "Great photos for save-the-dates and your wedding website. Also a chance to get comfortable in front of a camera.", optional: true },
+
+  // 8-9 months
+  { idealMonthsBefore: 8, title: "Send save-the-dates", description: "Give guests a heads-up so they can book travel. Earlier for destination weddings." },
+  { idealMonthsBefore: 8, title: "Create your wedding website", description: "The central place for guests to find your date, venue, dress code, registry, and RSVP. Send the link with your save-the-dates.", link: "/website" },
+  { idealMonthsBefore: 8, title: "Set up wedding registry", description: "Guests will want this for engagement parties and showers. Most couples register at 2-3 stores.", optional: true },
+  { idealMonthsBefore: 8, title: "Book hotel room blocks", description: "Popular hotels near your venue sell out fast, especially on weekends. Reserve a block so guests get a group rate." },
+
+  // 6-7 months
+  { idealMonthsBefore: 7, title: "Start planning honeymoon", description: "Book flights and accommodations early for better prices, especially if traveling internationally.", optional: true },
+  { idealMonthsBefore: 6, title: "Order wedding invitations", description: "Full stationery suite: invitations, RSVP cards, detail/enclosure cards, and envelopes. Allow time for printing and assembly.", link: "/shopping" },
+  { idealMonthsBefore: 6, title: "Share moodboard with vendors", description: "Send your moodboard to your florist, photographer, and stationer so everyone designs toward the same vision.", link: "/moodboard" },
+
+  // 4-5 months
+  { idealMonthsBefore: 5, title: "Order wedding party attire", description: "Give your wedding party enough time for ordering, shipping, and alterations.", link: "/shopping" },
+  { idealMonthsBefore: 4, title: "Schedule hair and makeup trial", description: "Test your look before the big day. Bring your headpiece/veil and inspiration photos to the trial." },
+  { idealMonthsBefore: 4, title: "Purchase wedding bands", description: "Allow time for sizing, engraving, and any custom work. Try to buy at least 3 months before.", link: "/shopping" },
+  { idealMonthsBefore: 4, title: "Schedule cake and food tasting", description: "Most caterers and bakers offer tastings. Bring your partner — this is one of the fun parts!" },
+  { idealMonthsBefore: 4, title: "Book rehearsal dinner venue", description: "Traditionally held the night before the wedding. Invite the wedding party, immediate family, and out-of-town guests.", optional: true },
+
+  // 3 months
+  { idealMonthsBefore: 3, title: "Send wedding invitations", description: "Mail invitations 8-10 weeks before the wedding. Set the RSVP deadline for 3-4 weeks before the wedding.", link: "/shopping" },
+  { idealMonthsBefore: 3, title: "Begin writing vows", description: "If writing your own, start now. Use dedicated vow books, not your phone. Aim for 1-2 minutes each." },
+  { idealMonthsBefore: 3, title: "Order wedding favors and party gifts", description: "Favors for guests + gifts for your wedding party, parents, flower girl, ring bearer.", link: "/shopping" },
+  { idealMonthsBefore: 3, title: "Research marriage license requirements", description: "Every state/county has different rules — ID requirements, waiting periods, expiration dates. Don't wait until the last minute." },
+
+  // 2 months
+  { idealMonthsBefore: 2, title: "Apply for marriage license", description: "Go to your county clerk's office together. Bring valid ID. Some licenses expire in 30-90 days, so time it right." },
+  { idealMonthsBefore: 2, title: "Finalize ceremony with officiant", description: "Review the script, confirm readings, plan any unity ceremony (sand, candle, etc.), and discuss vow format.", link: "/vendors" },
+  { idealMonthsBefore: 2, title: "Start seating chart", description: "The task every couple dreads — but starting early makes it easier. Group guests by who knows each other.", link: "/seating" },
+  { idealMonthsBefore: 2, title: "Plan your music", description: "Create your must-play list, do-not-play list, and songs for key moments — processional, first dance, parent dances.", link: "/music" },
+  { idealMonthsBefore: 2, title: "Arrange guest transportation", description: "Shuttles from hotel to venue, parking instructions, or ride-share codes for guests.", optional: true },
+
+  // 6 weeks
+  { idealMonthsBefore: 1.5, title: "RSVP deadline", description: "Follow up with non-responders a few days after. You need the final count for your caterer, seating chart, and escort cards.", link: "/guests" },
+
+  // 1 month
+  { idealMonthsBefore: 1, title: "Final outfit fitting", description: "Make sure everything fits perfectly. Start breaking in your wedding shoes at home — seriously.", link: "/shopping" },
+  { idealMonthsBefore: 1, title: "Confirm all vendor details", description: "Contact every vendor to confirm arrival times, setup needs, and final payments. Use your vendor page to track.", link: "/vendors" },
+  { idealMonthsBefore: 1, title: "Submit final headcount to caterer", description: "Include vendor meals! Your photographer, DJ, coordinator, and other vendors need to eat too." },
+  { idealMonthsBefore: 1, title: "Prepare emergency kit", description: "Sewing kit, stain remover, pain relief, safety pins, phone charger, snacks, and 50+ more items. Check the Tips page.", link: "/tips" },
+  { idealMonthsBefore: 1, title: "Prepare vendor tip envelopes", description: "Cash in labeled envelopes. Assign a trusted person to distribute them on the wedding day — NOT you." },
+
+  // 2 weeks
+  { idealMonthsBefore: 0.5, title: "Confirm arrival times with every vendor", description: "One final check. Share the day-of timeline with everyone." },
+  { idealMonthsBefore: 0.5, title: "Print day-of paper goods", description: "Programs, menus, escort cards, table numbers, signage. Proofread everything twice.", link: "/shopping" },
+  { idealMonthsBefore: 0.5, title: "Finalize playlist with DJ", description: "Send your must-play list, do-not-play list, and announcement scripts. Confirm pronunciation of names.", link: "/music" },
+  { idealMonthsBefore: 0.5, title: "Generate vendor booklets", description: "Create a reference document for each vendor with the timeline, contacts, and their specific details.", link: "/booklets" },
+
+  // 1 week
+  { idealMonthsBefore: 0.25, title: "Rehearsal and rehearsal dinner", description: "Walk through the ceremony. Confirm all wedding party members have their attire and know where to be." },
+  { idealMonthsBefore: 0.25, title: "Pack wedding day bags and boxes", description: "Organize everything into labeled boxes — ceremony items, reception decor, personal items, emergency kit.", link: "/packing" },
+  { idealMonthsBefore: 0.25, title: "Delegate day-of responsibilities", description: "Who handles vendor tips? Who wrangles family for photos? Who watches the card box? Assign it all now.", link: "/share" },
+  { idealMonthsBefore: 0.25, title: "Send day-of timeline to wedding party", description: "Everyone in the wedding party should know when to arrive, where to be, and what to wear.", link: "/share" },
+
+  // Day before
+  { idealMonthsBefore: 0.03, title: "Deliver welcome bags to hotel", description: "Water, snacks, local treats, and a weekend itinerary card for out-of-town guests.", optional: true },
+  { idealMonthsBefore: 0.03, title: "Drop off decor at venue", description: "If the venue allows early access, deliver boxes and decor the day before to save time on the wedding day.", link: "/packing" },
+
+  // Wedding day
+  { idealMonthsBefore: 0, title: "Wedding day!", description: "Eat breakfast. Hydrate. Enjoy every single moment. You planned for this — now live it." },
 ];
+
+const taskLinkMap = new Map<string, { link?: string; optional?: boolean }>();
+TASK_DEFINITIONS.forEach((t) => taskLinkMap.set(t.title, { link: t.link, optional: t.optional }));
 
 function generatePreWeddingTimeline(weddingDate: Date) {
   const today = new Date();
@@ -200,20 +205,12 @@ function generatePreWeddingTimeline(weddingDate: Date) {
       priority = "low";
     }
 
-    // Build description with urgency context
-    let desc = task.description;
-    if (priority === "critical") {
-      desc = `Ideally done ${Math.round(daysLate / 30)} months ago. ${desc}`;
-    } else if (priority === "high") {
-      desc = `${daysLate} days past ideal. ${desc}`;
-    }
-
     return {
       type: "pre_wedding" as const,
       event_date: format(finalDate, "yyyy-MM-dd"),
       event_time: null,
       title: task.title,
-      description: desc,
+      description: task.description,
       assigned_to: null,
       sort_order: i,
       completed: false,
@@ -388,17 +385,21 @@ function generateDayOfTimeline(
 }
 
 function PriorityBadge({ priority }: { priority: string }) {
-  const config = priorityConfig[priority as Priority] || priorityConfig.normal;
-  if (priority === "normal" || priority === "low") return null;
-  const Icon = config.icon;
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${config.color} ${config.bgColor}`}
-    >
-      <Icon className="h-3 w-3" />
-      {config.label}
-    </span>
-  );
+  if (priority === "critical") {
+    return (
+      <span className="text-[11px] text-muted-foreground italic">
+        Usually done earlier — do this soon
+      </span>
+    );
+  }
+  if (priority === "high") {
+    return (
+      <span className="text-[11px] text-muted-foreground italic">
+        Coming up soon
+      </span>
+    );
+  }
+  return null;
 }
 
 function AssignDot({ assignedTo }: { assignedTo: string | null }) {
@@ -582,12 +583,6 @@ export function TimelineManager({
     : allPreWedding.filter((e) => e.assigned_to === assignFilter);
 
   // Stats
-  const criticalCount = allPreWedding.filter(
-    (e) => e.priority === "critical" && !e.completed
-  ).length;
-  const highCount = allPreWedding.filter(
-    (e) => e.priority === "high" && !e.completed
-  ).length;
   const completedCount = allPreWedding.filter((e) => e.completed).length;
   const daysUntilWedding = weddingDate
     ? differenceInCalendarDays(
@@ -794,18 +789,6 @@ export function TimelineManager({
                   {daysUntilWedding} days until wedding
                 </Badge>
               )}
-              {criticalCount > 0 && (
-                <Badge className="bg-red-100 text-red-700 hover:bg-red-100 gap-1">
-                  <Flame className="h-3 w-3" />
-                  {criticalCount} critical
-                </Badge>
-              )}
-              {highCount > 0 && (
-                <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 gap-1">
-                  <AlertTriangle className="h-3 w-3" />
-                  {highCount} high priority
-                </Badge>
-              )}
               <Badge variant="secondary" className="gap-1">
                 <Check className="h-3 w-3" />
                 {completedCount} / {allPreWedding.length} done
@@ -988,16 +971,7 @@ export function TimelineManager({
                       {/* Month content */}
                       {isExpanded && (
                         <div className="p-2 space-y-2">
-                          {allDone ? (
-                            <div className="flex items-center justify-center gap-2 py-6 text-sm text-green-600">
-                              <Check className="h-4 w-4" />
-                              All done!
-                            </div>
-                          ) : (
-                            group.events.map((event) => {
-                              const pConfig =
-                                priorityConfig[event.priority as Priority] ||
-                                priorityConfig.normal;
+                          {group.events.map((event) => {
                               const isEditing = editingId === event.id;
                               const eventDateObj = event.event_date
                                 ? new Date(event.event_date + "T00:00:00")
@@ -1024,26 +998,24 @@ export function TimelineManager({
                                   className={`flex items-start gap-3 p-4 border rounded-lg group transition-colors ${
                                     event.completed
                                       ? "bg-muted/50 border-border"
-                                      : `${pConfig.bgColor} ${pConfig.borderColor}`
+                                      : "bg-card border-border"
                                   }`}
                                 >
                                   <button
                                     onClick={() =>
                                       toggleComplete(event.id, event.completed)
                                     }
-                                    className="mt-0.5 shrink-0"
+                                    className="mt-0.5 shrink-0 group/check"
+                                    title={event.completed ? "Click to mark as not done" : "Click to mark as done"}
                                   >
                                     {event.completed ? (
-                                      <Check className="h-5 w-5 text-primary" />
+                                      <span className="relative">
+                                        <Check className="h-5 w-5 text-green-500 group-hover/check:hidden" />
+                                        <Circle className="h-5 w-5 text-muted-foreground hidden group-hover/check:block" />
+                                      </span>
                                     ) : (
                                       <Circle
-                                        className={`h-5 w-5 ${
-                                          event.priority === "critical"
-                                            ? "text-red-400"
-                                            : event.priority === "high"
-                                            ? "text-amber-400"
-                                            : "text-muted-foreground"
-                                        }`}
+                                        className="h-5 w-5 text-muted-foreground hover:text-primary transition-colors"
                                       />
                                     )}
                                   </button>
@@ -1080,52 +1052,90 @@ export function TimelineManager({
                                         </div>
                                       </div>
                                     ) : (
-                                      <>
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                          <AssignDot assignedTo={event.assigned_to} />
-                                          <span
-                                            className={`font-medium cursor-pointer hover:underline ${
-                                              event.completed
-                                                ? "line-through text-muted-foreground"
-                                                : ""
-                                            }`}
-                                            onClick={() => startEditing(event)}
-                                          >
-                                            {event.title}
-                                          </span>
-                                          <PriorityBadge priority={event.priority} />
-                                          {event.event_date && (
-                                            <Badge
-                                              variant="outline"
-                                              className="text-xs shrink-0 cursor-pointer hover:bg-muted"
-                                              onClick={() => startEditing(event)}
-                                            >
-                                              {format(
-                                                new Date(event.event_date + "T00:00:00"),
-                                                "MMM d, yyyy"
+                                      (() => {
+                                        const taskMeta = taskLinkMap.get(event.title);
+                                        return (
+                                          <>
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              <AssignDot assignedTo={event.assigned_to} />
+                                              <span
+                                                className={`font-medium cursor-pointer hover:underline ${
+                                                  event.completed
+                                                    ? "line-through text-muted-foreground"
+                                                    : ""
+                                                }`}
+                                                onClick={() => startEditing(event)}
+                                              >
+                                                {event.title}
+                                              </span>
+                                              {taskMeta?.optional && (
+                                                <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-medium">
+                                                  Optional
+                                                </span>
                                               )}
-                                            </Badge>
-                                          )}
-                                          {isOverdue && (
-                                            <span className="text-[11px] font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
-                                              Overdue
-                                            </span>
-                                          )}
-                                          {isDueSoon && (
-                                            <span className="text-[11px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
-                                              Due soon
-                                            </span>
-                                          )}
-                                        </div>
-                                        {event.description && (
-                                          <p className="text-sm text-muted-foreground mt-0.5">
-                                            {event.description}
-                                          </p>
-                                        )}
-                                      </>
+                                              <PriorityBadge priority={event.priority} />
+                                              {event.event_date && (
+                                                <Badge
+                                                  variant="outline"
+                                                  className="text-xs shrink-0 cursor-pointer hover:bg-muted"
+                                                  onClick={() => startEditing(event)}
+                                                >
+                                                  {format(
+                                                    new Date(event.event_date + "T00:00:00"),
+                                                    "MMM d, yyyy"
+                                                  )}
+                                                </Badge>
+                                              )}
+                                              {isOverdue && (
+                                                <span className="text-[11px] font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
+                                                  Overdue
+                                                </span>
+                                              )}
+                                              {isDueSoon && (
+                                                <span className="text-[11px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+                                                  Due soon
+                                                </span>
+                                              )}
+                                            </div>
+                                            {event.description && (
+                                              <p className="text-sm text-muted-foreground mt-0.5">
+                                                {event.description}
+                                                {(() => {
+                                                  const meta = taskLinkMap.get(event.title);
+                                                  if (!meta?.link) return null;
+                                                  const labelMap: Record<string, string> = {
+                                                    "/shopping": "Shopping List",
+                                                    "/moodboard": "Moodboard",
+                                                    "/guests": "Guest List",
+                                                    "/website": "Website Builder",
+                                                    "/seating": "Seating Chart",
+                                                    "/music": "Music Planner",
+                                                    "/vendors": "Vendors",
+                                                    "/tips": "Tips & Emergency Kit",
+                                                    "/booklets": "Vendor Booklets",
+                                                    "/packing": "Packing Lists",
+                                                    "/share": "Share with Party",
+                                                  };
+                                                  const label = labelMap[meta.link] || "Open";
+                                                  return (
+                                                    <>
+                                                      {" "}
+                                                      <Link href={meta.link} className="text-primary hover:underline whitespace-nowrap">
+                                                        → {label}
+                                                      </Link>
+                                                    </>
+                                                  );
+                                                })()}
+                                              </p>
+                                            )}
+                                          </>
+                                        );
+                                      })()
                                     )}
                                   </div>
-                                  <div className="flex gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <div className={`flex gap-0.5 shrink-0 transition-opacity ${
+                                    menuEventId === event.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                                  }`}>
                                     <Button
                                       variant="ghost"
                                       size="icon"
@@ -1152,8 +1162,7 @@ export function TimelineManager({
                                 </div>
                                 </AssignContextMenu>
                               );
-                            })
-                          )}
+                            })}
                         </div>
                       )}
                     </div>
@@ -1392,7 +1401,9 @@ export function TimelineManager({
                                 </div>
 
                                 {/* Action buttons */}
-                                <div className="flex gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className={`flex gap-0.5 shrink-0 transition-opacity ${
+                                  menuEventId === event.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                                }`}>
                                   <Button
                                     variant="ghost"
                                     size="icon"
