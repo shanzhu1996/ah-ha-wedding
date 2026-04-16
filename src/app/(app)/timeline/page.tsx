@@ -15,28 +15,14 @@ export default async function TimelinePage() {
     .order("sort_order", { ascending: true });
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)]">
-          Timeline
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Two timelines in one. The pre-wedding checklist tells you what to
-          do and when — from ordering invitations to final fittings. The
-          day-of schedule maps every moment hour by hour, and gets shared
-          with your DJ, photographer, coordinator, and every vendor so the
-          day runs smoothly.
-        </p>
-      </div>
-      <TimelineManager
-        events={events || []}
-        weddingId={wedding.id}
-        weddingDate={wedding.wedding_date}
-        guestCount={wedding.guest_count_estimate}
-        bridalPartySize={wedding.bridal_party_size}
-        partner1Name={wedding.partner1_name}
-        partner2Name={wedding.partner2_name}
-      />
-    </div>
+    <TimelineManager
+      events={events || []}
+      weddingId={wedding.id}
+      weddingDate={wedding.wedding_date}
+      guestCount={wedding.guest_count_estimate}
+      bridalPartySize={wedding.bridal_party_size}
+      partner1Name={wedding.partner1_name}
+      partner2Name={wedding.partner2_name}
+    />
   );
 }

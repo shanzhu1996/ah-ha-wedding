@@ -16,6 +16,7 @@ import {
   UtensilsCrossed,
   X,
   Lightbulb,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,6 +30,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -68,10 +75,10 @@ interface GuestManagerProps {
 }
 
 const rsvpColors: Record<string, string> = {
-  confirmed: "bg-green-100 text-green-800",
-  declined: "bg-red-100 text-red-800",
-  pending: "bg-yellow-100 text-yellow-800",
-  no_response: "bg-gray-100 text-gray-800",
+  confirmed: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  declined: "bg-red-50 text-red-700 border border-red-200",
+  pending: "bg-amber-50 text-amber-800 border border-amber-200",
+  no_response: "bg-muted text-muted-foreground border border-border/60",
 };
 
 const rsvpCycle: Record<string, string> = {
@@ -87,6 +94,7 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [filterRsvp, setFilterRsvp] = useState<string>("all");
+  const [filterDietary, setFilterDietary] = useState<boolean>(false);
   const [showDialog, setShowDialog] = useState(false);
   const [showBulkDialog, setShowBulkDialog] = useState(false);
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
@@ -129,14 +137,32 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
   const confirmedPlusOnes = confirmedGuests.filter((g) => g.plus_one).length;
   const catererCount = confirmed + confirmedPlusOnes;
 
+  // Count of guests with dietary restrictions
+  const dietaryCount = initialGuests.filter((g) => g.dietary_restrictions && g.dietary_restrictions.trim()).length;
+
   // Filtered guests
-  const filtered = initialGuests.filter((g) => {
-    const matchesSearch =
-      `${g.first_name} ${g.last_name}`.toLowerCase().includes(search.toLowerCase()) ||
-      g.relationship_tag?.toLowerCase().includes(search.toLowerCase());
-    const matchesRsvp = filterRsvp === "all" || g.rsvp_status === filterRsvp;
-    return matchesSearch && matchesRsvp;
-  });
+  const filtered = initialGuests
+    .filter((g) => {
+      const matchesSearch =
+        `${g.first_name} ${g.last_name}`.toLowerCase().includes(search.toLowerCase()) ||
+        g.relationship_tag?.toLowerCase().includes(search.toLowerCase());
+      const matchesRsvp = filterRsvp === "all" || g.rsvp_status === filterRsvp;
+      const matchesDietary = !filterDietary || (g.dietary_restrictions && g.dietary_restrictions.trim());
+      return matchesSearch && matchesRsvp && matchesDietary;
+    })
+    .sort((a, b) => {
+      // Most actionable first: pending > no_response > confirmed > declined
+      const priority: Record<string, number> = {
+        pending: 0,
+        no_response: 1,
+        confirmed: 2,
+        declined: 3,
+      };
+      const aP = priority[a.rsvp_status] ?? 4;
+      const bP = priority[b.rsvp_status] ?? 4;
+      if (aP !== bP) return aP - bP;
+      return `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`);
+    });
 
   function resetForm() {
     setFirstName("");
@@ -261,124 +287,112 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
 
   return (
     <TooltipProvider>
-      {/* RSVP Connection Banner */}
+      <div className="space-y-8">
+      {/* Header — identity + summary only */}
+      <div>
+        <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
+          Guests
+        </h1>
+        {initialGuests.length > 0 ? (
+          <p className="text-sm text-muted-foreground mt-2">
+            <span className="font-medium text-foreground/80">{initialGuests.length}</span> invited
+            <span className="text-muted-foreground/50"> · </span>
+            <span className="font-medium text-emerald-700">{confirmed}</span> confirmed
+            {pending > 0 && (
+              <>
+                <span className="text-muted-foreground/50"> · </span>
+                <span className="font-medium text-amber-700">{pending}</span> pending
+              </>
+            )}
+            {declined > 0 && (
+              <>
+                <span className="text-muted-foreground/50"> · </span>
+                <span className="font-medium text-red-700">{declined}</span> declined
+              </>
+            )}
+            {confirmed > 0 && (
+              <>
+                <span className="text-muted-foreground/50"> · </span>
+                <span className="inline-flex items-center gap-1">
+                  <UtensilsCrossed className="h-3 w-3" />
+                  <span className="font-medium text-foreground/80">{catererCount}</span> for caterer
+                </span>
+              </>
+            )}
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground mt-2">
+            Build your guest list. It feeds seating, catering, and thank-you cards.
+          </p>
+        )}
+      </div>
+
+      {/* RSVP Connection Tip — understated, warm palette */}
       {!rsvpTipDismissed && initialGuests.length > 0 && (
-        <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 flex items-center gap-3">
-          <Lightbulb className="h-4 w-4 text-blue-500 shrink-0" />
-          <p className="text-sm text-blue-800 flex-1">
-            <span className="font-medium">Tip:</span> Build your wedding website with a built-in RSVP form — guests can respond online.
+        <div className="flex items-center gap-2.5 pl-3 pr-2 py-2 rounded-md bg-primary/[0.04] border border-primary/15 text-sm">
+          <Lightbulb className="h-3.5 w-3.5 text-primary shrink-0" />
+          <p className="text-xs text-foreground/80 flex-1">
+            Want guests to RSVP online? Add a form to your wedding website.
           </p>
           <Link
             href="/website"
-            className="text-sm font-medium text-blue-700 hover:text-blue-900 whitespace-nowrap"
+            className="text-xs font-medium text-primary hover:underline whitespace-nowrap"
           >
-            Build Website &rarr;
+            Build it &rarr;
           </Link>
           <button
             type="button"
             onClick={dismissRsvpTip}
-            className="text-blue-400 hover:text-blue-600"
+            className="text-muted-foreground/60 hover:text-foreground transition-colors p-1"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3 w-3" />
           </button>
         </div>
       )}
 
-      {/* Bulk Add Success Banner */}
+      {/* Bulk Add Success */}
       {bulkSuccessCount !== null && (
-        <div className="animate-fade-in-up rounded-lg bg-green-50 border border-green-200 p-4 flex items-center gap-3">
-          <span className="text-green-600 text-lg">&#10024;</span>
-          <p className="text-sm font-medium text-green-800">
-            {bulkSuccessCount} guest{bulkSuccessCount !== 1 ? "s" : ""} added successfully! Your guest list is growing.
+        <div className="animate-fade-in-up flex items-center gap-2.5 pl-3 pr-4 py-2 rounded-md bg-emerald-50 border border-emerald-200 text-sm">
+          <span className="text-emerald-600">&#10024;</span>
+          <p className="text-xs font-medium text-emerald-800">
+            {bulkSuccessCount} guest{bulkSuccessCount !== 1 ? "s" : ""} added. Your list is growing.
           </p>
         </div>
       )}
 
-      {/* RSVP Stats */}
-      <div className={`grid gap-4 ${confirmed > 0 ? "grid-cols-5" : "grid-cols-4"}`}>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold">{initialGuests.length}</div>
-            <p className="text-xs text-muted-foreground">Total</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-green-600">{confirmed}</div>
-            <p className="text-xs text-muted-foreground">Confirmed</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-yellow-600">{pending}</div>
-            <p className="text-xs text-muted-foreground">Pending</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-red-600">{declined}</div>
-            <p className="text-xs text-muted-foreground">Declined</p>
-          </CardContent>
-        </Card>
-        {confirmed > 0 && (
-          <Card>
-            <CardContent className="p-4 text-center">
-              <div className="flex items-center justify-center gap-1.5">
-                <UtensilsCrossed className="h-4 w-4 text-muted-foreground" />
-                <span className="text-2xl font-bold">{catererCount}</span>
-              </div>
-              <p className="text-xs text-muted-foreground">Caterer Count</p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                {confirmed} confirmed + {confirmedPlusOnes} plus-one{confirmedPlusOnes !== 1 ? "s" : ""}
-              </p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          onClick={() => {
-            resetForm();
-            setShowDialog(true);
-          }}
-          className="gap-2"
-        >
-          <Plus className="h-4 w-4" />
-          Add Guest
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => setShowBulkDialog(true)}
-          className="gap-2"
-        >
-          <Upload className="h-4 w-4" />
-          Bulk Add
-        </Button>
-        <div className="flex-1" />
-        <div className="relative">
+      {/* Toolbar: search + actions */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search guests..."
-            className="pl-9 w-60"
+            className="pl-9 h-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <Select value={filterRsvp} onValueChange={(v) => setFilterRsvp(v ?? "all")}>
-          <SelectTrigger className="w-36">
-            <Filter className="h-3.5 w-3.5 mr-2" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All RSVPs</SelectItem>
-            <SelectItem value="confirmed">Confirmed</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="declined">Declined</SelectItem>
-            <SelectItem value="no_response">No Response</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setShowBulkDialog(true)}
+            size="sm"
+            className="gap-1.5 text-xs h-9"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Bulk Add
+          </Button>
+          <Button
+            onClick={() => {
+              resetForm();
+              setShowDialog(true);
+            }}
+            size="sm"
+            className="gap-1.5 text-xs h-9"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Guest
+          </Button>
+        </div>
       </div>
 
       {/* Guest Table */}
@@ -421,103 +435,161 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
           </Card>
         )
       ) : (
-        <div className="border rounded-lg overflow-hidden">
+        <div>
           <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium">Name</th>
-                <th className="text-left px-4 py-3 font-medium">RSVP</th>
-                <th className="text-left px-4 py-3 font-medium hidden md:table-cell">
-                  {showMealChoice ? "Meal" : "Dietary"}
+            <thead>
+              <tr className="border-b border-border/50">
+                <th className="text-left px-3 py-2.5 text-xs font-semibold tracking-[0.1em] uppercase text-foreground/80">Guest</th>
+
+                {/* RSVP column header with filter */}
+                <th className="text-left px-3 py-2.5 w-36">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className={`inline-flex items-center gap-1 text-xs font-semibold tracking-[0.1em] uppercase transition-colors group ${filterRsvp !== "all" ? "text-primary" : "text-foreground/80 hover:text-foreground"}`}>
+                      RSVP
+                      <ChevronDown className={`h-3 w-3 transition-opacity ${filterRsvp !== "all" ? "opacity-80" : "opacity-40 group-hover:opacity-80"}`} />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-44">
+                      <DropdownMenuItem onClick={() => setFilterRsvp("all")} className="flex justify-between">
+                        <span>All</span>
+                        <span className="text-xs text-muted-foreground tabular-nums">{initialGuests.length}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setFilterRsvp("pending")} className="flex justify-between">
+                        <span className="flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          Pending
+                        </span>
+                        <span className="text-xs text-muted-foreground tabular-nums">{pending}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setFilterRsvp("confirmed")} className="flex justify-between">
+                        <span className="flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          Confirmed
+                        </span>
+                        <span className="text-xs text-muted-foreground tabular-nums">{confirmed}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setFilterRsvp("declined")} className="flex justify-between">
+                        <span className="flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                          Declined
+                        </span>
+                        <span className="text-xs text-muted-foreground tabular-nums">{declined}</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </th>
-                <th className="text-left px-4 py-3 font-medium hidden lg:table-cell">
-                  <Tooltip>
-                    <TooltipTrigger className="cursor-help border-b border-dashed border-muted-foreground/50">
-                      Group
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Helps with seating assignments</p>
-                    </TooltipContent>
-                  </Tooltip>
+
+                {/* Dietary column header with filter */}
+                <th className="text-left px-3 py-2.5">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className={`inline-flex items-center gap-1 text-xs font-semibold tracking-[0.1em] uppercase transition-colors group ${filterDietary ? "text-primary" : "text-foreground/80 hover:text-foreground"}`}>
+                      {showMealChoice ? "Meal / Dietary" : "Dietary"}
+                      <ChevronDown className={`h-3 w-3 transition-opacity ${filterDietary ? "opacity-80" : "opacity-40 group-hover:opacity-80"}`} />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-52">
+                      <DropdownMenuItem onClick={() => setFilterDietary(false)} className="flex justify-between">
+                        <span>All</span>
+                        <span className="text-xs text-muted-foreground tabular-nums">{initialGuests.length}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setFilterDietary(true)} className="flex justify-between">
+                        <span className="flex items-center gap-2">
+                          <AlertTriangle className="h-3 w-3 text-amber-600" />
+                          Has dietary needs
+                        </span>
+                        <span className="text-xs text-muted-foreground tabular-nums">{dietaryCount}</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </th>
-                <th className="text-left px-4 py-3 font-medium hidden lg:table-cell">Plus One</th>
-                <th className="text-right px-4 py-3 font-medium w-20"></th>
+
+                <th className="text-right px-3 py-2.5 w-24"></th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((guest) => (
-                <tr key={guest.id} className="border-t hover:bg-muted/30 group">
-                  <td className="px-4 py-3">
-                    <div className="font-medium">
-                      {guest.first_name} {guest.last_name}
-                    </div>
-                    {guest.dietary_restrictions && showMealChoice && (
-                      <span className="text-xs text-muted-foreground">
-                        {guest.dietary_restrictions}
+                <tr key={guest.id} className="border-b border-border/30 hover:bg-muted/20 group transition-colors">
+                  {/* Name + plus-one inline */}
+                  <td className="px-3 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-medium text-foreground">
+                        {guest.first_name} {guest.last_name}
                       </span>
-                    )}
+                      {guest.plus_one && (
+                        <span className="text-xs text-muted-foreground">
+                          {guest.plus_one_name ? `+ ${guest.plus_one_name}` : "+1"}
+                        </span>
+                      )}
+                    </div>
                   </td>
-                  <td className="px-4 py-3">
+
+                  {/* RSVP */}
+                  <td className="px-3 py-3">
                     <Select
                       value={guest.rsvp_status}
                       onValueChange={(v) => v && quickRsvpUpdate(guest.id, v)}
                     >
-                      <SelectTrigger className={`h-auto py-1 px-2.5 w-auto text-[11px] font-semibold rounded-full border-0 shadow-none cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-current/20 transition-all [&>svg]:hidden ${rsvpColors[guest.rsvp_status] || ""}`}>
+                      <SelectTrigger className={`h-auto py-1 px-2.5 w-auto text-[11px] font-semibold rounded-full shadow-none cursor-pointer hover:opacity-80 transition-all [&>svg]:hidden ${rsvpColors[guest.rsvp_status] || ""}`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent align="start">
                         <SelectItem value="pending">
                           <span className="flex items-center gap-1.5">
-                            <span className="h-2 w-2 rounded-full bg-yellow-400" />
+                            <span className="h-2 w-2 rounded-full bg-amber-500" />
                             Pending
                           </span>
                         </SelectItem>
                         <SelectItem value="confirmed">
                           <span className="flex items-center gap-1.5">
-                            <span className="h-2 w-2 rounded-full bg-green-500" />
+                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
                             Confirmed
                           </span>
                         </SelectItem>
                         <SelectItem value="declined">
                           <span className="flex items-center gap-1.5">
-                            <span className="h-2 w-2 rounded-full bg-red-400" />
+                            <span className="h-2 w-2 rounded-full bg-red-500" />
                             Declined
                           </span>
                         </SelectItem>
                       </SelectContent>
                     </Select>
                   </td>
-                  <td className="px-4 py-3 hidden md:table-cell text-muted-foreground">
-                    {showMealChoice
-                      ? (guest.meal_choice || "Not set")
-                      : (guest.dietary_restrictions || "\u2014")}
+
+                  {/* Meal + Dietary merged */}
+                  <td className="px-3 py-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {showMealChoice && guest.meal_choice && (
+                        <span className="text-sm text-foreground/80 capitalize">
+                          {guest.meal_choice}
+                        </span>
+                      )}
+                      {guest.dietary_restrictions && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                          <AlertTriangle className="h-2.5 w-2.5" />
+                          {guest.dietary_restrictions}
+                        </span>
+                      )}
+                      {!guest.meal_choice && !guest.dietary_restrictions && (
+                        <span className="text-muted-foreground/40 text-sm">—</span>
+                      )}
+                    </div>
                   </td>
-                  <td className="px-4 py-3 hidden lg:table-cell text-muted-foreground">
-                    {guest.relationship_tag || "\u2014"}
-                  </td>
-                  <td className="px-4 py-3 hidden lg:table-cell text-muted-foreground">
-                    {guest.plus_one
-                      ? guest.plus_one_name || "Yes"
-                      : "No"}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
+
+                  {/* Actions */}
+                  <td className="px-3 py-3 text-right">
+                    <div className="flex gap-0.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
                         onClick={() => openEdit(guest)}
+                        className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                        title="Edit"
                       >
-                        <Edit className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-destructive"
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button
                         onClick={() => handleDelete(guest.id)}
+                        className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
+                        title="Delete"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -526,6 +598,7 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
           </table>
         </div>
       )}
+      </div>
 
       {/* Add/Edit Guest Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>

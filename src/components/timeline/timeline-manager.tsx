@@ -19,12 +19,9 @@ import {
   Circle,
   Trash2,
   CalendarDays,
-  Clock,
-
   UserPlus,
-  RefreshCw,
-  ChevronDown,
   ChevronRight,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -45,13 +42,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import { ConfettiCanvas, triggerConfetti } from "@/components/ui/confetti";
 
 interface TimelineEvent {
@@ -95,15 +87,16 @@ const TASK_DEFINITIONS: TaskDef[] = [
   { idealMonthsBefore: 10, title: "Finalize guest list draft", description: "This number drives everything — venue size, catering count, invitation orders, and budget. Start with a rough list and refine.", link: "/guests" },
   { idealMonthsBefore: 10, title: "Book engagement photoshoot", description: "Great photos for save-the-dates and your wedding website. Also a chance to get comfortable in front of a camera.", optional: true },
 
-  // 8-9 months
-  { idealMonthsBefore: 8, title: "Send save-the-dates", description: "Give guests a heads-up so they can book travel. Earlier for destination weddings." },
-  { idealMonthsBefore: 8, title: "Create your wedding website", description: "The central place for guests to find your date, venue, dress code, registry, and RSVP. Send the link with your save-the-dates.", link: "/website" },
+  // 8-10 months
+  { idealMonthsBefore: 10, title: "Order save-the-dates", description: "Save-the-dates are simple cards you mail early to let guests know your wedding date — so they can book travel and time off. Order them about 2 months before you plan to send them.", link: "/shopping" },
+  { idealMonthsBefore: 8, title: "Send save-the-dates", description: "Mail your save-the-dates to everyone on your guest list. Include your names, wedding date, city, and wedding website URL. Send earlier for destination weddings." },
+  { idealMonthsBefore: 8, title: "Create your wedding website", description: "Your wedding website is a free page where guests find everything — date, venue, dress code, hotel info, registry link, and RSVP form. Send the URL with your save-the-dates. Most couples use The Knot, Zola, Joy, or build their own.", link: "/website" },
   { idealMonthsBefore: 8, title: "Set up wedding registry", description: "Guests will want this for engagement parties and showers. Most couples register at 2-3 stores.", optional: true },
   { idealMonthsBefore: 8, title: "Book hotel room blocks", description: "Popular hotels near your venue sell out fast, especially on weekends. Reserve a block so guests get a group rate." },
 
   // 6-7 months
   { idealMonthsBefore: 7, title: "Start planning honeymoon", description: "Book flights and accommodations early for better prices, especially if traveling internationally.", optional: true },
-  { idealMonthsBefore: 6, title: "Order wedding invitations", description: "Full stationery suite: invitations, RSVP cards, detail/enclosure cards, and envelopes. Allow time for printing and assembly.", link: "/shopping" },
+  { idealMonthsBefore: 6, title: "Order wedding invitations", description: "Your invitation suite includes the main invitation, an RSVP card (where guests confirm if they're coming), and a details card (directions, hotels, dress code). Order 6-7 months before the wedding — printing takes 4-6 weeks.", link: "/shopping" },
   { idealMonthsBefore: 6, title: "Share moodboard with vendors", description: "Send your moodboard to your florist, photographer, and stationer so everyone designs toward the same vision.", link: "/moodboard" },
 
   // 4-5 months
@@ -111,46 +104,52 @@ const TASK_DEFINITIONS: TaskDef[] = [
   { idealMonthsBefore: 4, title: "Schedule hair and makeup trial", description: "Test your look before the big day. Bring your headpiece/veil and inspiration photos to the trial." },
   { idealMonthsBefore: 4, title: "Purchase wedding bands", description: "Allow time for sizing, engraving, and any custom work. Try to buy at least 3 months before.", link: "/shopping" },
   { idealMonthsBefore: 4, title: "Schedule cake and food tasting", description: "Most caterers and bakers offer tastings. Bring your partner — this is one of the fun parts!" },
-  { idealMonthsBefore: 4, title: "Book rehearsal dinner venue", description: "Traditionally held the night before the wedding. Invite the wedding party, immediate family, and out-of-town guests.", optional: true },
+  { idealMonthsBefore: 4, title: "Book rehearsal dinner venue", description: "The rehearsal dinner happens the night before your wedding, right after the ceremony rehearsal. It's a dinner for your wedding party, immediate family, and usually out-of-town guests. Book a restaurant or private space.", optional: true },
 
   // 3 months
-  { idealMonthsBefore: 3, title: "Send wedding invitations", description: "Mail invitations 8-10 weeks before the wedding. Set the RSVP deadline for 3-4 weeks before the wedding.", link: "/shopping" },
+  { idealMonthsBefore: 3, title: "Send wedding invitations", description: "Mail invitations 8-10 weeks before the wedding. Include an RSVP card with a deadline 3-4 weeks before the wedding. Pro tip: weigh one complete invitation at the post office — odd sizes and enclosures may need extra postage.", link: "/shopping" },
   { idealMonthsBefore: 3, title: "Begin writing vows", description: "If writing your own, start now. Use dedicated vow books, not your phone. Aim for 1-2 minutes each." },
-  { idealMonthsBefore: 3, title: "Order wedding favors and party gifts", description: "Favors for guests + gifts for your wedding party, parents, flower girl, ring bearer.", link: "/shopping" },
+  { idealMonthsBefore: 3, title: "Order wedding favors and party gifts", description: "Favors are small thank-you gifts for your guests (candy, candles, etc. — many couples skip these). Wedding party gifts are for your bridesmaids, groomsmen, parents, and anyone who helped. These are more important.", link: "/shopping" },
   { idealMonthsBefore: 3, title: "Research marriage license requirements", description: "Every state/county has different rules — ID requirements, waiting periods, expiration dates. Don't wait until the last minute." },
 
   // 2 months
   { idealMonthsBefore: 2, title: "Apply for marriage license", description: "Go to your county clerk's office together. Bring valid ID. Some licenses expire in 30-90 days, so time it right." },
-  { idealMonthsBefore: 2, title: "Finalize ceremony with officiant", description: "Review the script, confirm readings, plan any unity ceremony (sand, candle, etc.), and discuss vow format.", link: "/vendors" },
-  { idealMonthsBefore: 2, title: "Start seating chart", description: "The task every couple dreads — but starting early makes it easier. Group guests by who knows each other.", link: "/seating" },
+  { idealMonthsBefore: 2, title: "Finalize ceremony with officiant", description: "Review the ceremony script with your officiant. Decide on readings, vows (will you write your own?), and any special traditions — like a unity ceremony (where you light a candle, pour sand, or do something symbolic together as a couple).", link: "/vendors" },
+  { idealMonthsBefore: 2, title: "Start seating chart draft", description: "Start a rough draft now — group people who know each other (family together, college friends together). You'll finalize after your RSVP deadline when you know who's actually coming.", link: "/seating" },
   { idealMonthsBefore: 2, title: "Plan your music", description: "Create your must-play list, do-not-play list, and songs for key moments — processional, first dance, parent dances.", link: "/music" },
   { idealMonthsBefore: 2, title: "Arrange guest transportation", description: "Shuttles from hotel to venue, parking instructions, or ride-share codes for guests.", optional: true },
+  { idealMonthsBefore: 1.5, title: "Final outfit fitting", description: "Make sure everything fits perfectly. Start breaking in your wedding shoes at home — seriously.", link: "/shopping" },
+  { idealMonthsBefore: 1.5, title: "Prepare emergency kit", description: "A bag of 50+ items you'll be grateful to have on the wedding day: sewing kit, stain remover pen, pain relief, safety pins, breath mints, phone charger, snacks, and much more. Check our full checklist on the Tips page.", link: "/tips" },
 
-  // 6 weeks
-  { idealMonthsBefore: 1.5, title: "RSVP deadline", description: "Follow up with non-responders a few days after. You need the final count for your caterer, seating chart, and escort cards.", link: "/guests" },
+  // 1 month — RSVP deadline triggers the final chain
+  { idealMonthsBefore: 1, title: "RSVP deadline", description: "The date by which guests must confirm if they're coming. Set it about 4 weeks before the wedding. This is the most important deadline — everything after depends on the final count: caterer headcount, seating chart, escort cards, and menu.", link: "/guests" },
+  { idealMonthsBefore: 0.85, title: "Follow up with non-responders", description: "Call or text anyone who hasn't RSVP'd within a few days of the deadline. They probably forgot — a friendly nudge is fine. You need the final number ASAP.", link: "/guests" },
+  { idealMonthsBefore: 0.75, title: "Submit final headcount to caterer", description: "Now that RSVPs are in, give the caterer the final number. Don't forget vendor meals — photographer, DJ, coordinator, and other vendors need to eat too. Ask your caterer when they need this." },
+  { idealMonthsBefore: 0.75, title: "Finalize seating chart", description: "Now that you know who's coming, finalize table assignments. This feeds into your escort cards and place cards. Double-check dietary restrictions are noted for each table.", link: "/seating" },
+  { idealMonthsBefore: 0.75, title: "Confirm all vendor details", description: "Contact every vendor to confirm arrival times, setup needs, and final payments. Use your vendor page to track everything.", link: "/vendors" },
+  { idealMonthsBefore: 0.75, title: "Prepare vendor tip envelopes", description: "Cash in labeled envelopes. Assign a trusted person to distribute them on the wedding day — NOT you." },
 
-  // 1 month
-  { idealMonthsBefore: 1, title: "Final outfit fitting", description: "Make sure everything fits perfectly. Start breaking in your wedding shoes at home — seriously.", link: "/shopping" },
-  { idealMonthsBefore: 1, title: "Confirm all vendor details", description: "Contact every vendor to confirm arrival times, setup needs, and final payments. Use your vendor page to track.", link: "/vendors" },
-  { idealMonthsBefore: 1, title: "Submit final headcount to caterer", description: "Include vendor meals! Your photographer, DJ, coordinator, and other vendors need to eat too." },
-  { idealMonthsBefore: 1, title: "Prepare emergency kit", description: "Sewing kit, stain remover, pain relief, safety pins, phone charger, snacks, and 50+ more items. Check the Tips page.", link: "/tips" },
-  { idealMonthsBefore: 1, title: "Prepare vendor tip envelopes", description: "Cash in labeled envelopes. Assign a trusted person to distribute them on the wedding day — NOT you." },
+  // 6 weeks — order stationery that needs lead time
+  { idealMonthsBefore: 1.5, title: "Order day-of stationery", description: "If using a professional stationer for escort cards, menus, or programs — order now with your estimated guest count. Calligraphy and custom printing takes 3-4 weeks. Order 10-15% extra blanks for last-minute changes. If DIY printing, you can wait until after RSVPs.", link: "/shopping" },
 
-  // 2 weeks
-  { idealMonthsBefore: 0.5, title: "Confirm arrival times with every vendor", description: "One final check. Share the day-of timeline with everyone." },
-  { idealMonthsBefore: 0.5, title: "Print day-of paper goods", description: "Programs, menus, escort cards, table numbers, signage. Proofread everything twice.", link: "/shopping" },
-  { idealMonthsBefore: 0.5, title: "Finalize playlist with DJ", description: "Send your must-play list, do-not-play list, and announcement scripts. Confirm pronunciation of names.", link: "/music" },
-  { idealMonthsBefore: 0.5, title: "Generate vendor booklets", description: "Create a reference document for each vendor with the timeline, contacts, and their specific details.", link: "/booklets" },
+  // 3 weeks — get ahead so the final week is calm
+  { idealMonthsBefore: 0.75, title: "Finalize playlist with DJ", description: "Send your must-play list, do-not-play list, and announcement scripts. Confirm pronunciation of names. The earlier you do this, the less you'll worry about it.", link: "/music" },
+  { idealMonthsBefore: 0.75, title: "Generate vendor booklets", description: "A vendor booklet is a printed reference sheet you give each vendor — it has the full day-of timeline, your contact info, venue address, and their specific details. One booklet per vendor. Generate them now so you're not doing it last-minute.", link: "/booklets" },
+  { idealMonthsBefore: 0.75, title: "Prepare welcome bags", description: "Water, snacks, local treats, and a weekend itinerary card for out-of-town guests. Assemble them now — you can drop them off later.", optional: true },
 
-  // 1 week
-  { idealMonthsBefore: 0.25, title: "Rehearsal and rehearsal dinner", description: "Walk through the ceremony. Confirm all wedding party members have their attire and know where to be." },
-  { idealMonthsBefore: 0.25, title: "Pack wedding day bags and boxes", description: "Organize everything into labeled boxes — ceremony items, reception decor, personal items, emergency kit.", link: "/packing" },
-  { idealMonthsBefore: 0.25, title: "Delegate day-of responsibilities", description: "Who handles vendor tips? Who wrangles family for photos? Who watches the card box? Assign it all now.", link: "/share" },
-  { idealMonthsBefore: 0.25, title: "Send day-of timeline to wedding party", description: "Everyone in the wedding party should know when to arrive, where to be, and what to wear.", link: "/share" },
+  // 2 weeks — final printing and confirmations
+  { idealMonthsBefore: 0.5, title: "Finalize and print remaining stationery", description: "After seating is finalized: fill in any blank escort cards, print table numbers, finalize signage (welcome sign, bar menu). If you DIY'd everything, print it all now. Proofread everything twice.", link: "/shopping" },
+  { idealMonthsBefore: 0.5, title: "Confirm arrival times with every vendor", description: "One final check with every vendor. Share the day-of timeline and vendor booklets with all of them." },
+  { idealMonthsBefore: 0.5, title: "Send day-of timeline to wedding party", description: "Everyone in the wedding party should know when to arrive, where to be, and what to wear.", link: "/share" },
+  { idealMonthsBefore: 0.5, title: "Delegate day-of responsibilities", description: "You should NOT be making decisions on your wedding day. Assign someone to: distribute vendor tip envelopes, wrangle family for photos, watch the gift/card box, handle emergencies, and collect your belongings at the end of the night.", link: "/share" },
+  { idealMonthsBefore: 0.5, title: "Pack wedding day bags and boxes", description: "Organize everything into labeled boxes — ceremony items, reception decor, personal items, emergency kit. Do this early so you're not scrambling the night before.", link: "/packing" },
+  { idealMonthsBefore: 0.5, title: "Clean rings and prepare personal items", description: "Get your engagement ring and wedding bands professionally cleaned. Lay out everything you need for the wedding day: outfit, shoes, jewelry, vow books, marriage license." },
 
-  // Day before
-  { idealMonthsBefore: 0.03, title: "Deliver welcome bags to hotel", description: "Water, snacks, local treats, and a weekend itinerary card for out-of-town guests.", optional: true },
-  { idealMonthsBefore: 0.03, title: "Drop off decor at venue", description: "If the venue allows early access, deliver boxes and decor the day before to save time on the wedding day.", link: "/packing" },
+  // 1 week — keep it light, almost everything is done
+  { idealMonthsBefore: 0.25, title: "Rehearsal and rehearsal dinner", description: "The rehearsal is a practice run of the ceremony — everyone walks through their positions. The rehearsal dinner is immediately after, usually for the wedding party, close family, and out-of-town guests." },
+  { idealMonthsBefore: 0.25, title: "Drop off decor and boxes at venue", description: "If the venue allows early access, deliver your packed boxes and decor. Less to carry on the wedding morning.", link: "/packing" },
+  { idealMonthsBefore: 0.25, title: "Deliver welcome bags to hotel", description: "Drop off the welcome bags you assembled earlier to the hotel front desk.", optional: true },
+  { idealMonthsBefore: 0.15, title: "Rest and enjoy", description: "You've done the work. Tonight, get a good night's sleep. Tomorrow is the best day of your life." },
 
   // Wedding day
   { idealMonthsBefore: 0, title: "Wedding day!", description: "Eat breakfast. Hydrate. Enjoy every single moment. You planned for this — now live it." },
@@ -423,21 +422,15 @@ function AssignMenu({
   partner1Name: string;
   partner2Name: string;
   onSelect: (value: string | null) => void;
-  pos: { x: number; y: number };
+  pos: { x: number; y: number; buttonTop: number };
   onClose: () => void;
 }) {
-  // Clamp position so menu doesn't go off-screen
-  const menuStyle = {
-    left: Math.min(pos.x, typeof window !== "undefined" ? window.innerWidth - 180 : pos.x),
-    top: Math.min(pos.y, typeof window !== "undefined" ? window.innerHeight - 200 : pos.y),
-  };
-
   return (
     <>
       <div className="fixed inset-0 z-50" onClick={onClose} />
       <div
         className="fixed z-50 bg-card border rounded-lg shadow-lg py-1 min-w-[160px] animate-fade-in-up"
-        style={menuStyle}
+        style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
       >
         <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
           Assign to
@@ -475,54 +468,24 @@ function AssignMenu({
   );
 }
 
-function AssignContextMenu({
+function AssignContextMenuWrapper({
   eventId,
-  partner1Name,
-  partner2Name,
-  onAssign,
+  onRightClick,
   children,
 }: {
   eventId: string;
-  partner1Name: string;
-  partner2Name: string;
-  onAssign: (id: string, value: string | null) => void;
+  onRightClick: (eventId: string, x: number, y: number) => void;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
-
   function handleContext(e: React.MouseEvent) {
     e.preventDefault();
-    setPos({ x: e.clientX, y: e.clientY });
-    setOpen(true);
-  }
-
-  function handleButtonClick(e: React.MouseEvent) {
-    e.stopPropagation();
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setPos({ x: rect.left, y: rect.bottom + 4 });
-    setOpen(true);
+    onRightClick(eventId, e.clientX, e.clientY);
   }
 
   return (
-    <>
-      <div onContextMenu={handleContext} className="relative group/assign">
-        {children}
-        {/* Assign button — rendered inside the row's action area */}
-      </div>
-      {open && (
-        <AssignMenu
-          partner1Name={partner1Name}
-          partner2Name={partner2Name}
-          onSelect={(value) => {
-            onAssign(eventId, value);
-            setOpen(false);
-          }}
-          pos={pos}
-          onClose={() => setOpen(false)}
-        />
-      )}
-    </>
+    <div onContextMenu={handleContext}>
+      {children}
+    </div>
   );
 }
 
@@ -538,12 +501,7 @@ export function TimelineManager({
   const router = useRouter();
   const [showDialog, setShowDialog] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [tab, setTab] = useState("pre_wedding");
   const [assignFilter, setAssignFilter] = useState<string>("all");
-  const [showAssignHint, setShowAssignHint] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return !localStorage.getItem("ahha-assign-hint-dismissed");
-  });
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => {
     const now = new Date();
     const currentMonthKey = format(now, "yyyy-MM");
@@ -555,19 +513,9 @@ export function TimelineManager({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [eventDate, setEventDate] = useState("");
-  const [eventTime, setEventTime] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
 
-  // Day-of settings
-  const [ceremonyHour, setCeremonyHour] = useState("5");
-  const [ceremonyMinute, setCeremonyMinute] = useState("00");
-  const [ceremonyAmPm, setCeremonyAmPm] = useState("PM");
-  const [dayOfPartySize, setDayOfPartySize] = useState(bridalPartySize ?? 4);
-  const [dayOfArtistCount, setDayOfArtistCount] = useState(2);
-  const [dayOfRegenerating, setDayOfRegenerating] = useState(false);
-
   const allPreWedding = initialEvents.filter((e) => e.type === "pre_wedding");
-  const dayOfEvents = initialEvents.filter((e) => e.type === "day_of");
 
   // Assignment counts
   const p1Count = allPreWedding.filter((e) => e.assigned_to === "partner1").length;
@@ -591,64 +539,58 @@ export function TimelineManager({
       )
     : null;
 
-  function getCeremonyTime24() {
-    let h = parseInt(ceremonyHour, 10);
-    if (ceremonyAmPm === "PM" && h !== 12) h += 12;
-    if (ceremonyAmPm === "AM" && h === 12) h = 0;
-    return `${String(h).padStart(2, "0")}:${ceremonyMinute}`;
-  }
-
-  const hmuInfo = computeHmuTimes(getCeremonyTime24(), dayOfPartySize, dayOfArtistCount);
-
-  async function generateTimeline(type: "pre_wedding" | "day_of") {
-    if (!weddingDate && type === "pre_wedding") return;
+  async function generateTimeline() {
+    if (!weddingDate) return;
     setGenerating(true);
     const supabase = createClient();
 
-    await supabase
+    // Pre-wedding: smart merge — preserve completed + assigned
+    const newEvents = generatePreWeddingTimeline(new Date(weddingDate + "T00:00:00"));
+
+    const { data: existing } = await supabase
       .from("timeline_events")
-      .delete()
+      .select("*")
       .eq("wedding_id", weddingId)
-      .eq("type", type);
+      .eq("type", "pre_wedding");
 
-    let events;
-    if (type === "pre_wedding") {
-      events = generatePreWeddingTimeline(new Date(weddingDate + "T00:00:00"));
-    } else {
-      events = generateDayOfTimeline(getCeremonyTime24(), dayOfPartySize, dayOfArtistCount, partner1Name);
+    const existingByTitle = new Map<string, typeof existing extends (infer T)[] | null ? T : never>();
+    (existing || []).forEach((e) => existingByTitle.set(e.title, e));
+
+    for (const newEvent of newEvents) {
+      const existingEvent = existingByTitle.get(newEvent.title);
+      if (existingEvent) {
+        await supabase
+          .from("timeline_events")
+          .update({
+            description: newEvent.description,
+            event_date: newEvent.event_date,
+            priority: newEvent.priority,
+            sort_order: newEvent.sort_order,
+          })
+          .eq("id", existingEvent.id);
+        existingByTitle.delete(newEvent.title);
+      } else {
+        await supabase.from("timeline_events").insert({
+          ...newEvent,
+          wedding_id: weddingId,
+        });
+      }
     }
-
-    const rows = events.map((e) => ({ ...e, wedding_id: weddingId }));
-    await supabase.from("timeline_events").insert(rows);
 
     setGenerating(false);
     router.refresh();
   }
 
-  async function regenerateDayOf() {
-    setDayOfRegenerating(true);
-    const supabase = createClient();
-
-    await supabase
-      .from("timeline_events")
-      .delete()
-      .eq("wedding_id", weddingId)
-      .eq("type", "day_of");
-
-    const events = generateDayOfTimeline(getCeremonyTime24(), dayOfPartySize, dayOfArtistCount, partner1Name);
-    const rows = events.map((e) => ({ ...e, wedding_id: weddingId }));
-    await supabase.from("timeline_events").insert(rows);
-
-    setDayOfRegenerating(false);
-    router.refresh();
-  }
-
   const [menuEventId, setMenuEventId] = useState<string | null>(null);
-  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+  const [menuPos, setMenuPos] = useState({ x: 0, y: 0, buttonTop: 0 });
+
+  function handleRightClickAssign(eventId: string, x: number, y: number) {
+    setMenuEventId(eventId);
+    setMenuPos({ x: x - 160, y: y, buttonTop: y });
+  }
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDate, setEditDate] = useState("");
-  const [editTime, setEditTime] = useState("");
   const [editTitle, setEditTitle] = useState("");
   const [editAssignedTo, setEditAssignedTo] = useState("");
 
@@ -690,23 +632,20 @@ export function TimelineManager({
   function startEditing(event: TimelineEvent) {
     setEditingId(event.id);
     setEditDate(event.event_date || "");
-    setEditTime(event.event_time || "");
     setEditTitle(event.title);
     setEditAssignedTo(event.assigned_to || "");
   }
 
-  async function saveEdit(id: string, type: "pre_wedding" | "day_of") {
+  async function saveEdit(id: string) {
     const supabase = createClient();
-    const update: Record<string, string | null> = {
-      title: editTitle,
-      assigned_to: editAssignedTo || null,
-    };
-    if (type === "pre_wedding") {
-      update.event_date = editDate || null;
-    } else {
-      update.event_time = editTime || null;
-    }
-    await supabase.from("timeline_events").update(update).eq("id", id);
+    await supabase
+      .from("timeline_events")
+      .update({
+        title: editTitle,
+        event_date: editDate || null,
+        assigned_to: editAssignedTo || null,
+      })
+      .eq("id", id);
     setEditingId(null);
     router.refresh();
   }
@@ -719,16 +658,12 @@ export function TimelineManager({
     const supabase = createClient();
     await supabase.from("timeline_events").insert({
       wedding_id: weddingId,
-      type: tab,
+      type: "pre_wedding",
       event_date: eventDate || null,
-      event_time: eventTime || null,
       title,
       description: description || null,
       assigned_to: assignedTo || null,
-      sort_order:
-        tab === "pre_wedding"
-          ? preWeddingEvents.length
-          : dayOfEvents.length,
+      sort_order: preWeddingEvents.length,
       completed: false,
       priority: "normal",
     });
@@ -736,749 +671,419 @@ export function TimelineManager({
     setTitle("");
     setDescription("");
     setEventDate("");
-    setEventTime("");
     setAssignedTo("");
+    router.refresh();
+  }
+
+  async function addEventInMonth(monthKey: string) {
+    if (!weddingDate) return;
+    const supabase = createClient();
+    // Default date: 15th of that month
+    const defaultDate = monthKey === "no-date" ? null : `${monthKey}-15`;
+    const { data: inserted } = await supabase
+      .from("timeline_events")
+      .insert({
+        wedding_id: weddingId,
+        type: "pre_wedding",
+        event_date: defaultDate,
+        title: "",
+        description: null,
+        assigned_to: null,
+        sort_order: preWeddingEvents.length,
+        completed: false,
+        priority: "normal",
+      })
+      .select()
+      .single();
+    if (inserted) {
+      setEditingId(inserted.id);
+      setEditDate(inserted.event_date || "");
+      setEditTitle("");
+      setEditAssignedTo("");
+    }
     router.refresh();
   }
 
   return (
     <>
       <ConfettiCanvas />
-      <Tabs value={tab} onValueChange={(v) => setTab(v ?? "pre_wedding")}>
-        <div className="flex items-center justify-between">
-          <TabsList>
-            <TabsTrigger value="pre_wedding" className="gap-2">
-              <CalendarDays className="h-4 w-4" />
-              Pre-Wedding
-            </TabsTrigger>
-            <TabsTrigger value="day_of" className="gap-2">
-              <Clock className="h-4 w-4" />
-              Day-Of
-            </TabsTrigger>
-          </TabsList>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setShowDialog(true)}
-              className="gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              Add Event
-            </Button>
-            <Button
-              onClick={() =>
-                generateTimeline(tab as "pre_wedding" | "day_of")
-              }
-              disabled={
-                generating || (tab === "pre_wedding" && !weddingDate)
-              }
-              className="gap-2"
-            >
-              <Sparkles className="h-4 w-4" />
-              {generating ? "Generating..." : "Auto-Generate"}
-            </Button>
+      <div className="space-y-8">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
+              Timeline
+            </h1>
+            {allPreWedding.length > 0 && (
+              <p className="text-sm text-muted-foreground mt-2">
+                {daysUntilWedding !== null && daysUntilWedding > 0 && (
+                  <span className="font-medium text-foreground/80">{daysUntilWedding} days</span>
+                )}
+                {daysUntilWedding !== null && daysUntilWedding > 0 && (
+                  <span className="text-muted-foreground/50"> · </span>
+                )}
+                <span><span className="font-medium text-foreground/80">{completedCount}</span> of {allPreWedding.length} done</span>
+              </p>
+            )}
           </div>
+          {weddingDate && (
+            <Button
+              onClick={generateTimeline}
+              disabled={generating}
+              variant={allPreWedding.length === 0 ? "default" : "outline"}
+              size="sm"
+              className="gap-1.5 text-xs shrink-0"
+            >
+              <Sparkles className="h-3 w-3" />
+              {generating ? "Generating..." : allPreWedding.length === 0 ? "Generate timeline" : "Auto-Generate"}
+            </Button>
+          )}
         </div>
 
-        <TabsContent value="pre_wedding" className="mt-6 space-y-4">
-          {/* Priority summary */}
-          {allPreWedding.length > 0 && (
-            <div className="flex flex-wrap items-center gap-3">
-              {daysUntilWedding !== null && daysUntilWedding > 0 && (
-                <Badge variant="outline" className="text-sm py-1 px-3">
-                  {daysUntilWedding} days until wedding
-                </Badge>
-              )}
-              <Badge variant="secondary" className="gap-1">
-                <Check className="h-3 w-3" />
-                {completedCount} / {allPreWedding.length} done
-              </Badge>
-            </div>
-          )}
+        {/* Filter dropdown — only show if there's at least 1 assigned task */}
+        {allPreWedding.length > 0 && (p1Count + p2Count + togetherCount) > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground">Filter:</span>
+            <Select value={assignFilter} onValueChange={(v) => setAssignFilter(v ?? "all")}>
+              <SelectTrigger className="h-8 w-40 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All ({allPreWedding.length})</SelectItem>
+                <SelectItem value="partner1">{partner1Name} ({p1Count})</SelectItem>
+                <SelectItem value="partner2">{partner2Name} ({p2Count})</SelectItem>
+                <SelectItem value="together">Both ({togetherCount})</SelectItem>
+                {unassignedCount > 0 && (
+                  <SelectItem value="unassigned">Unassigned ({unassignedCount})</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
-          {/* Assignment filter */}
-          {allPreWedding.length > 0 && (
-            <div className="flex gap-2 flex-wrap text-xs">
-              <button
-                onClick={() => setAssignFilter("all")}
-                className={`px-3 py-1.5 rounded-full border transition-colors ${
-                  assignFilter === "all" ? "bg-foreground text-background border-foreground" : "bg-card hover:bg-muted"
-                }`}
-              >
-                All ({allPreWedding.length})
-              </button>
-              <button
-                onClick={() => setAssignFilter("partner1")}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-colors ${
-                  assignFilter === "partner1" ? "bg-violet-500 text-white border-violet-500" : "bg-card hover:bg-muted"
-                }`}
-              >
-                <span className="h-2 w-2 rounded-full bg-violet-400" />
-                {partner1Name} ({p1Count})
-              </button>
-              <button
-                onClick={() => setAssignFilter("partner2")}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-colors ${
-                  assignFilter === "partner2" ? "bg-teal-500 text-white border-teal-500" : "bg-card hover:bg-muted"
-                }`}
-              >
-                <span className="h-2 w-2 rounded-full bg-teal-400" />
-                {partner2Name} ({p2Count})
-              </button>
-              <button
-                onClick={() => setAssignFilter("together")}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-colors ${
-                  assignFilter === "together" ? "bg-amber-500 text-white border-amber-500" : "bg-card hover:bg-muted"
-                }`}
-              >
-                <span className="h-2 w-2 rounded-full bg-amber-400" />
-                Both ({togetherCount})
-              </button>
-              {unassignedCount > 0 && (
-                <button
-                  onClick={() => setAssignFilter("unassigned")}
-                  className={`px-3 py-1.5 rounded-full border transition-colors ${
-                    assignFilter === "unassigned" ? "bg-muted-foreground text-background border-muted-foreground" : "bg-card hover:bg-muted text-muted-foreground"
-                  }`}
-                >
-                  Unassigned ({unassignedCount})
-                </button>
-              )}
-            </div>
-          )}
+        {/* Empty state */}
+        {preWeddingEvents.length === 0 && (
+          <div className="text-center py-16">
+            <CalendarDays className="h-6 w-6 mx-auto mb-3 text-muted-foreground/40" />
+            <p className="text-sm text-muted-foreground">
+              {allPreWedding.length === 0
+                ? "Click \"Generate timeline\" to create a smart checklist based on your wedding date."
+                : "No tasks match this filter."
+              }
+            </p>
+          </div>
+        )}
 
-          {/* First-time hint */}
-          {showAssignHint && allPreWedding.length > 0 && (
-            <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-blue-50 border border-blue-100 text-sm text-blue-800">
-              <UserPlus className="h-4 w-4 shrink-0" />
-              <span className="flex-1">
-                Hover over a task and click <UserPlus className="h-3 w-3 inline" /> to assign it, or right-click for options.
-              </span>
-              <button
-                onClick={() => {
-                  setShowAssignHint(false);
-                  localStorage.setItem("ahha-assign-hint-dismissed", "1");
-                }}
-                className="text-blue-500 hover:text-blue-700 text-xs font-medium shrink-0"
-              >
-                Got it
-              </button>
-            </div>
-          )}
+        {/* Timeline by month */}
+        {preWeddingEvents.length > 0 && (() => {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const weekFromNow = addDays(today, 7);
 
-          {preWeddingEvents.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                <p>No pre-wedding timeline yet.</p>
-                <p className="text-sm mt-1">
-                  Click &ldquo;Auto-Generate&rdquo; to create a smart
-                  timeline based on your wedding date. Tasks will be
-                  compressed to fit your remaining time.
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-4">
-              {(() => {
-                // Group events by month
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const weekFromNow = addDays(today, 7);
+          const monthGroups = new Map<string, { label: string; key: string; events: TimelineEvent[] }>();
+          for (const event of preWeddingEvents) {
+            const dateStr = event.event_date;
+            const monthKey = dateStr ? format(new Date(dateStr + "T00:00:00"), "yyyy-MM") : "no-date";
+            const monthLabel = dateStr ? format(new Date(dateStr + "T00:00:00"), "MMMM yyyy") : "No Date";
+            if (!monthGroups.has(monthKey)) {
+              monthGroups.set(monthKey, { label: monthLabel, key: monthKey, events: [] });
+            }
+            monthGroups.get(monthKey)!.events.push(event);
+          }
 
-                const monthGroups = new Map<string, { label: string; key: string; events: TimelineEvent[] }>();
-                for (const event of preWeddingEvents) {
-                  const dateStr = event.event_date;
-                  const monthKey = dateStr ? format(new Date(dateStr + "T00:00:00"), "yyyy-MM") : "no-date";
-                  const monthLabel = dateStr ? format(new Date(dateStr + "T00:00:00"), "MMMM yyyy") : "No Date";
-                  if (!monthGroups.has(monthKey)) {
-                    monthGroups.set(monthKey, { label: monthLabel, key: monthKey, events: [] });
-                  }
-                  monthGroups.get(monthKey)!.events.push(event);
-                }
+          const sortedGroups = Array.from(monthGroups.values()).sort((a, b) => {
+            if (a.key === "no-date") return 1;
+            if (b.key === "no-date") return -1;
+            return a.key.localeCompare(b.key);
+          });
 
-                // Sort month groups chronologically
-                const sortedGroups = Array.from(monthGroups.values()).sort((a, b) => {
-                  if (a.key === "no-date") return 1;
-                  if (b.key === "no-date") return -1;
-                  return a.key.localeCompare(b.key);
-                });
+          for (const group of sortedGroups) {
+            group.events.sort((a, b) => {
+              if (a.completed !== b.completed) return a.completed ? 1 : -1;
+              const aDate = a.event_date ? new Date(a.event_date + "T00:00:00") : null;
+              const bDate = b.event_date ? new Date(b.event_date + "T00:00:00") : null;
+              const aOverdue = aDate && !a.completed && isBefore(aDate, today);
+              const bOverdue = bDate && !b.completed && isBefore(bDate, today);
+              if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+              if (aDate && bDate) return aDate.getTime() - bDate.getTime();
+              if (aDate) return -1;
+              if (bDate) return 1;
+              return 0;
+            });
+          }
 
-                // Sort events within each month: overdue first, then by date, completed last
-                for (const group of sortedGroups) {
-                  group.events.sort((a, b) => {
-                    // Completed always last
-                    if (a.completed !== b.completed) return a.completed ? 1 : -1;
-                    // Among incomplete: overdue first
-                    const aDate = a.event_date ? new Date(a.event_date + "T00:00:00") : null;
-                    const bDate = b.event_date ? new Date(b.event_date + "T00:00:00") : null;
-                    const aOverdue = aDate && !a.completed && isBefore(aDate, today);
-                    const bOverdue = bDate && !b.completed && isBefore(bDate, today);
-                    if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
-                    // Then by date ascending
-                    if (aDate && bDate) return aDate.getTime() - bDate.getTime();
-                    if (aDate) return -1;
-                    if (bDate) return 1;
-                    return 0;
-                  });
-                }
+          function toggleMonth(key: string) {
+            setExpandedMonths((prev) => {
+              const next = new Set(prev);
+              if (next.has(key)) next.delete(key);
+              else next.add(key);
+              return next;
+            });
+          }
 
-                function toggleMonth(key: string) {
-                  setExpandedMonths((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(key)) {
-                      next.delete(key);
-                    } else {
-                      next.add(key);
-                    }
-                    return next;
-                  });
-                }
+          return (
+            <div className="space-y-8">
+              {sortedGroups.map((group) => {
+                const isExpanded = expandedMonths.has(group.key);
+                const completedInGroup = group.events.filter((e) => e.completed).length;
+                const totalInGroup = group.events.length;
 
-                return sortedGroups.map((group) => {
-                  const isExpanded = expandedMonths.has(group.key);
-                  const completedInGroup = group.events.filter((e) => e.completed).length;
-                  const totalInGroup = group.events.length;
-                  const allDone = completedInGroup === totalInGroup && totalInGroup > 0;
-                  const pct = totalInGroup > 0 ? Math.round((completedInGroup / totalInGroup) * 100) : 0;
-
-                  return (
-                    <div key={group.key} className="border rounded-lg overflow-hidden">
-                      {/* Month header */}
+                return (
+                  <div key={group.key}>
+                    {/* Month header — Day-of Details style */}
+                    <div className="flex items-center justify-between mb-3 pb-2 border-b border-border/50">
                       <button
                         onClick={() => toggleMonth(group.key)}
-                        className="flex items-center gap-3 w-full px-4 py-3 bg-muted/40 hover:bg-muted/60 transition-colors text-left"
+                        className="flex items-center gap-2 text-xs font-semibold tracking-[0.12em] uppercase text-foreground/80 hover:text-foreground transition-colors"
                       >
-                        {isExpanded ? (
-                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        )}
-                        <span className="font-semibold text-sm flex-1">{group.label}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {completedInGroup}/{totalInGroup} done
-                        </span>
-                        {/* Progress bar */}
-                        <div className="w-20 h-1.5 bg-muted rounded-full overflow-hidden shrink-0">
-                          <div
-                            className={`h-full rounded-full transition-all ${
-                              pct === 100 ? "bg-green-500" : pct > 50 ? "bg-blue-500" : "bg-muted-foreground/40"
-                            }`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
+                        <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")} />
+                        {group.label}
                       </button>
-
-                      {/* Month content */}
-                      {isExpanded && (
-                        <div className="p-2 space-y-2">
-                          {group.events.map((event) => {
-                              const isEditing = editingId === event.id;
-                              const eventDateObj = event.event_date
-                                ? new Date(event.event_date + "T00:00:00")
-                                : null;
-                              const isOverdue =
-                                eventDateObj &&
-                                !event.completed &&
-                                isBefore(eventDateObj, today);
-                              const isDueSoon =
-                                eventDateObj &&
-                                !event.completed &&
-                                !isOverdue &&
-                                isBefore(eventDateObj, weekFromNow);
-
-                              return (
-                                <AssignContextMenu
-                                  key={event.id}
-                                  eventId={event.id}
-                                  partner1Name={partner1Name}
-                                  partner2Name={partner2Name}
-                                  onAssign={quickAssign}
-                                >
-                                <div
-                                  className={`flex items-start gap-3 p-4 border rounded-lg group transition-colors ${
-                                    event.completed
-                                      ? "bg-muted/50 border-border"
-                                      : "bg-card border-border"
-                                  }`}
-                                >
-                                  <button
-                                    onClick={() =>
-                                      toggleComplete(event.id, event.completed)
-                                    }
-                                    className="mt-0.5 shrink-0 group/check"
-                                    title={event.completed ? "Click to mark as not done" : "Click to mark as done"}
-                                  >
-                                    {event.completed ? (
-                                      <span className="relative">
-                                        <Check className="h-5 w-5 text-green-500 group-hover/check:hidden" />
-                                        <Circle className="h-5 w-5 text-muted-foreground hidden group-hover/check:block" />
-                                      </span>
-                                    ) : (
-                                      <Circle
-                                        className="h-5 w-5 text-muted-foreground hover:text-primary transition-colors"
-                                      />
-                                    )}
-                                  </button>
-                                  <div className="flex-1 min-w-0">
-                                    {isEditing ? (
-                                      <div className="space-y-2">
-                                        <Input
-                                          value={editTitle}
-                                          onChange={(e) => setEditTitle(e.target.value)}
-                                          className="h-8 text-sm font-medium"
-                                        />
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                          <Input
-                                            type="date"
-                                            value={editDate}
-                                            onChange={(e) => setEditDate(e.target.value)}
-                                            className="h-8 text-sm w-40"
-                                          />
-                                          <Button
-                                            size="sm"
-                                            className="h-7 text-xs"
-                                            onClick={() => saveEdit(event.id, "pre_wedding")}
-                                          >
-                                            Save
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            className="h-7 text-xs"
-                                            onClick={cancelEdit}
-                                          >
-                                            Cancel
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      (() => {
-                                        const taskMeta = taskLinkMap.get(event.title);
-                                        return (
-                                          <>
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                              <AssignDot assignedTo={event.assigned_to} />
-                                              <span
-                                                className={`font-medium cursor-pointer hover:underline ${
-                                                  event.completed
-                                                    ? "line-through text-muted-foreground"
-                                                    : ""
-                                                }`}
-                                                onClick={() => startEditing(event)}
-                                              >
-                                                {event.title}
-                                              </span>
-                                              {taskMeta?.optional && (
-                                                <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-medium">
-                                                  Optional
-                                                </span>
-                                              )}
-                                              <PriorityBadge priority={event.priority} />
-                                              {event.event_date && (
-                                                <Badge
-                                                  variant="outline"
-                                                  className="text-xs shrink-0 cursor-pointer hover:bg-muted"
-                                                  onClick={() => startEditing(event)}
-                                                >
-                                                  {format(
-                                                    new Date(event.event_date + "T00:00:00"),
-                                                    "MMM d, yyyy"
-                                                  )}
-                                                </Badge>
-                                              )}
-                                              {isOverdue && (
-                                                <span className="text-[11px] font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
-                                                  Overdue
-                                                </span>
-                                              )}
-                                              {isDueSoon && (
-                                                <span className="text-[11px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
-                                                  Due soon
-                                                </span>
-                                              )}
-                                            </div>
-                                            {event.description && (
-                                              <p className="text-sm text-muted-foreground mt-0.5">
-                                                {event.description}
-                                                {(() => {
-                                                  const meta = taskLinkMap.get(event.title);
-                                                  if (!meta?.link) return null;
-                                                  const labelMap: Record<string, string> = {
-                                                    "/shopping": "Shopping List",
-                                                    "/moodboard": "Moodboard",
-                                                    "/guests": "Guest List",
-                                                    "/website": "Website Builder",
-                                                    "/seating": "Seating Chart",
-                                                    "/music": "Music Planner",
-                                                    "/vendors": "Vendors",
-                                                    "/tips": "Tips & Emergency Kit",
-                                                    "/booklets": "Vendor Booklets",
-                                                    "/packing": "Packing Lists",
-                                                    "/share": "Share with Party",
-                                                  };
-                                                  const label = labelMap[meta.link] || "Open";
-                                                  return (
-                                                    <>
-                                                      {" "}
-                                                      <Link href={meta.link} className="text-primary hover:underline whitespace-nowrap">
-                                                        → {label}
-                                                      </Link>
-                                                    </>
-                                                  );
-                                                })()}
-                                              </p>
-                                            )}
-                                          </>
-                                        );
-                                      })()
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-1 shrink-0">
-                                    {/* Assigned name — always visible */}
-                                    {event.assigned_to && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setMenuEventId(event.id);
-                                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                          setMenuPos({ x: rect.left, y: rect.bottom + 4 });
-                                        }}
-                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border border-amber-200/80 bg-amber-50/80 text-amber-800 hover:bg-amber-100 transition-colors"
-                                        title="Click to reassign"
-                                      >
-                                        {event.assigned_to === "partner1"
-                                          ? partner1Name
-                                          : event.assigned_to === "partner2"
-                                          ? partner2Name
-                                          : event.assigned_to === "together"
-                                          ? `${partner1Name} & ${partner2Name}`
-                                          : event.assigned_to}
-                                      </button>
-                                    )}
-                                    {/* Assign + Delete — hover visible */}
-                                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 md:opacity-30 md:hover:opacity-100 transition-opacity">
-                                      {!event.assigned_to && (
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-7 w-7"
-                                          title="Assign"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setMenuEventId(event.id);
-                                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                            setMenuPos({ x: rect.left, y: rect.bottom + 4 });
-                                          }}
-                                        >
-                                          <UserPlus className="h-3.5 w-3.5" />
-                                        </Button>
-                                      )}
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7 text-destructive"
-                                        onClick={() => deleteEvent(event.id)}
-                                      >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </div>
-                                </AssignContextMenu>
-                              );
-                            })}
-                        </div>
-                      )}
+                      <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+                        {completedInGroup}/{totalInGroup}
+                      </span>
                     </div>
-                  );
-                });
-              })()}
-            </div>
-          )}
-        </TabsContent>
 
-        <TabsContent value="day_of" className="mt-6 space-y-6">
-          {/* Settings bar */}
-          <Card>
-            <CardContent className="py-4">
-              <div className="flex flex-wrap items-end gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">Ceremony time</Label>
-                  <div className="flex items-center gap-1">
-                    <Select value={ceremonyHour} onValueChange={(v) => setCeremonyHour(v ?? "5")}>
-                      <SelectTrigger className="w-[60px] h-8 text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
-                          <SelectItem key={h} value={String(h)}>{h}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <span className="text-muted-foreground font-medium">:</span>
-                    <Select value={ceremonyMinute} onValueChange={(v) => setCeremonyMinute(v ?? "00")}>
-                      <SelectTrigger className="w-[60px] h-8 text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {["00", "15", "30", "45"].map((m) => (
-                          <SelectItem key={m} value={m}>{m}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select value={ceremonyAmPm} onValueChange={(v) => setCeremonyAmPm(v ?? "PM")}>
-                      <SelectTrigger className="w-[65px] h-8 text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="AM">AM</SelectItem>
-                        <SelectItem value="PM">PM</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">Party members getting H&MU</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={20}
-                    value={dayOfPartySize}
-                    onChange={(e) => setDayOfPartySize(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="w-[70px] h-8 text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">H&MU artists</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={dayOfArtistCount}
-                    onChange={(e) => setDayOfArtistCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    className="w-[70px] h-8 text-sm"
-                  />
-                </div>
-                <Button
-                  size="sm"
-                  onClick={regenerateDayOf}
-                  disabled={dayOfRegenerating}
-                  className="gap-1.5 h-8"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${dayOfRegenerating ? "animate-spin" : ""}`} />
-                  {dayOfRegenerating ? "Regenerating..." : "Regenerate"}
-                </Button>
-              </div>
-              {/* Calculated info */}
-              <div className="flex flex-wrap gap-4 mt-3 text-xs text-muted-foreground">
-                <span>
-                  Hair & makeup starts at{" "}
-                  <span className="font-semibold text-foreground">
-                    {format(new Date(`2000-01-01T${formatTimeStr(Math.max(0, hmuInfo.partyStartsAt))}`), "h:mm a")}
-                  </span>
-                </span>
-                <span>
-                  {partner1Name} ready by{" "}
-                  <span className="font-semibold text-foreground">
-                    {format(new Date(`2000-01-01T${formatTimeStr(Math.max(0, hmuInfo.primaryReadyAt))}`), "h:mm a")}
-                  </span>
-                </span>
-              </div>
-            </CardContent>
-          </Card>
+                    {/* Month content */}
+                    {isExpanded && (
+                      <div className="border-l-2 border-primary/25 ml-1">
+                        {group.events.map((event) => {
+                          const isEditing = editingId === event.id;
+                          const eventDateObj = event.event_date ? new Date(event.event_date + "T00:00:00") : null;
+                          const isOverdue = eventDateObj && !event.completed && isBefore(eventDateObj, today);
+                          const isDueSoon = eventDateObj && !event.completed && !isOverdue && isBefore(eventDateObj, weekFromNow);
+                          const taskMeta = taskLinkMap.get(event.title);
 
-          {dayOfEvents.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                <p>No day-of timeline yet.</p>
-                <p className="text-sm mt-1">
-                  Click &ldquo;Auto-Generate&rdquo; or &ldquo;Regenerate&rdquo; to create an
-                  hour-by-hour schedule.
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            (() => {
-              // Group events by phase
-              const phaseOrder: DayOfPhase[] = [
-                "getting_ready", "photos", "ceremony", "cocktail_hour", "reception", "exit_wrapup",
-              ];
-              const grouped: { phase: DayOfPhase; events: TimelineEvent[] }[] = [];
-              let currentPhase: DayOfPhase | null = null;
-
-              for (const event of dayOfEvents) {
-                const phase = getPhaseForEvent(event.title);
-                if (phase !== currentPhase) {
-                  currentPhase = phase;
-                  grouped.push({ phase, events: [event] });
-                } else {
-                  grouped[grouped.length - 1].events.push(event);
-                }
-              }
-
-              // Sort groups by phase order (preserve first-occurrence order within phase order)
-              grouped.sort((a, b) => {
-                const ai = phaseOrder.indexOf(a.phase);
-                const bi = phaseOrder.indexOf(b.phase);
-                return ai - bi;
-              });
-
-              return (
-                <div className="relative">
-                  {grouped.map((group, gi) => {
-                    const phaseConfig = PHASE_CONFIG[group.phase];
-                    return (
-                      <div key={`${group.phase}-${gi}`} className="mb-2">
-                        {/* Phase header */}
-                        <div className="flex items-center gap-3 mb-3 mt-1">
-                          <div className={`h-3 w-3 rounded-full ${phaseConfig.dot} ring-2 ring-background shadow-sm`} />
-                          <h3 className={`text-sm font-bold uppercase tracking-wider ${phaseConfig.color}`}>
-                            {phaseConfig.label}
-                          </h3>
-                          <div className="flex-1 h-px bg-border" />
-                        </div>
-
-                        {/* Events in this phase */}
-                        <div className="ml-[5px] border-l-2 border-border pl-6 space-y-0">
-                          {group.events.map((event, ei) => {
-                            const isEditing = editingId === event.id;
-                            const isLast = ei === group.events.length - 1;
-                            return (
-                              <AssignContextMenu
-                                key={event.id}
-                                eventId={event.id}
-                                partner1Name={partner1Name}
-                                partner2Name={partner2Name}
-                                onAssign={quickAssign}
-                              >
-                              <div className={`relative flex items-start gap-3 py-3 px-3 group rounded-lg hover:bg-muted/30 transition-colors ${isLast ? "mb-3" : ""}`}>
-                                {/* Timeline dot */}
-                                <div className={`absolute -left-[33px] top-[18px] h-2.5 w-2.5 rounded-full border-2 border-background ${phaseConfig.dot} shadow-sm`} />
-
-                                {/* Time column */}
-                                {isEditing ? (
-                                  <Input
-                                    type="time"
-                                    value={editTime}
-                                    onChange={(e) => setEditTime(e.target.value)}
-                                    className="w-24 h-8 text-sm font-mono shrink-0"
-                                  />
-                                ) : (
-                                  <div
-                                    className="w-[68px] text-sm font-mono text-muted-foreground shrink-0 pt-0.5 cursor-pointer hover:text-foreground tabular-nums"
-                                    onClick={() => startEditing(event)}
-                                  >
-                                    {event.event_time
-                                      ? format(
-                                          new Date(`2000-01-01T${event.event_time}`),
-                                          "h:mm a"
-                                        )
-                                      : "\u2014"}
-                                  </div>
+                          return (
+                            <AssignContextMenuWrapper
+                              key={event.id}
+                              eventId={event.id}
+                              onRightClick={handleRightClickAssign}
+                            >
+                              <div
+                                className={cn(
+                                  "group relative flex items-start gap-3 py-2 pl-5 pr-2 -ml-px rounded-r-lg transition-colors",
+                                  isEditing ? "bg-primary/[0.03]" : "hover:bg-muted/20"
                                 )}
+                              >
+                                {/* Timeline dot — aligned with title baseline */}
+                                <div className={cn(
+                                  "absolute left-[-5px] top-[14px] h-2 w-2 rounded-full ring-2 ring-background",
+                                  event.completed ? "bg-primary" : isOverdue ? "bg-red-500" : "bg-primary/70"
+                                )} />
+
+                                {/* Checkbox — aligned with title */}
+                                <button
+                                  onClick={() => toggleComplete(event.id, event.completed)}
+                                  className="shrink-0 group/check mt-[3px]"
+                                  title={event.completed ? "Mark as not done" : "Mark as done"}
+                                >
+                                  {event.completed ? (
+                                    <span className="relative">
+                                      <Check className="h-4 w-4 text-primary group-hover/check:hidden" />
+                                      <Circle className="h-4 w-4 text-muted-foreground hidden group-hover/check:block" />
+                                    </span>
+                                  ) : (
+                                    <Circle className="h-4 w-4 text-muted-foreground hover:text-primary transition-colors" />
+                                  )}
+                                </button>
 
                                 {/* Content */}
                                 <div className="flex-1 min-w-0">
                                   {isEditing ? (
-                                    <div className="space-y-2">
+                                    <div className="space-y-1.5">
                                       <Input
                                         value={editTitle}
                                         onChange={(e) => setEditTitle(e.target.value)}
-                                        className="h-8 text-sm font-medium"
+                                        className="h-8 text-sm"
+                                        placeholder="Task title"
+                                        autoFocus
                                       />
                                       <div className="flex items-center gap-2 flex-wrap">
-                                        <Button
-                                          size="sm"
-                                          className="h-7 text-xs"
-                                          onClick={() => saveEdit(event.id, "day_of")}
-                                        >
-                                          Save
+                                        <Input
+                                          type="date"
+                                          value={editDate}
+                                          onChange={(e) => setEditDate(e.target.value)}
+                                          className="h-8 text-xs w-36"
+                                        />
+                                        <Button size="sm" className="h-7 text-xs" onClick={() => saveEdit(event.id)}>
+                                          Done
                                         </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="h-7 text-xs"
-                                          onClick={cancelEdit}
-                                        >
+                                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={cancelEdit}>
                                           Cancel
                                         </Button>
+                                        <button
+                                          onClick={() => deleteEvent(event.id)}
+                                          className="ml-auto text-muted-foreground/40 hover:text-destructive transition-colors p-1"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
                                       </div>
                                     </div>
                                   ) : (
                                     <>
-                                      <div className="flex items-center gap-2">
-                                        <AssignDot assignedTo={event.assigned_to} />
+                                      <div className="flex items-center gap-2 flex-wrap">
                                         <span
-                                          className="font-medium cursor-pointer hover:underline"
+                                          className={cn(
+                                            "text-sm font-medium cursor-pointer text-foreground",
+                                            event.completed && "line-through text-muted-foreground"
+                                          )}
                                           onClick={() => startEditing(event)}
                                         >
-                                          {event.title}
+                                          {event.title || "Untitled"}
                                         </span>
+                                        {taskMeta?.optional && (
+                                          <span className="text-[9px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider">
+                                            Optional
+                                          </span>
+                                        )}
+                                        {event.event_date && (
+                                          <span
+                                            className={cn(
+                                              "text-[10px] shrink-0 cursor-pointer px-1.5 py-0.5 rounded border font-medium tabular-nums",
+                                              isOverdue
+                                                ? "border-red-300 bg-red-50 text-red-700"
+                                                : isDueSoon
+                                                ? "border-amber-300 bg-amber-50 text-amber-800"
+                                                : "border-border/60 text-muted-foreground"
+                                            )}
+                                            onClick={() => startEditing(event)}
+                                          >
+                                            {format(new Date(event.event_date + "T00:00:00"), "MMM d")}
+                                            {isOverdue && " · overdue"}
+                                            {isDueSoon && " · this week"}
+                                          </span>
+                                        )}
                                       </div>
                                       {event.description && (
-                                        <p className="text-sm text-muted-foreground mt-0.5">
+                                        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
                                           {event.description}
+                                          {taskMeta?.link && (() => {
+                                            const labelMap: Record<string, string> = {
+                                              "/shopping": "Shopping List",
+                                              "/moodboard": "Moodboard",
+                                              "/guests": "Guest List",
+                                              "/website": "Website",
+                                              "/seating": "Seating",
+                                              "/music": "Music",
+                                              "/vendors": "Vendors",
+                                              "/tips": "Tips",
+                                              "/booklets": "Booklets",
+                                              "/packing": "Packing",
+                                              "/share": "Share",
+                                              "/day-of-details": "Day-of Details",
+                                            };
+                                            const label = labelMap[taskMeta.link] || "Open";
+                                            return (
+                                              <>
+                                                {" "}
+                                                <Link href={taskMeta.link} className="text-primary font-medium hover:underline whitespace-nowrap">
+                                                  → {label}
+                                                </Link>
+                                              </>
+                                            );
+                                          })()}
                                         </p>
+                                      )}
+                                      {/* Inline assign options */}
+                                      {menuEventId === event.id && (
+                                        <div className="flex items-center gap-2 pt-2 flex-wrap animate-fade-in-up">
+                                          <span className="text-[10px] text-muted-foreground/60">Assign:</span>
+                                          <button onClick={() => { quickAssign(event.id, "partner1"); setMenuEventId(null); }} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border hover:bg-violet-50 hover:border-violet-200 transition-colors">
+                                            <span className="h-2 w-2 rounded-full bg-violet-400" />{partner1Name}
+                                          </button>
+                                          <button onClick={() => { quickAssign(event.id, "partner2"); setMenuEventId(null); }} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border hover:bg-teal-50 hover:border-teal-200 transition-colors">
+                                            <span className="h-2 w-2 rounded-full bg-teal-400" />{partner2Name}
+                                          </button>
+                                          <button onClick={() => { quickAssign(event.id, "together"); setMenuEventId(null); }} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border hover:bg-amber-50 hover:border-amber-200 transition-colors">
+                                            <span className="h-2 w-2 rounded-full bg-amber-400" />Both
+                                          </button>
+                                          {event.assigned_to && (
+                                            <button onClick={() => { quickAssign(event.id, null); setMenuEventId(null); }} className="px-2 py-0.5 rounded-full text-[11px] text-muted-foreground hover:bg-muted transition-colors">
+                                              Unassign
+                                            </button>
+                                          )}
+                                          <button onClick={() => setMenuEventId(null)} className="ml-auto text-xs text-muted-foreground/50 hover:text-foreground">✕</button>
+                                        </div>
                                       )}
                                     </>
                                   )}
                                 </div>
 
-                                {/* Action buttons */}
-                                <div className={`flex gap-0.5 shrink-0 transition-opacity ${
-                                  menuEventId === event.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                                }`}>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7"
-                                    title="Assign"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setMenuEventId(event.id);
-                                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                      setMenuPos({ x: rect.left, y: rect.bottom + 4 });
-                                    }}
-                                  >
-                                    <UserPlus className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 text-destructive"
-                                    onClick={() => deleteEvent(event.id)}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
+                                {/* Right column: assign dot + hover actions */}
+                                {!isEditing && (
+                                  <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                                    {event.assigned_to && (() => {
+                                      const isP1 = event.assigned_to === "partner1";
+                                      const isP2 = event.assigned_to === "partner2";
+                                      const isBoth = event.assigned_to === "together";
+                                      const color = isP1 ? "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100"
+                                        : isP2 ? "border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
+                                        : isBoth ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                        : "border-muted bg-muted text-muted-foreground";
+                                      const sameInitial = partner1Name.charAt(0).toUpperCase() === partner2Name.charAt(0).toUpperCase();
+                                      const p1Label = sameInitial ? partner1Name.slice(0, 2) : partner1Name.charAt(0);
+                                      const p2Label = sameInitial ? partner2Name.slice(0, 2) : partner2Name.charAt(0);
+                                      const label = isP1 ? p1Label : isP2 ? p2Label : isBoth ? `${p1Label}&${p2Label}` : "?";
+                                      const fullName = isP1 ? partner1Name : isP2 ? partner2Name : isBoth ? `${partner1Name} & ${partner2Name}` : event.assigned_to;
+                                      return (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setMenuEventId(menuEventId === event.id ? null : event.id);
+                                          }}
+                                          className={`inline-flex items-center justify-center h-6 min-w-[24px] px-1.5 rounded-full text-[11px] font-bold border transition-colors ${color}`}
+                                          title={`Assigned to ${fullName} — click to reassign`}
+                                        >
+                                          {label}
+                                        </button>
+                                      );
+                                    })()}
+                                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      {!event.assigned_to && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setMenuEventId(menuEventId === event.id ? null : event.id);
+                                          }}
+                                          className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                                          title="Assign"
+                                        >
+                                          <UserPlus className="h-4 w-4" />
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={() => startEditing(event)}
+                                        className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                                        title="Edit"
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                              </AssignContextMenu>
-                            );
-                          })}
-                        </div>
+                            </AssignContextMenuWrapper>
+                          );
+                        })}
+                        {/* Add here */}
+                        <button
+                          onClick={() => addEventInMonth(group.key)}
+                          className="flex items-center gap-1.5 mt-2 ml-5 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <Plus className="h-3 w-3" />
+                          Add here
+                        </button>
                       </div>
-                    );
-                  })}
-                </div>
-              );
-            })()
-          )}
-        </TabsContent>
-      </Tabs>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </div>
 
-      {/* Shared assign menu (triggered by button click) */}
-      {menuEventId && (
-        <AssignMenu
-          partner1Name={partner1Name}
-          partner2Name={partner2Name}
-          onSelect={(value) => {
-            quickAssign(menuEventId, value);
-            setMenuEventId(null);
-          }}
-          pos={menuPos}
-          onClose={() => setMenuEventId(null)}
-        />
-      )}
 
       {/* Add Event Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
@@ -1503,25 +1108,14 @@ export function TimelineManager({
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
-              {tab === "pre_wedding" ? (
-                <div className="space-y-2">
-                  <Label>Date</Label>
-                  <Input
-                    type="date"
-                    value={eventDate}
-                    onChange={(e) => setEventDate(e.target.value)}
-                  />
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Label>Time</Label>
-                  <Input
-                    type="time"
-                    value={eventTime}
-                    onChange={(e) => setEventTime(e.target.value)}
-                  />
-                </div>
-              )}
+              <div className="space-y-2">
+                <Label>Date</Label>
+                <Input
+                  type="date"
+                  value={eventDate}
+                  onChange={(e) => setEventDate(e.target.value)}
+                />
+              </div>
               <div className="space-y-2">
                 <Label>Assigned To</Label>
                 <Select

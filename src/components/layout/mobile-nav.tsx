@@ -20,6 +20,8 @@ import {
   PartyPopper,
   Settings,
   Palette,
+  LayoutGrid,
+  ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -40,28 +42,29 @@ const primaryTabs = [
 
 const moreGroups = [
   {
-    title: "Get Started",
+    title: "The Basics",
     items: [
       { href: "/vendors", icon: Users, label: "Vendors" },
     ],
   },
   {
-    title: "Set the Vibe",
+    title: "Your Vision",
     items: [
       { href: "/moodboard", icon: Palette, label: "Moodboard" },
       { href: "/music", icon: Music, label: "Music" },
+    ],
+  },
+  {
+    title: "Making It Happen",
+    items: [
+      { href: "/day-of-details", icon: ClipboardCheck, label: "Day-of Details" },
+      { href: "/layout-guide", icon: LayoutGrid, label: "Layout Guide" },
       { href: "/seating", icon: Layout, label: "Seating" },
       { href: "/website", icon: Globe, label: "Website" },
     ],
   },
   {
-    title: "Money & Shopping",
-    items: [
-      { href: "/budget", icon: Wallet, label: "Budget" },
-    ],
-  },
-  {
-    title: "Final Prep",
+    title: "The Home Stretch",
     items: [
       { href: "/tips", icon: Sparkles, label: "Tips" },
       { href: "/booklets", icon: BookOpen, label: "Booklets" },

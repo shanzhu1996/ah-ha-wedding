@@ -19,92 +19,92 @@ import {
   Heart,
   PartyPopper,
   ArrowRight,
+  LayoutGrid,
+  ClipboardCheck,
 } from "lucide-react";
 
-interface MapNode {
-  key: string;
+interface Tool {
   label: string;
+  tagline: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
+  highlight?: boolean;
 }
 
-interface MapStep {
+interface Step {
   number: number;
-  title: string;
+  question: string;
   description: string;
-  nodes: MapNode[];
-  accent: string;
-  dotColor: string;
+  tools: Tool[];
 }
 
-const STEPS: MapStep[] = [
+const STEPS: Step[] = [
   {
     number: 1,
-    title: "Get Started",
+    question: "Who's involved?",
     description:
-      "Set up the basics — who's helping you on the big day and who's celebrating with you.",
-    nodes: [
-      { key: "vendors", label: "Vendors", href: "/vendors", icon: Users },
-      { key: "guests", label: "Guests", href: "/guests", icon: ClipboardList },
+      "Before you plan anything, know two things: who's helping you and who's celebrating with you.",
+    tools: [
+      { label: "Vendors", tagline: "Who's helping you?", href: "/vendors", icon: Users },
+      { label: "Guests", tagline: "Who's coming?", href: "/guests", icon: ClipboardList },
     ],
-    accent: "from-rose-100 to-rose-50",
-    dotColor: "bg-rose-400",
   },
   {
     number: 2,
-    title: "Set the Vibe",
+    question: "What's your vision?",
     description:
-      "Define what your wedding looks, sounds, and feels like. This is the creative part — collect inspiration and plan the details.",
-    nodes: [
-      { key: "moodboard", label: "Moodboard", href: "/moodboard", icon: Palette },
-      { key: "timeline", label: "Timeline", href: "/timeline", icon: CalendarDays },
-      { key: "music", label: "Music", href: "/music", icon: Music },
-      { key: "seating", label: "Seating", href: "/seating", icon: Layout },
-      { key: "website", label: "Website", href: "/website", icon: Globe },
+      "What does it look like, feel like, sound like? Don't worry about logistics yet — just dream.",
+    tools: [
+      { label: "Moodboard", tagline: "What does it feel like?", href: "/moodboard", icon: Palette },
+      { label: "Music", tagline: "What does it sound like?", href: "/music", icon: Music },
     ],
-    accent: "from-amber-100 to-amber-50",
-    dotColor: "bg-amber-400",
   },
   {
     number: 3,
-    title: "Money & Shopping",
+    question: "How does it all come together?",
     description:
-      "Track your budget and check off everything you need to buy or rent. We've pre-filled 84 items so you don't forget anything.",
-    nodes: [
-      { key: "budget", label: "Budget", href: "/budget", icon: Wallet },
-      { key: "shopping", label: "Shopping", href: "/shopping", icon: CheckSquare },
+      "You have a vision — now make it real. The timeline is your master checklist.",
+    tools: [
+      { label: "Timeline", tagline: "Your planning to-do list", href: "/timeline", icon: CalendarDays },
+      { label: "Budget", tagline: "Where is the money going?", href: "/budget", icon: Wallet },
+      { label: "Day-of Details", tagline: "Ceremony, reception, photos & logistics", href: "/day-of-details", icon: ClipboardCheck, highlight: true },
+      { label: "Shopping", tagline: "What do you need?", href: "/shopping", icon: CheckSquare },
+      { label: "Layout", tagline: "Where does everything go?", href: "/layout-guide", icon: LayoutGrid },
+      { label: "Seating", tagline: "Who sits where?", href: "/seating", icon: Layout },
+      { label: "Website", tagline: "Where do guests find info?", href: "/website", icon: Globe },
     ],
-    accent: "from-emerald-100 to-emerald-50",
-    dotColor: "bg-emerald-400",
   },
   {
     number: 4,
-    title: "Final Prep",
+    question: "Is everything ready?",
     description:
-      "The last stretch — generate vendor booklets, pack your boxes, share the plan with your wedding party, and review day-of tips.",
-    nodes: [
-      { key: "tips", label: "Tips & Emergency Kit", href: "/tips", icon: Sparkles },
-      { key: "booklets", label: "Vendor Booklets", href: "/booklets", icon: BookOpen },
-      { key: "packing", label: "Packing", href: "/packing", icon: Package },
-      { key: "share", label: "Share with Party", href: "/share", icon: Share2 },
+      "Last few weeks. Make sure everyone knows the plan.",
+    tools: [
+      { label: "Tips", tagline: "Advice from experience", href: "/tips", icon: Sparkles },
+      { label: "Booklets", tagline: "Brief your vendors", href: "/booklets", icon: BookOpen },
+      { label: "Packing", tagline: "What goes where?", href: "/packing", icon: Package },
+      { label: "Share", tagline: "Brief your party", href: "/share", icon: Share2 },
     ],
-    accent: "from-violet-100 to-violet-50",
-    dotColor: "bg-violet-400",
   },
 ];
 
 interface PlanningMapProps {
   weddingDate: string | null;
+  completedFeatures?: string[];
 }
 
-function StepCard({
+function StepSection({
   step,
   index,
-  isLeft,
+  isActive,
+  onActivate,
+  isLast,
 }: {
-  step: MapStep;
+  step: Step;
   index: number;
-  isLeft?: boolean;
+  isActive: boolean;
+  onActivate: () => void;
+  isLast: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -112,7 +112,6 @@ function StepCard({
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -120,9 +119,8 @@ function StepCard({
           observer.unobserve(el);
         }
       },
-      { threshold: 0.2 }
+      { threshold: 0.1 }
     );
-
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
@@ -130,60 +128,71 @@ function StepCard({
   return (
     <div
       ref={ref}
-      className="relative flex items-start gap-5"
+      className="relative flex gap-5 sm:gap-8 group/step"
+      onMouseEnter={onActivate}
       style={{
         opacity: visible ? 1 : 0,
-        transform: visible
-          ? "translateY(0)"
-          : `translateY(30px)`,
-        transition: `opacity 0.6s ease ${index * 0.15}s, transform 0.6s ease ${index * 0.15}s`,
+        transform: visible ? "translateY(0)" : "translateY(16px)",
+        transition: `opacity 0.6s ease ${index * 0.1}s, transform 0.6s ease ${index * 0.1}s`,
       }}
     >
-      {/* Timeline dot — left side */}
-      <div className="flex items-start shrink-0">
+      {/* Left column: number + vertical line */}
+      <div className="flex flex-col items-center shrink-0">
+        {/* Step number circle */}
         <div
-          className={`h-9 w-9 rounded-full ${step.dotColor} flex items-center justify-center text-white font-bold text-sm shadow-lg`}
-          style={{
-            boxShadow: visible
-              ? `0 0 16px ${step.dotColor.includes("rose") ? "rgba(244,63,94,0.25)" : step.dotColor.includes("amber") ? "rgba(245,158,11,0.25)" : step.dotColor.includes("emerald") ? "rgba(16,185,129,0.25)" : "rgba(139,92,246,0.25)"}`
-              : "none",
-            transition: "box-shadow 0.8s ease",
-          }}
+          className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-lg sm:text-xl font-[family-name:var(--font-heading)] shrink-0 transition-all duration-300 ${
+            isActive
+              ? "bg-primary text-primary-foreground shadow-[0_2px_16px_rgba(196,168,130,0.3)]"
+              : "bg-primary/15 text-primary"
+          }`}
         >
           {step.number}
         </div>
+        {/* Vertical connector line */}
+        {!isLast && (
+          <div className="w-px flex-1 mt-2 min-h-[2rem] bg-primary/25" />
+        )}
       </div>
 
-      {/* Card */}
-      <div className="flex-1">
-        <div
-          className={`rounded-2xl bg-gradient-to-br ${step.accent} border border-white/60 p-5 shadow-sm hover:shadow-md transition-shadow`}
-        >
-          <h3 className="text-lg font-bold font-[family-name:var(--font-heading)]">
-            {step.title}
-          </h3>
-          <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-            {step.description}
-          </p>
-          <div className="flex flex-wrap gap-2 mt-4">
-            {step.nodes.map((node) => {
-              const Icon = node.icon;
-              return (
-                <Link
-                  key={node.key}
-                  href={node.href}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/70 border border-white text-xs font-medium text-foreground hover:bg-white hover:shadow-sm transition-all group"
-                >
-                  <Icon className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
-                  {node.label}
-                  <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-primary/60 transition-all -ml-1 group-hover:ml-0" />
-                </Link>
-              );
-            })}
-          </div>
+      {/* Right column: content */}
+      <div className="pb-10 min-w-0 flex-1">
+        {/* Question */}
+        <h3 className="text-xl sm:text-2xl font-[family-name:var(--font-heading)] tracking-tight mb-2 text-foreground">
+          {step.question}
+        </h3>
+        <p className="text-sm text-muted-foreground leading-relaxed mb-5 max-w-lg">
+          {step.description}
+        </p>
+
+        {/* Tool cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          {step.tools.map((tool) => {
+            const Icon = tool.icon;
+            return (
+              <Link
+                key={tool.href}
+                href={tool.href}
+                className={`group relative p-3.5 rounded-xl border transition-all duration-300 hover:shadow-[0_4px_20px_rgba(196,168,130,0.12)] ${
+                  tool.highlight
+                    ? "border-primary/40 bg-primary/[0.04] hover:border-primary shadow-[0_2px_12px_rgba(196,168,130,0.12)]"
+                    : "border-border hover:border-primary/40"
+                }`}
+              >
+                <div className="relative flex items-start justify-between mb-2.5">
+                  <Icon className="h-4 w-4 text-primary/70 group-hover:text-primary transition-colors duration-300" />
+                  <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-all duration-300 -translate-x-1 group-hover:translate-x-0" />
+                </div>
+                <div className="relative">
+                  <span className="text-sm font-semibold block">{tool.label}</span>
+                  <span className="text-[11px] text-muted-foreground block mt-0.5 leading-snug">
+                    {tool.tagline}
+                  </span>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </div>
-
     </div>
   );
 }
@@ -191,6 +200,8 @@ function StepCard({
 export function PlanningMap({ weddingDate }: PlanningMapProps) {
   const endRef = useRef<HTMLDivElement>(null);
   const [endVisible, setEndVisible] = useState(false);
+  const [activeStep, setActiveStep] = useState<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = endRef.current;
@@ -217,63 +228,56 @@ export function PlanningMap({ weddingDate }: PlanningMapProps) {
     : null;
 
   return (
-    <div className="relative">
-      {/* Vertical line */}
-      <div className="absolute left-[17px] top-0 bottom-0 w-0.5 bg-gradient-to-b from-rose-200 via-amber-200 via-emerald-200 to-violet-200" />
+    <div
+      ref={containerRef}
+      onMouseLeave={() => setActiveStep(null)}
+    >
+      {STEPS.map((step, i) => (
+        <StepSection
+          key={step.number}
+          step={step}
+          index={i}
+          isActive={activeStep === i}
+          onActivate={() => setActiveStep(i)}
+          isLast={i === STEPS.length - 1}
+        />
+      ))}
 
-      {/* Steps */}
-      <div className="space-y-8 md:space-y-12 relative">
-        {STEPS.map((step, i) => (
-          <StepCard
-            key={step.number}
-            step={step}
-            index={i}
-            isLeft={i % 2 === 0}
-          />
-        ))}
-
-        {/* Wedding Day endpoint */}
-        <div
-          ref={endRef}
-          className="relative flex items-start gap-5"
-          style={{
-            opacity: endVisible ? 1 : 0,
-            transform: endVisible ? "translateY(0) scale(1)" : "translateY(20px) scale(0.95)",
-            transition: "opacity 0.8s ease 0.6s, transform 0.8s ease 0.6s",
-          }}
-        >
-          <div className="shrink-0">
-            <div
-              className="h-9 w-9 rounded-full bg-primary flex items-center justify-center shadow-lg"
-              style={{
-                boxShadow: endVisible
-                  ? "0 0 24px rgba(200,100,100,0.35)"
-                  : "none",
-                transition: "box-shadow 1s ease",
-              }}
-            >
-              <Heart className="h-4.5 w-4.5 text-white fill-white" />
-            </div>
+      {/* Wedding Day */}
+      <div
+        ref={endRef}
+        className="relative flex gap-5 sm:gap-8"
+        style={{
+          opacity: endVisible ? 1 : 0,
+          transform: endVisible ? "translateY(0)" : "translateY(12px)",
+          transition: "opacity 0.8s ease 0.4s, transform 0.8s ease 0.4s",
+        }}
+      >
+        {/* Left column: heart icon */}
+        <div className="flex flex-col items-center shrink-0">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center bg-primary/15 shrink-0 shadow-[0_2px_12px_rgba(196,168,130,0.15)]">
+            <Heart className="h-5 w-5 sm:h-6 sm:w-6 text-primary fill-primary" />
           </div>
+        </div>
 
-          <div>
-            <h3 className="text-xl font-bold font-[family-name:var(--font-heading)] text-primary">
-              Wedding Day!
-            </h3>
-            {weddingDateFormatted && (
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {weddingDateFormatted}
-              </p>
-            )}
-            <Link
-              href="/postwedding"
-              className="inline-flex items-center gap-1.5 mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <PartyPopper className="h-3.5 w-3.5" />
-              Then: Post-Wedding tasks
-              <ArrowRight className="h-3 w-3" />
-            </Link>
-          </div>
+        {/* Right column */}
+        <div className="pt-1.5 pb-8">
+          <h3 className="text-xl sm:text-2xl font-[family-name:var(--font-heading)] text-primary">
+            Wedding Day
+          </h3>
+          {weddingDateFormatted && (
+            <p className="text-sm font-medium text-muted-foreground mt-0.5">
+              {weddingDateFormatted}
+            </p>
+          )}
+          <Link
+            href="/postwedding"
+            className="inline-flex items-center gap-1.5 mt-3 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <PartyPopper className="h-3 w-3" />
+            Then: Post-Wedding
+            <ArrowRight className="h-3 w-3" />
+          </Link>
         </div>
       </div>
     </div>

@@ -21,13 +21,13 @@ export default async function MoodboardPage() {
           Moodboard
         </h1>
         <p className="text-muted-foreground mt-1">
-          A moodboard is a collection of images that shows the look and feel you want for your wedding.
-          Collect inspiration and share it with your vendors — so everyone designs toward the same vision.
+          What does your wedding LOOK like? Collect inspiration images for colors, flowers, table settings, and style — then share with your vendors so everyone designs toward the same vision.
         </p>
-        <div className="flex gap-4 mt-3 text-xs text-muted-foreground">
-          <span><strong className="text-foreground">1.</strong> Browse <a href="https://www.pinterest.com/search/pins/?q=wedding+inspiration+moodboard" target="_blank" rel="noopener noreferrer" className="text-red-400 hover:text-red-500 underline underline-offset-2">Pinterest</a> for ideas</span>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-xs text-muted-foreground">
+          <span><strong className="text-foreground">1.</strong> Browse <a href="https://www.pinterest.com/search/pins/?q=wedding+inspiration+moodboard" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground underline underline-offset-2">Pinterest</a> for ideas</span>
           <span><strong className="text-foreground">2.</strong> Upload or paste pins here</span>
           <span><strong className="text-foreground">3.</strong> Export and share with your vendors</span>
+          <span className="text-muted-foreground/60">Best done: 8-10 months before the wedding</span>
         </div>
       </div>
       <MoodboardManager
