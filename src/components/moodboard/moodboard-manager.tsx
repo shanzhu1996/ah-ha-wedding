@@ -15,16 +15,15 @@ import {
   Sparkles,
   Trash2,
   ExternalLink,
-  Upload,
-  Link,
   Lightbulb,
-  Plus,
   ImagePlus,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 
 interface MoodboardImage {
   id: string;
@@ -50,26 +49,36 @@ interface MoodboardManagerProps {
   weddingStyle: string | null;
 }
 
+// Fix 10: Reordered to match vendor meeting sequence
+// Fix 6: priority flag for "start here" vs "add later"
+// Fix 7: guiding questions per section
+// Fix 9: suggestedCount per section
 const SECTIONS = [
   {
     key: "color_palette",
     title: "Color Palette",
     icon: Palette,
-    shareWith: "Florist, Stationer, Planner",
+    shareWith: "Florist, Coordinator",
     tip: "Start with one color you love, then pick 2-3 complementary shades.",
-    canvaSearch: "wedding color palette template",
+    question: "What's your hero color? Do you prefer warm or cool tones?",
     pinterestSearch: "wedding color palette inspiration",
     maxImages: 3,
+    suggestedCount: "3",
+    priority: true,
+    notePlaceholder: "Notes for your stationer & florist — which tones do you love or want to avoid?",
   },
   {
     key: "venue_setting",
     title: "Venue & Setting",
     icon: Building,
-    shareWith: "Planner, Coordinator",
+    shareWith: "Coordinator",
     tip: "Photograph your actual venue from different angles and times of day.",
-    canvaSearch: "wedding venue moodboard",
+    question: "Indoor, outdoor, or both? What's the natural light like?",
     pinterestSearch: "wedding venue decor inspiration",
     maxImages: 5,
+    suggestedCount: "3-5",
+    priority: true,
+    notePlaceholder: "Notes about your venue — what you love about the space, any constraints?",
   },
   {
     key: "florals",
@@ -77,9 +86,38 @@ const SECTIONS = [
     icon: Flower2,
     shareWith: "Florist",
     tip: "In-season flowers are 2-3x cheaper. Ask your florist what's available.",
-    canvaSearch: "wedding floral moodboard",
+    question: "Loose & wild or tight & structured? Any must-have flowers?",
     pinterestSearch: "wedding bouquet centerpiece inspiration",
     maxImages: 8,
+    suggestedCount: "5-8",
+    priority: true,
+    notePlaceholder: "Notes for your florist — what do you love or want to avoid?",
+  },
+  {
+    key: "photo_style",
+    title: "Photography Style",
+    icon: Camera,
+    shareWith: "Photographer",
+    tip: "Include reference photos showing the editing style you love.",
+    question: "Light & airy, moody & cinematic, or documentary?",
+    pinterestSearch: "wedding photography style light airy moody",
+    maxImages: 10,
+    suggestedCount: "10-15",
+    priority: false,
+    notePlaceholder: "Notes for your photographer — editing style, must-have shots, lighting preference?",
+  },
+  {
+    key: "attire",
+    title: "Attire & Accessories",
+    icon: Shirt,
+    shareWith: "Hair & Makeup",
+    tip: "Include hair and accessories — think about how it all looks together.",
+    question: "What silhouette? Any cultural elements?",
+    pinterestSearch: "wedding outfit accessories inspiration",
+    maxImages: 5,
+    suggestedCount: "3-5",
+    priority: false,
+    notePlaceholder: "Notes for your stylist — overall look, accessories, cultural elements?",
   },
   {
     key: "tablescape",
@@ -87,29 +125,12 @@ const SECTIONS = [
     icon: UtensilsCrossed,
     shareWith: "Caterer, Rentals, Coordinator",
     tip: "Guests stare at this for 2+ hours. Include place setting details.",
-    canvaSearch: "wedding tablescape design",
+    question: "Round or long tables? What vibe — minimal or layered?",
     pinterestSearch: "wedding table setting centerpiece",
     maxImages: 5,
-  },
-  {
-    key: "stationery",
-    title: "Stationery & Paper",
-    icon: Mail,
-    shareWith: "Stationer, Designer",
-    tip: "Your stationery sets the tone before guests arrive.",
-    canvaSearch: "wedding stationery suite design",
-    pinterestSearch: "wedding invitation suite design",
-    maxImages: 5,
-  },
-  {
-    key: "attire",
-    title: "Attire & Accessories",
-    icon: Shirt,
-    shareWith: "Stylist, Hair & Makeup",
-    tip: "Include hair and accessories — think about how it all looks together.",
-    canvaSearch: "wedding attire moodboard",
-    pinterestSearch: "wedding outfit accessories inspiration",
-    maxImages: 5,
+    suggestedCount: "3-5",
+    priority: false,
+    notePlaceholder: "Notes for your caterer & rental company — table shapes, linens, place settings?",
   },
   {
     key: "cake_desserts",
@@ -117,9 +138,25 @@ const SECTIONS = [
     icon: Cake,
     shareWith: "Baker",
     tip: "Show your baker 3-5 reference cakes. Note what you like about each.",
-    canvaSearch: "wedding cake design inspiration",
+    question: "Fondant or buttercream? How many tiers? Any flavors in mind?",
     pinterestSearch: "wedding cake design ideas",
     maxImages: 5,
+    suggestedCount: "3-5",
+    priority: false,
+    notePlaceholder: "Notes for your baker — flavors, decorating style, dietary needs?",
+  },
+  {
+    key: "stationery",
+    title: "Stationery & Paper",
+    icon: Mail,
+    shareWith: "Coordinator",
+    tip: "Your stationery sets the tone before guests arrive.",
+    question: "Modern & clean or vintage & textured? Handwritten or printed?",
+    pinterestSearch: "wedding invitation suite design",
+    maxImages: 5,
+    suggestedCount: "3-5",
+    priority: false,
+    notePlaceholder: "Notes for your stationer — style, paper weight, calligraphy preference?",
   },
   {
     key: "lighting",
@@ -127,31 +164,30 @@ const SECTIONS = [
     icon: Lamp,
     shareWith: "DJ, Coordinator, Venue",
     tip: "Lighting transforms a space, especially for evening receptions.",
-    canvaSearch: "wedding lighting moodboard",
+    question: "String lights, candles, uplighting, or natural light?",
     pinterestSearch: "wedding lighting string lights ambiance",
     maxImages: 5,
-  },
-  {
-    key: "photo_style",
-    title: "Photography Style",
-    icon: Camera,
-    shareWith: "Photographer",
-    tip: "Include 10-15 reference photos showing the editing style you love.",
-    canvaSearch: "wedding photography style moodboard",
-    pinterestSearch: "wedding photography style light airy moody",
-    maxImages: 10,
+    suggestedCount: "3-5",
+    priority: false,
+    notePlaceholder: "Notes for your venue & coordinator — lighting vibe, candle preferences, restrictions?",
   },
   {
     key: "details",
     title: "Details & Personal Touches",
     icon: Sparkles,
-    shareWith: "Planner, Coordinator",
+    shareWith: "Coordinator",
     tip: "The little things people remember. Make it uniquely yours.",
-    canvaSearch: "wedding details moodboard",
+    question: "Favors, guest book style, signage, personal touches?",
     pinterestSearch: "wedding details favors guest book ideas",
     maxImages: 5,
+    suggestedCount: "3-5",
+    priority: false,
+    notePlaceholder: "Notes for your planner — personal touches, DIY elements, special items?",
   },
 ];
+
+const PRIORITY_SECTIONS = SECTIONS.filter((s) => s.priority);
+const MORE_SECTIONS = SECTIONS.filter((s) => !s.priority);
 
 export function MoodboardManager({
   sections: initialSections,
@@ -167,7 +203,27 @@ export function MoodboardManager({
   const [showUrlInput, setShowUrlInput] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState("");
   const [uploading, setUploading] = useState<string | null>(null);
-  const [showNoteFor, setShowNoteFor] = useState<string | null>(null);
+
+  // Fix 2: Sections with images auto-expand; empty sections collapsed
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => {
+    const expanded = new Set<string>();
+    // Auto-expand sections that have images
+    initialSections.forEach((s) => {
+      if (s.moodboard_images?.length > 0) expanded.add(s.section_key);
+    });
+    // Always expand priority sections
+    PRIORITY_SECTIONS.forEach((s) => expanded.add(s.key));
+    return expanded;
+  });
+
+  function toggleSection(key: string) {
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   // Vibe words — stored in localStorage
   const [vibeWords, setVibeWords] = useState(() => {
@@ -304,6 +360,15 @@ export function MoodboardManager({
     const supabase = createClient();
     await supabase.from("moodboard_images").delete().eq("id", imageId);
     router.refresh();
+  }
+
+  // Fix 5: Save image caption
+  async function saveCaption(imageId: string, caption: string) {
+    const supabase = createClient();
+    await supabase
+      .from("moodboard_images")
+      .update({ caption: caption || null })
+      .eq("id", imageId);
   }
 
   const totalImages = initialSections.reduce(
@@ -457,95 +522,71 @@ export function MoodboardManager({
     setTimeout(() => printWindow.print(), 800);
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Stats + Export — top right */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          {totalImages} inspiration image{totalImages !== 1 ? "s" : ""} collected
-        </p>
-        {totalImages > 0 && (
-          <Button variant="outline" size="sm" onClick={handleExport} className="gap-1.5 text-xs">
-            <ExternalLink className="h-3 w-3" />
-            Export / Print
-          </Button>
-        )}
-      </div>
+  // Helper to render a single section
+  function renderSection(def: typeof SECTIONS[number]) {
+    const Icon = def.icon;
+    const section = sectionMap.get(def.key);
+    const images = section?.moodboard_images || [];
+    const isUploading = uploading === def.key;
+    const showUrl = showUrlInput === def.key;
+    const isExpanded = expandedSections.has(def.key);
+    const hasImages = images.length > 0;
 
-      {/* Vibe Words */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-            <Sparkles className="h-4 w-4 text-primary" />
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold">Your Wedding Vibe</h3>
-            <p className="text-xs text-muted-foreground">
-              3-5 words that guide your vendors&apos; design decisions
-            </p>
-          </div>
-        </div>
-        <Input
-          value={vibeWords}
-          onChange={(e) => setVibeWords(e.target.value)}
-          onBlur={saveVibeWords}
-          placeholder="e.g., romantic, garden, timeless, golden hour, intimate"
-          className="text-sm"
-        />
-      </div>
-
-      {/* Section rows */}
-      {SECTIONS.map((def) => {
-        const Icon = def.icon;
-        const section = sectionMap.get(def.key);
-        const images = section?.moodboard_images || [];
-        const isUploading = uploading === def.key;
-        const showUrl = showUrlInput === def.key;
-
-        return (
-          <div key={def.key} className="space-y-2">
-            {/* Section header */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                  <Icon className="h-4 w-4 text-primary" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold">{def.title}</h3>
-                    {images.length > 0 && (
-                      <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
-                        {images.length}/{def.maxImages}
-                      </span>
-                    )}
-                    <span className="text-[10px] text-muted-foreground">
-                      Share with: {def.shareWith}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Lightbulb className="h-2.5 w-2.5" />
-                    {def.tip}
-                  </p>
-                </div>
-              </div>
-              <a
-                href={`https://www.pinterest.com/search/pins/?q=${encodeURIComponent(def.pinterestSearch)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[10px] text-muted-foreground hover:text-red-400 transition-colors shrink-0"
-              >
-                Browse ideas →
-              </a>
+    return (
+      <div key={def.key}>
+        {/* Section header — clickable to expand/collapse */}
+        <button
+          onClick={() => toggleSection(def.key)}
+          className="w-full flex items-center gap-3 py-3 text-left group/header hover:bg-muted/20 rounded-lg px-2 -mx-2 transition-colors"
+        >
+          <ChevronRight className={cn("h-4 w-4 text-muted-foreground/60 transition-transform shrink-0", isExpanded && "rotate-90")} />
+          <Icon className="h-4 w-4 text-primary/70 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold text-foreground">{def.title}</span>
+              {/* Fix 11: Image count with guidance */}
+              <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+                {images.length} of {def.maxImages}
+                              </span>
+              <span className="text-[11px] font-medium text-foreground/60">
+                Share with: {def.shareWith}
+              </span>
             </div>
+          </div>
+          <a
+            href={`https://www.pinterest.com/search/pins/?q=${encodeURIComponent(def.pinterestSearch)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="text-xs font-medium text-primary hover:underline shrink-0"
+          >
+            Browse ideas →
+          </a>
+        </button>
+
+        {/* Expanded content */}
+        {isExpanded && (
+          <div className="pl-9 space-y-3 pb-4">
+            {/* Fix 4: Tip with better contrast */}
+            <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+              <Lightbulb className="h-3 w-3 text-primary/60 shrink-0" />
+              {def.tip}
+            </p>
+
+            {/* Fix 7: Guiding question when few images */}
+            {images.length < 2 && (
+              <p className="text-sm italic text-muted-foreground">
+                {def.question}
+              </p>
+            )}
 
             {/* Horizontal scroll gallery */}
             <div className="relative">
               <div className="flex gap-3 overflow-x-auto pb-3 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-muted-foreground/15 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/25">
-
                 {images.map((img) => (
                   <div
                     key={img.id}
-                    className="shrink-0 relative group rounded-xl overflow-hidden"
+                    className="shrink-0 relative group/img rounded-xl overflow-hidden"
                     style={{ height: 160 }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -569,7 +610,7 @@ export function MoodboardManager({
                     />
                     <button
                       onClick={() => deleteImage(img.id)}
-                      className="absolute top-2 right-2 h-6 w-6 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                      className="absolute top-2 right-2 h-6 w-6 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity hover:bg-black/70"
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -594,9 +635,7 @@ export function MoodboardManager({
                       )}
                     </button>
                     <button
-                      onClick={() =>
-                        setShowUrlInput(showUrl ? null : def.key)
-                      }
+                      onClick={() => setShowUrlInput(showUrl ? null : def.key)}
                       className="h-[160px] w-[120px] rounded-xl border-2 border-dashed border-muted-foreground/20 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-red-200 hover:text-red-400 transition-all hover:bg-red-50/50"
                     >
                       <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
@@ -608,7 +647,7 @@ export function MoodboardManager({
                 )}
                 {images.length >= def.maxImages && (
                   <div className="shrink-0 h-[160px] w-[120px] rounded-xl bg-muted/30 flex items-center justify-center text-xs text-muted-foreground text-center px-2">
-                    Max {def.maxImages} images
+                    Max {def.maxImages}
                   </div>
                 )}
 
@@ -616,17 +655,11 @@ export function MoodboardManager({
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  ref={(el) => {
-                    fileInputRefs.current[def.key] = el;
-                  }}
+                  ref={(el) => { fileInputRefs.current[def.key] = el; }}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                      if (file.size > 5 * 1024 * 1024) {
-                        alert("Image must be under 5MB");
-                        e.target.value = "";
-                        return;
-                      }
+                      if (file.size > 5 * 1024 * 1024) { alert("Image must be under 5MB"); e.target.value = ""; return; }
                       uploadImage(def.key, file);
                     }
                     e.target.value = "";
@@ -634,66 +667,120 @@ export function MoodboardManager({
                 />
               </div>
 
-              {/* URL input (conditionally shown) */}
+              {/* URL input */}
               {showUrl && (
                 <div className="mt-2 animate-fade-in-up space-y-1">
                   <div className="flex gap-2">
-                    <Input
-                      placeholder="Paste Pinterest link..."
-                      className="text-sm h-9"
-                      value={imageUrl}
+                    <Input placeholder="Paste Pinterest link..." className="text-sm h-9" value={imageUrl}
                       onChange={(e) => { setImageUrl(e.target.value); setUrlError(""); }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") addImageByUrl(def.key);
-                      }}
+                      onKeyDown={(e) => { if (e.key === "Enter") addImageByUrl(def.key); }}
                       autoFocus
                     />
-                    <Button
-                      size="sm"
-                      className="h-9 shrink-0"
-                      onClick={() => addImageByUrl(def.key)}
-                      disabled={!imageUrl.trim()}
-                    >
-                      Add
-                    </Button>
+                    <Button size="sm" className="h-9 shrink-0" onClick={() => addImageByUrl(def.key)} disabled={!imageUrl.trim()}>Add</Button>
                   </div>
-                  {urlError && (
-                    <p className="text-xs text-destructive">{urlError}</p>
-                  )}
+                  {urlError && <p className="text-xs text-destructive">{urlError}</p>}
                 </div>
               )}
             </div>
 
-            {/* Notes toggle */}
-            {showNoteFor === def.key ? (
-              <div className="animate-fade-in-up space-y-1">
+            {/* Fix 8: Vendor notes — always visible as an input */}
+            <div>
+              {localNotes[def.key] ? (
                 <Textarea
-                  value={localNotes[def.key] || ""}
+                  value={localNotes[def.key]}
                   onChange={(e) => setLocalNotes((prev) => ({ ...prev, [def.key]: e.target.value }))}
                   onBlur={() => saveNotes(def.key)}
-                  placeholder="Notes for your vendor — e.g., 'I love the dusty rose tones, not the burgundy'"
-                  className="text-sm min-h-[60px] resize-none"
+                  placeholder={def.notePlaceholder}
+                  className="text-sm min-h-[50px] resize-none"
                   rows={2}
-                  autoFocus
                 />
-                <button
-                  onClick={() => setShowNoteFor(null)}
-                  className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowNoteFor(def.key)}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {localNotes[def.key] ? `📝 ${localNotes[def.key].slice(0, 60)}${localNotes[def.key].length > 60 ? "..." : ""}` : "+ Add note for vendor"}
-              </button>
-            )}
+              ) : (
+                <Input
+                  value=""
+                  onChange={(e) => setLocalNotes((prev) => ({ ...prev, [def.key]: e.target.value }))}
+                  onBlur={() => saveNotes(def.key)}
+                  placeholder={def.notePlaceholder}
+                  className="text-sm h-9"
+                />
+              )}
+            </div>
           </div>
-        );
-      })}
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Fix 1: Editorial header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
+            Moodboard
+          </h1>
+          <p className="text-sm text-muted-foreground mt-2">
+            <span className="font-medium text-foreground/80">{totalImages}</span> image{totalImages !== 1 ? "s" : ""} collected
+            {weddingDate && (() => {
+              const days = Math.ceil((new Date(weddingDate + "T00:00:00").getTime() - Date.now()) / 86400000);
+              return days > 0 ? (
+                <>
+                  <span className="text-muted-foreground/50"> · </span>
+                  <span className="font-medium text-foreground/80">{days}</span> days to go
+                </>
+              ) : null;
+            })()}
+          </p>
+        </div>
+        {totalImages > 0 && (
+          <Button variant="outline" size="sm" onClick={handleExport} className="gap-1.5 text-xs shrink-0">
+            <ExternalLink className="h-3 w-3" />
+            Export / Print
+          </Button>
+        )}
+      </div>
+
+      {/* Brief explanation */}
+      <p className="text-sm text-muted-foreground max-w-xl leading-relaxed">
+        Collect images that show your style — colors, flowers, table settings, lighting. Share this with your vendors so everyone designs toward the same vision.
+      </p>
+
+      {/* Fix 3: Wedding Vibe — hero element */}
+      <div>
+        <h2 className="text-lg font-[family-name:var(--font-heading)] mb-1">
+          What does your wedding feel like?
+        </h2>
+        <p className="text-xs text-muted-foreground mb-2">
+          3-5 words that guide every vendor&apos;s design decisions
+        </p>
+        <Input
+          value={vibeWords}
+          onChange={(e) => setVibeWords(e.target.value)}
+          onBlur={saveVibeWords}
+          placeholder="e.g., romantic, garden, timeless, golden hour, intimate"
+          className="text-sm max-w-lg"
+        />
+      </div>
+
+      {/* Fix 6: Priority sections — "Start with these" */}
+      <div className="space-y-1">
+        {PRIORITY_SECTIONS.map((def) => renderSection(def))}
+      </div>
+
+      {/* More sections divider */}
+      {MORE_SECTIONS.length > 0 && (
+        <div className="space-y-1">
+          <div className="flex items-center gap-3 pt-2 pb-1">
+            <span className="text-xs font-semibold tracking-[0.1em] uppercase text-foreground/60">
+              More sections
+            </span>
+            <div className="flex-1 h-px bg-border/50" />
+            <span className="text-[11px] text-muted-foreground">
+              {MORE_SECTIONS.length} categories — add as you go
+            </span>
+          </div>
+          {MORE_SECTIONS.map((def) => renderSection(def))}
+        </div>
+      )}
     </div>
   );
 }
