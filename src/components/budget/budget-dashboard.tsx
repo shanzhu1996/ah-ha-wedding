@@ -2,26 +2,18 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Plus,
-  DollarSign,
-  TrendingUp,
-  CreditCard,
-  PiggyBank,
-  CalendarClock,
-  Download,
   Check,
+  ChevronRight,
+  ShoppingCart,
+  Users,
   X,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
-  Progress,
-  ProgressLabel,
-  ProgressValue,
-} from "@/components/ui/progress";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -39,9 +31,10 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { createClient } from "@/lib/supabase/client";
-import type { BudgetItemType, VendorType } from "@/types/database";
+import type { BudgetItemType, VendorType, ItemStatus } from "@/types/database";
+import { cn } from "@/lib/utils";
 
-// --- Types ---
+// ── Types ──────────────────────────────────────────────────────────────
 
 interface BudgetItem {
   id: string;
@@ -73,14 +66,29 @@ interface Vendor {
   notes: string | null;
 }
 
+interface ShoppingItem {
+  id: string;
+  wedding_id: string;
+  category: string;
+  item_name: string;
+  status: ItemStatus;
+  quantity: number;
+  estimated_cost: number | null;
+  actual_cost: number | null;
+  vendor_source: string | null;
+  notes: string | null;
+  due_date: string | null;
+}
+
 interface BudgetDashboardProps {
   budgetItems: BudgetItem[];
   vendors: Vendor[];
+  shoppingItems: ShoppingItem[];
   weddingId: string;
   budgetTotal: number | null;
 }
 
-// --- Constants ---
+// ── Constants ──────────────────────────────────────────────────────────
 
 const CATEGORIES = [
   "Venue",
@@ -99,36 +107,26 @@ const CATEGORIES = [
   "Other",
 ] as const;
 
-const ITEM_TYPES: { value: BudgetItemType; label: string }[] = [
-  { value: "deposit", label: "Deposit" },
-  { value: "balance", label: "Balance" },
-  { value: "tip", label: "Tip" },
-  { value: "purchase", label: "Purchase" },
-];
-
-const TIP_SUGGESTIONS = [
-  { role: "Photographer", range: "10-20%", low: 0.1, high: 0.2 },
-  { role: "DJ/Band", range: "10-15%", low: 0.1, high: 0.15 },
-  { role: "Hair & Makeup", range: "15-20%", low: 0.15, high: 0.2 },
-  { role: "Coordinator", range: "15-20%", low: 0.15, high: 0.2 },
-  { role: "Caterer staff", range: "15-20%", low: 0.15, high: 0.2 },
-  { role: "Officiant", range: "$50-100 flat", low: 0, high: 0 },
-  { role: "Transportation", range: "15-20%", low: 0.15, high: 0.2 },
-];
-
-const VENDOR_TYPE_TO_TIP_ROLE: Partial<Record<VendorType, string>> = {
-  photographer: "Photographer",
-  videographer: "Photographer",
-  dj: "DJ/Band",
-  band: "DJ/Band",
-  hair_makeup: "Hair & Makeup",
-  coordinator: "Coordinator",
-  caterer: "Caterer staff",
-  officiant: "Officiant",
+// Map vendor type → budget category
+const VENDOR_TYPE_TO_CATEGORY: Record<VendorType, string> = {
+  photographer: "Photography",
+  videographer: "Videography",
+  dj: "Music/DJ",
+  band: "Music/DJ",
+  caterer: "Catering",
+  florist: "Flowers",
+  baker: "Catering",
+  hair_makeup: "Beauty",
+  officiant: "Other",
+  rentals: "Rentals",
+  venue: "Venue",
   transportation: "Transportation",
+  coordinator: "Other",
+  photo_booth: "Other",
+  other: "Other",
 };
 
-// --- Helpers ---
+// ── Helpers ────────────────────────────────────────────────────────────
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat("en-US", {
@@ -143,777 +141,581 @@ function formatDate(d: string) {
   return new Date(d + "T00:00:00").toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
-    year: "numeric",
   });
 }
 
-// --- Component ---
+// ── Component ──────────────────────────────────────────────────────────
 
 export function BudgetDashboard({
   budgetItems,
   vendors,
+  shoppingItems,
   weddingId,
   budgetTotal,
 }: BudgetDashboardProps) {
   const router = useRouter();
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [importing, setImporting] = useState(false);
 
-  // Add form state
-  const [formCategory, setFormCategory] = useState<string>("Venue");
+  // Filter to only CUSTOM budget items (not linked to vendor or shopping)
+  const customItems = useMemo(
+    () => budgetItems.filter((b) => !b.vendor_id && !b.shopping_item_id),
+    [budgetItems]
+  );
+
+  // ── Aggregations ───────────────────────────────────────────────────
+
+  // From vendors: contract amounts OR deposit amounts (anything with $$$)
+  const vendorTotals = useMemo(() => {
+    const booked = vendors.filter(
+      (v) => (v.contract_amount && v.contract_amount > 0) || (v.deposit_amount && v.deposit_amount > 0)
+    );
+    const committed = booked.reduce(
+      (sum, v) => sum + (v.contract_amount || v.deposit_amount || 0),
+      0
+    );
+    const spent = booked.reduce(
+      (sum, v) => sum + (v.deposit_paid ? v.deposit_amount || 0 : 0),
+      0
+    );
+    return { booked, committed, spent };
+  }, [vendors]);
+
+  // From shopping: received items (spent) + ordered items (committed)
+  const shoppingTotals = useMemo(() => {
+    const withCost = shoppingItems.filter(
+      (s) => (s.actual_cost ?? s.estimated_cost ?? 0) > 0
+    );
+    const spent = withCost
+      .filter((s) => s.status === "received" || s.status === "done")
+      .reduce((sum, s) => sum + (s.actual_cost ?? s.estimated_cost ?? 0), 0);
+    const committed = withCost.reduce(
+      (sum, s) => sum + (s.actual_cost ?? s.estimated_cost ?? 0),
+      0
+    );
+    return { items: withCost, committed, spent };
+  }, [shoppingItems]);
+
+  // From custom items
+  const customTotals = useMemo(() => {
+    const committed = customItems.reduce((sum, b) => sum + b.amount, 0);
+    const spent = customItems
+      .filter((b) => b.paid)
+      .reduce((sum, b) => sum + b.amount, 0);
+    return { committed, spent };
+  }, [customItems]);
+
+  // Overall totals
+  const totalCommitted = vendorTotals.committed + shoppingTotals.committed + customTotals.committed;
+  const totalSpent = vendorTotals.spent + shoppingTotals.spent + customTotals.spent;
+  const budget = budgetTotal || 0;
+  const remaining = budget - totalCommitted;
+
+  // Upcoming payments (vendor balances + custom items with due dates + unpaid)
+  // Empty state: no vendors, no shopping costs, no custom items
+  const isEmpty =
+    vendorTotals.booked.length === 0 &&
+    shoppingTotals.items.length === 0 &&
+    customItems.length === 0;
+
+  // ── Collapsible sections state ─────────────────────────────────────
+
+  // Auto-expand sections that have data, collapse empty ones
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => {
+    const expanded = new Set<string>();
+    if (vendorTotals.booked.length > 0) expanded.add("vendors");
+    if (shoppingTotals.items.length > 0) expanded.add("shopping");
+    if (customItems.length > 0) expanded.add("custom");
+    // If everything is empty, expand vendors by default so the user sees structure
+    if (expanded.size === 0) expanded.add("vendors");
+    return expanded;
+  });
+
+  function toggleSection(key: string) {
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  // ── Dialog state for Custom Items ──────────────────────────────────
+
+  const [showDialog, setShowDialog] = useState(false);
+  const [showBudgetDialog, setShowBudgetDialog] = useState(false);
+  const [budgetInput, setBudgetInput] = useState(budgetTotal ? String(budgetTotal) : "");
+  const [editingItem, setEditingItem] = useState<BudgetItem | null>(null);
+  const [formCategory, setFormCategory] = useState<string>("Other");
   const [formDescription, setFormDescription] = useState("");
   const [formAmount, setFormAmount] = useState("");
   const [formDueDate, setFormDueDate] = useState("");
   const [formPaid, setFormPaid] = useState(false);
-  const [formItemType, setFormItemType] = useState<BudgetItemType>("purchase");
-
-  // --- Computed values ---
-
-  const totalSpent = useMemo(
-    () =>
-      budgetItems
-        .filter((b) => b.paid)
-        .reduce((sum, b) => sum + Number(b.amount), 0),
-    [budgetItems]
-  );
-
-  const projectedTotal = useMemo(
-    () => budgetItems.reduce((sum, b) => sum + Number(b.amount), 0),
-    [budgetItems]
-  );
-
-  const budget = budgetTotal ?? 0;
-  const remaining = budget - totalSpent;
-
-  const categoryBreakdown = useMemo(() => {
-    const map: Record<string, { spent: number; projected: number }> = {};
-    for (const cat of CATEGORIES) {
-      map[cat] = { spent: 0, projected: 0 };
-    }
-    for (const item of budgetItems) {
-      const cat = CATEGORIES.find(
-        (c) => c.toLowerCase() === item.category.toLowerCase()
-      );
-      const key = cat || "Other";
-      if (!map[key]) map[key] = { spent: 0, projected: 0 };
-      map[key].projected += Number(item.amount);
-      if (item.paid) map[key].spent += Number(item.amount);
-    }
-    return Object.entries(map)
-      .filter(([, v]) => v.projected > 0)
-      .sort((a, b) => b[1].projected - a[1].projected);
-  }, [budgetItems]);
-
-  const upcomingPayments = useMemo(
-    () =>
-      budgetItems
-        .filter((b) => b.due_date)
-        .sort(
-          (a, b) =>
-            new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime()
-        ),
-    [budgetItems]
-  );
-
-  const vendorTips = useMemo(() => {
-    return vendors
-      .filter((v) => VENDOR_TYPE_TO_TIP_ROLE[v.type] && v.contract_amount)
-      .map((v) => {
-        const tipRole = VENDOR_TYPE_TO_TIP_ROLE[v.type]!;
-        const suggestion = TIP_SUGGESTIONS.find((t) => t.role === tipRole);
-        const amount = Number(v.contract_amount);
-        const isFlat = suggestion?.low === 0 && suggestion?.high === 0;
-        return {
-          vendor: v,
-          role: tipRole,
-          range: suggestion?.range || "",
-          lowTip: isFlat ? 50 : Math.round(amount * (suggestion?.low || 0)),
-          highTip: isFlat ? 100 : Math.round(amount * (suggestion?.high || 0)),
-        };
-      });
-  }, [vendors]);
-
-  // --- Handlers ---
 
   function resetForm() {
-    setFormCategory("Venue");
+    setEditingItem(null);
+    setFormCategory("Other");
     setFormDescription("");
     setFormAmount("");
     setFormDueDate("");
     setFormPaid(false);
-    setFormItemType("purchase");
   }
 
-  async function handleAddItem() {
-    if (!formDescription || !formAmount) return;
-    setSaving(true);
-    const supabase = createClient();
+  function openAddDialog() {
+    resetForm();
+    setShowDialog(true);
+  }
 
-    await supabase.from("budget_items").insert({
+  function openEditDialog(item: BudgetItem) {
+    setEditingItem(item);
+    setFormCategory(item.category);
+    setFormDescription(item.description);
+    setFormAmount(String(item.amount));
+    setFormDueDate(item.due_date || "");
+    setFormPaid(item.paid);
+    setShowDialog(true);
+  }
+
+  async function handleSaveBudget() {
+    const amount = parseFloat(budgetInput);
+    if (isNaN(amount) || amount < 0) return;
+    const supabase = createClient();
+    await supabase.from("weddings").update({ budget_total: amount }).eq("id", weddingId);
+    setShowBudgetDialog(false);
+    router.refresh();
+  }
+
+  async function handleSave() {
+    if (!formDescription.trim() || !formAmount) return;
+    const supabase = createClient();
+    const payload = {
       wedding_id: weddingId,
       category: formCategory,
-      description: formDescription,
+      description: formDescription.trim(),
       amount: parseFloat(formAmount),
       due_date: formDueDate || null,
       paid: formPaid,
-      item_type: formItemType,
+      item_type: "purchase" as BudgetItemType,
       vendor_id: null,
       shopping_item_id: null,
-    });
-
-    setSaving(false);
-    setShowAddDialog(false);
+    };
+    if (editingItem) {
+      await supabase.from("budget_items").update(payload).eq("id", editingItem.id);
+    } else {
+      await supabase.from("budget_items").insert(payload);
+    }
+    setShowDialog(false);
     resetForm();
     router.refresh();
   }
 
-  async function togglePaid(item: BudgetItem) {
-    const supabase = createClient();
-    await supabase
-      .from("budget_items")
-      .update({ paid: !item.paid })
-      .eq("id", item.id);
-    router.refresh();
-  }
-
-  async function deleteItem(id: string) {
+  async function handleDelete(id: string) {
     const supabase = createClient();
     await supabase.from("budget_items").delete().eq("id", id);
     router.refresh();
   }
 
-  async function importFromVendors() {
-    setImporting(true);
+  async function handleTogglePaid(id: string, paid: boolean) {
     const supabase = createClient();
-
-    // Get existing vendor-linked budget items to avoid duplicates
-    const { data: existing } = await supabase
-      .from("budget_items")
-      .select("vendor_id, item_type")
-      .eq("wedding_id", weddingId)
-      .not("vendor_id", "is", null);
-
-    const existingSet = new Set(
-      (existing || []).map((e) => `${e.vendor_id}-${e.item_type}`)
-    );
-
-    const toInsert: Array<{
-      wedding_id: string;
-      category: string;
-      description: string;
-      amount: number;
-      due_date: string | null;
-      paid: boolean;
-      item_type: BudgetItemType;
-      vendor_id: string;
-      shopping_item_id: null;
-    }> = [];
-
-    const typeToCategory: Partial<Record<VendorType, string>> = {
-      venue: "Venue",
-      caterer: "Catering",
-      photographer: "Photography",
-      videographer: "Videography",
-      florist: "Flowers",
-      baker: "Catering",
-      hair_makeup: "Beauty",
-      dj: "Music/DJ",
-      band: "Music/DJ",
-      coordinator: "Other",
-      rentals: "Rentals",
-      transportation: "Transportation",
-      photo_booth: "Other",
-      officiant: "Other",
-      other: "Other",
-    };
-
-    for (const vendor of vendors) {
-      if (!vendor.contract_amount) continue;
-      const category = typeToCategory[vendor.type] || "Other";
-
-      // Add deposit if exists
-      if (
-        vendor.deposit_amount &&
-        !existingSet.has(`${vendor.id}-deposit`)
-      ) {
-        toInsert.push({
-          wedding_id: weddingId,
-          category,
-          description: `${vendor.company_name} - Deposit`,
-          amount: Number(vendor.deposit_amount),
-          due_date: null,
-          paid: vendor.deposit_paid,
-          item_type: "deposit",
-          vendor_id: vendor.id,
-          shopping_item_id: null,
-        });
-      }
-
-      // Add balance
-      const balance =
-        Number(vendor.contract_amount) - (Number(vendor.deposit_amount) || 0);
-      if (balance > 0 && !existingSet.has(`${vendor.id}-balance`)) {
-        toInsert.push({
-          wedding_id: weddingId,
-          category,
-          description: `${vendor.company_name} - Balance`,
-          amount: balance,
-          due_date: vendor.balance_due_date,
-          paid: false,
-          item_type: "balance",
-          vendor_id: vendor.id,
-          shopping_item_id: null,
-        });
-      }
-    }
-
-    if (toInsert.length > 0) {
-      await supabase.from("budget_items").insert(toInsert);
-    }
-
-    setImporting(false);
+    await supabase.from("budget_items").update({ paid: !paid }).eq("id", id);
     router.refresh();
   }
 
-  // --- Budget usage percentage ---
-  const budgetUsedPercent = budget > 0 ? Math.min((totalSpent / budget) * 100, 100) : 0;
+  // ── Render ─────────────────────────────────────────────────────────
 
   return (
-    <Tabs defaultValue="overview">
-      <TabsList>
-        <TabsTrigger value="overview">Overview</TabsTrigger>
-        <TabsTrigger value="payments">Payments</TabsTrigger>
-        <TabsTrigger value="tips">Tip Calculator</TabsTrigger>
-      </TabsList>
-
-      {/* ============ OVERVIEW TAB ============ */}
-      <TabsContent value="overview">
-        <div className="space-y-6">
-          {/* Summary Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <DollarSign className="h-4 w-4 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">
-                      Total Budget
-                    </p>
-                    <p className="text-lg font-semibold tabular-nums">
-                      {formatCurrency(budget)}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="h-9 w-9 rounded-lg bg-green-500/10 flex items-center justify-center">
-                    <CreditCard className="h-4 w-4 text-green-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Total Spent</p>
-                    <p className="text-lg font-semibold tabular-nums">
-                      {formatCurrency(totalSpent)}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="h-9 w-9 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                    <PiggyBank className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Remaining</p>
-                    <p
-                      className={`text-lg font-semibold tabular-nums ${remaining < 0 ? "text-destructive" : ""}`}
-                    >
-                      {formatCurrency(remaining)}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="h-9 w-9 rounded-lg bg-orange-500/10 flex items-center justify-center">
-                    <TrendingUp className="h-4 w-4 text-orange-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">
-                      Projected Total
-                    </p>
-                    <p
-                      className={`text-lg font-semibold tabular-nums ${projectedTotal > budget && budget > 0 ? "text-destructive" : ""}`}
-                    >
-                      {formatCurrency(projectedTotal)}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Budget progress bar */}
-          {budget > 0 && (
-            <Card>
-              <CardContent className="p-4">
-                <Progress value={budgetUsedPercent}>
-                  <ProgressLabel>Budget Used</ProgressLabel>
-                  <ProgressValue>
-                    {() => `${Math.round(budgetUsedPercent)}%`}
-                  </ProgressValue>
-                </Progress>
-              </CardContent>
-            </Card>
+    <div className="space-y-8">
+      {/* Header — editorial pattern */}
+      <div>
+        <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
+          Budget
+        </h1>
+        <p className="text-sm text-muted-foreground mt-2">
+          {budget > 0 ? (
+            <>
+              <button
+                onClick={() => setShowBudgetDialog(true)}
+                className="font-medium text-foreground/80 hover:text-primary transition-colors inline-flex items-center gap-1 group"
+                title="Click to edit budget"
+              >
+                {formatCurrency(budget)}
+                <Pencil className="h-3 w-3 opacity-40 group-hover:opacity-100 transition-opacity" />
+              </button>
+              {" "}budget
+              <span className="text-muted-foreground/50"> · </span>
+              <span className="font-medium text-emerald-700">{formatCurrency(totalSpent)}</span> spent
+              {totalSpent > 0 && (
+                budget - totalSpent >= 0 ? (
+                  <>
+                    <span className="text-muted-foreground/50"> · </span>
+                    <span className="font-medium text-foreground/80">{formatCurrency(budget - totalSpent)}</span> left
+                  </>
+                ) : (
+                  <>
+                    <span className="text-muted-foreground/50"> · </span>
+                    <span className="font-medium text-red-700">{formatCurrency(Math.abs(budget - totalSpent))}</span> over
+                  </>
+                )
+              )}
+            </>
+          ) : (
+            <button
+              onClick={() => setShowBudgetDialog(true)}
+              className="text-primary font-medium hover:underline inline-flex items-center gap-1"
+            >
+              Set your budget →
+            </button>
           )}
+        </p>
+      </div>
 
-          {/* Action buttons */}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={() => {
-                resetForm();
-                setShowAddDialog(true);
-              }}
-              className="gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              Add Budget Item
-            </Button>
-            <Button
-              variant="outline"
-              onClick={importFromVendors}
-              disabled={importing || vendors.length === 0}
-              className="gap-2"
-            >
-              <Download className="h-4 w-4" />
-              {importing ? "Importing..." : "Import from Vendors"}
-            </Button>
-          </div>
+      {/* Intro when page is completely empty */}
+      {isEmpty && (
+        <p className="text-sm text-muted-foreground max-w-xl leading-relaxed">
+          Your budget fills in automatically from vendors and shopping. Add vendor contracts or custom items to get started.
+        </p>
+      )}
 
-          {/* Category Breakdown */}
-          <Card>
-            <CardContent className="p-4">
-              <h2 className="font-semibold mb-4">Spending by Category</h2>
-              {categoryBreakdown.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">
-                  No budget items yet. Add items to see your spending breakdown.
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  {categoryBreakdown.map(([category, data]) => {
-                    const pct =
-                      projectedTotal > 0
-                        ? (data.projected / projectedTotal) * 100
-                        : 0;
-                    return (
-                      <div key={category}>
-                        <div className="flex items-center justify-between text-sm mb-1">
-                          <span className="font-medium">{category}</span>
-                          <span className="text-muted-foreground tabular-nums">
-                            {formatCurrency(data.spent)} /{" "}
-                            {formatCurrency(data.projected)}
+      {/* From Vendors section — collapsible */}
+      <section>
+          <button
+            onClick={() => toggleSection("vendors")}
+            className="w-full flex items-center justify-between mb-3 pb-2 border-b border-border/50 group"
+          >
+            <span className="flex items-center gap-2 text-xs font-semibold tracking-[0.12em] uppercase text-foreground/80 group-hover:text-foreground transition-colors">
+              <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", expandedSections.has("vendors") && "rotate-90")} />
+              <Users className="h-3.5 w-3.5" />
+              From Vendors
+              <span className="text-muted-foreground/60 normal-case tracking-normal font-normal">
+                · {vendorTotals.booked.length} {vendorTotals.booked.length === 1 ? "vendor" : "vendors"}
+              </span>
+            </span>
+            <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+              {formatCurrency(vendorTotals.committed)}
+            </span>
+          </button>
+
+          {expandedSections.has("vendors") && (
+            vendorTotals.booked.length > 0 ? (
+              <div className="space-y-2">
+                {vendorTotals.booked.map((vendor) => {
+                  // Use contract amount if set, otherwise fall back to deposit amount
+                  const totalAmount = vendor.contract_amount || vendor.deposit_amount || 0;
+                  const deposit = vendor.deposit_paid ? vendor.deposit_amount || 0 : 0;
+                  const balance = totalAmount - deposit;
+                  const paidPercent = totalAmount > 0 ? Math.round((deposit / totalAmount) * 100) : 0;
+                  const hasFullContract = vendor.contract_amount && vendor.contract_amount > 0;
+                  const category = VENDOR_TYPE_TO_CATEGORY[vendor.type];
+                  return (
+                    <Link
+                      key={vendor.id}
+                      href={`/vendors/${vendor.id}`}
+                      className="block py-2.5 px-3 -mx-3 rounded-lg hover:bg-muted/20 transition-colors group"
+                    >
+                      <div className="flex items-center gap-3 mb-1.5">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium text-foreground">{vendor.company_name}</span>
+                            <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">
+                              {category}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-medium text-foreground/80 tabular-nums">
+                            {formatCurrency(deposit)} <span className="text-muted-foreground/60">/ {formatCurrency(totalAmount)}</span>
+                          </div>
+                          {!hasFullContract && (
+                            <div className="text-[10px] text-amber-700 mt-0.5">Contract total not set</div>
+                          )}
+                        </div>
+                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors shrink-0" />
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={cn(
+                              "h-full rounded-full transition-all",
+                              paidPercent === 100 ? "bg-emerald-500" : "bg-primary/70"
+                            )}
+                            style={{ width: `${paidPercent}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] font-medium text-muted-foreground tabular-nums w-10 text-right">
+                          {paidPercent}%
+                        </span>
+                      </div>
+
+                      {/* Status line */}
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        {paidPercent === 100 ? (
+                          <span className="text-emerald-700">Paid in full</span>
+                        ) : deposit > 0 ? (
+                          <>
+                            <span className="text-emerald-700">{formatCurrency(deposit)} paid</span>
+                            <span className="text-muted-foreground/50"> · </span>
+                            <span>{formatCurrency(balance)} due</span>
+                            {vendor.balance_due_date && <> {formatDate(vendor.balance_due_date)}</>}
+                          </>
+                        ) : (
+                          <>{formatCurrency(balance)} due{vendor.balance_due_date && <> {formatDate(vendor.balance_due_date)}</>}</>
+                        )}
+                      </p>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <Link href="/vendors" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                No vendor contracts yet — add vendors
+                <ChevronRight className="h-3 w-3" />
+              </Link>
+            )
+          )}
+        </section>
+
+      {/* From Shopping section — collapsible */}
+      <section>
+          <button
+            onClick={() => toggleSection("shopping")}
+            className="w-full flex items-center justify-between mb-3 pb-2 border-b border-border/50 group"
+          >
+            <span className="flex items-center gap-2 text-xs font-semibold tracking-[0.12em] uppercase text-foreground/80 group-hover:text-foreground transition-colors">
+              <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", expandedSections.has("shopping") && "rotate-90")} />
+              <ShoppingCart className="h-3.5 w-3.5" />
+              From Shopping
+              <span className="text-muted-foreground/60 normal-case tracking-normal font-normal">
+                · {shoppingTotals.items.length} {shoppingTotals.items.length === 1 ? "item" : "items"}
+              </span>
+            </span>
+            <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+              {formatCurrency(shoppingTotals.committed)}
+            </span>
+          </button>
+
+          {expandedSections.has("shopping") && (
+            shoppingTotals.items.length > 0 ? (
+              <div className="space-y-1">
+                {shoppingTotals.items.slice(0, 8).map((item) => {
+                  const cost = item.actual_cost ?? item.estimated_cost ?? 0;
+                  const isSpent = item.status === "received" || item.status === "done";
+                  return (
+                    <Link
+                      key={item.id}
+                      href="/shopping"
+                      className="flex items-center gap-3 py-2 px-2 -mx-2 rounded-lg hover:bg-muted/20 transition-colors group"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm text-foreground">{item.item_name}</span>
+                          <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">
+                            {item.category}
+                          </span>
+                          <span className={cn(
+                            "text-[10px] font-medium px-1.5 py-0.5 rounded-full",
+                            isSpent ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-800 border border-amber-200"
+                          )}>
+                            {item.status}
                           </span>
                         </div>
-                        <Progress value={pct}>
-                          <ProgressLabel className="sr-only">
-                            {category}
-                          </ProgressLabel>
-                        </Progress>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </TabsContent>
-
-      {/* ============ PAYMENTS TAB ============ */}
-      <TabsContent value="payments">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Payment Timeline</h2>
-            <Button
-              size="sm"
-              onClick={() => {
-                resetForm();
-                setShowAddDialog(true);
-              }}
-              className="gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              Add Item
-            </Button>
-          </div>
-
-          {upcomingPayments.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                <CalendarClock className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>No payments with due dates yet.</p>
-                <p className="text-xs mt-1">
-                  Add budget items with due dates to see your payment timeline.
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-2">
-              {upcomingPayments.map((item) => {
-                const isPast =
-                  !item.paid &&
-                  item.due_date &&
-                  new Date(item.due_date) < new Date();
-                return (
-                  <Card
-                    key={item.id}
-                    className={item.paid ? "opacity-60" : ""}
-                  >
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-4">
-                        <button
-                          onClick={() => togglePaid(item)}
-                          className={`flex-shrink-0 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                            item.paid
-                              ? "bg-green-500 border-green-500 text-white"
-                              : "border-muted-foreground/30 hover:border-primary"
-                          }`}
-                        >
-                          {item.paid && <Check className="h-3.5 w-3.5" />}
-                        </button>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`font-medium text-sm ${item.paid ? "line-through" : ""}`}
-                            >
-                              {item.description}
-                            </span>
-                            <Badge variant="secondary" className="text-[10px]">
-                              {item.item_type}
-                            </Badge>
-                            {isPast && (
-                              <Badge
-                                variant="destructive"
-                                className="text-[10px]"
-                              >
-                                Overdue
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                            <span>{item.category}</span>
-                            {item.due_date && (
-                              <>
-                                <span>-</span>
-                                <span>{formatDate(item.due_date)}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-
-                        <span className="font-semibold text-sm tabular-nums">
-                          {formatCurrency(Number(item.amount))}
-                        </span>
-
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          onClick={() => deleteItem(item.id)}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
+                      <span className="text-sm font-medium text-foreground/80 tabular-nums">
+                        {formatCurrency(cost)}
+                      </span>
+                    </Link>
+                  );
+                })}
+                {shoppingTotals.items.length > 8 && (
+                  <Link href="/shopping" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-1">
+                    + {shoppingTotals.items.length - 8} more in Shopping
+                    <ChevronRight className="h-3 w-3" />
+                  </Link>
+                )}
+              </div>
+            ) : (
+              <Link href="/shopping" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                No shopping items with costs yet — open Shopping list
+                <ChevronRight className="h-3 w-3" />
+              </Link>
+            )
           )}
+        </section>
 
-          {/* Items without due dates */}
-          {budgetItems.filter((b) => !b.due_date).length > 0 && (
+      {/* Other (custom items) section — collapsible */}
+      <section>
+          <button
+            onClick={() => toggleSection("custom")}
+            className="w-full flex items-center justify-between mb-3 pb-2 border-b border-border/50 group"
+          >
+            <span className="flex items-center gap-2 text-xs font-semibold tracking-[0.12em] uppercase text-foreground/80 group-hover:text-foreground transition-colors">
+              <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", expandedSections.has("custom") && "rotate-90")} />
+              Custom Items
+              <span className="text-muted-foreground/60 normal-case tracking-normal font-normal">
+                · {customItems.length} {customItems.length === 1 ? "item" : "items"}
+              </span>
+            </span>
+            <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+              {formatCurrency(customTotals.committed)}
+            </span>
+          </button>
+
+          {expandedSections.has("custom") && (
             <>
-              <h3 className="font-medium text-sm text-muted-foreground pt-4">
-                No due date
-              </h3>
-              <div className="space-y-2">
-                {budgetItems
-                  .filter((b) => !b.due_date)
-                  .map((item) => (
-                    <Card
+              {customItems.length > 0 && (
+                <div className="space-y-1 mb-2">
+                  {customItems.map((item) => (
+                    <div
                       key={item.id}
-                      className={item.paid ? "opacity-60" : ""}
+                      className="flex items-center gap-3 py-2 px-2 -mx-2 rounded-lg hover:bg-muted/20 transition-colors group"
                     >
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-4">
-                          <button
-                            onClick={() => togglePaid(item)}
-                            className={`flex-shrink-0 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                              item.paid
-                                ? "bg-green-500 border-green-500 text-white"
-                                : "border-muted-foreground/30 hover:border-primary"
-                            }`}
-                          >
-                            {item.paid && <Check className="h-3.5 w-3.5" />}
-                          </button>
-
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`font-medium text-sm ${item.paid ? "line-through" : ""}`}
-                              >
-                                {item.description}
-                              </span>
-                              <Badge
-                                variant="secondary"
-                                className="text-[10px]"
-                              >
-                                {item.item_type}
-                              </Badge>
-                            </div>
-                            <span className="text-xs text-muted-foreground">
+                      <button
+                        onClick={() => handleTogglePaid(item.id, item.paid)}
+                        className="shrink-0"
+                        title={item.paid ? "Mark unpaid" : "Mark paid"}
+                      >
+                        {item.paid ? (
+                          <Check className="h-4 w-4 text-emerald-600" />
+                        ) : (
+                          <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/40" />
+                        )}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={cn("text-sm text-foreground", item.paid && "line-through text-muted-foreground")}>
+                            {item.description}
+                          </span>
+                          {item.category && item.category !== "Other" && (
+                            <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">
                               {item.category}
                             </span>
-                          </div>
-
-                          <span className="font-semibold text-sm tabular-nums">
-                            {formatCurrency(Number(item.amount))}
-                          </span>
-
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                            onClick={() => deleteItem(item.id)}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
+                          )}
                         </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-              </div>
-            </>
-          )}
-        </div>
-      </TabsContent>
-
-      {/* ============ TIPS TAB ============ */}
-      <TabsContent value="tips">
-        <div className="space-y-4">
-          <div>
-            <h2 className="font-semibold">Vendor Tip Calculator</h2>
-            <p className="text-xs text-muted-foreground mt-1">
-              Suggested tip amounts based on industry standards and your vendor
-              contracts.
-            </p>
-          </div>
-
-          {/* General reference table */}
-          <Card>
-            <CardContent className="p-4">
-              <h3 className="font-medium text-sm mb-3">
-                Standard Tip Guidelines
-              </h3>
-              <div className="divide-y">
-                {TIP_SUGGESTIONS.map((tip) => (
-                  <div
-                    key={tip.role}
-                    className="flex items-center justify-between py-2 text-sm"
-                  >
-                    <span>{tip.role}</span>
-                    <Badge variant="secondary">{tip.range}</Badge>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Personalized tips from vendors */}
-          {vendorTips.length > 0 && (
-            <Card>
-              <CardContent className="p-4">
-                <h3 className="font-medium text-sm mb-3">
-                  Your Vendor Tip Estimates
-                </h3>
-                <div className="divide-y">
-                  {vendorTips.map((t) => (
-                    <div
-                      key={t.vendor.id}
-                      className="flex items-center justify-between py-2.5"
-                    >
-                      <div>
-                        <p className="text-sm font-medium">
-                          {t.vendor.company_name}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {t.role} - Contract:{" "}
-                          {formatCurrency(Number(t.vendor.contract_amount))}
-                        </p>
+                        {item.due_date && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Due {formatDate(item.due_date)}
+                          </p>
+                        )}
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold tabular-nums">
-                          {formatCurrency(t.lowTip)} -{" "}
-                          {formatCurrency(t.highTip)}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground">
-                          {t.range}
-                        </p>
+                      <span className="text-sm font-medium text-foreground/80 tabular-nums">
+                        {formatCurrency(item.amount)}
+                      </span>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => openEditDialog(item)}
+                          className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </div>
                   ))}
-                  <div className="pt-3 flex items-center justify-between text-sm font-semibold">
-                    <span>Estimated Total Tips</span>
-                    <span className="tabular-nums">
-                      {formatCurrency(
-                        vendorTips.reduce((sum, t) => sum + t.lowTip, 0)
-                      )}{" "}
-                      -{" "}
-                      {formatCurrency(
-                        vendorTips.reduce((sum, t) => sum + t.highTip, 0)
-                      )}
-                    </span>
-                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              )}
 
-          {vendorTips.length === 0 && (
-            <Card>
-              <CardContent className="py-8 text-center text-muted-foreground">
-                <p className="text-sm">
-                  Add vendors with contract amounts to see personalized tip
-                  estimates.
-                </p>
-              </CardContent>
-            </Card>
+              <Button onClick={openAddDialog} variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-8 -ml-2">
+                <Plus className="h-3 w-3" />
+                Add item
+              </Button>
+            </>
           )}
-        </div>
-      </TabsContent>
+        </section>
 
-      {/* ============ ADD BUDGET ITEM DIALOG ============ */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+
+      {/* Add/Edit Custom Item Dialog */}
+      <Dialog open={showDialog} onOpenChange={(open) => { if (!open) resetForm(); setShowDialog(open); }}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Budget Item</DialogTitle>
+            <DialogTitle>{editingItem ? "Edit" : "Add"} custom budget item</DialogTitle>
           </DialogHeader>
-
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <Select
-                value={formCategory}
-                onValueChange={(v) => setFormCategory(v ?? "Venue")}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORIES.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="space-y-2">
               <Label>Description *</Label>
               <Input
                 value={formDescription}
                 onChange={(e) => setFormDescription(e.target.value)}
-                placeholder="e.g., Venue deposit"
+                placeholder="e.g., Venue service charge"
               />
             </div>
-
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label>Amount ($) *</Label>
+                <Label>Category</Label>
+                <Select value={formCategory} onValueChange={(v) => setFormCategory(v ?? "Other")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Amount *</Label>
                 <Input
                   type="number"
                   value={formAmount}
                   onChange={(e) => setFormAmount(e.target.value)}
-                  placeholder="1500"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Due Date</Label>
-                <Input
-                  type="date"
-                  value={formDueDate}
-                  onChange={(e) => setFormDueDate(e.target.value)}
+                  placeholder="0"
                 />
               </div>
             </div>
-
             <div className="space-y-2">
-              <Label>Item Type</Label>
-              <Select
-                value={formItemType}
-                onValueChange={(v) =>
-                  setFormItemType((v ?? "purchase") as BudgetItemType)
-                }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ITEM_TYPES.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="formPaid"
-                checked={formPaid}
-                onCheckedChange={(v) => setFormPaid(!!v)}
+              <Label>Due date (optional)</Label>
+              <Input
+                type="date"
+                value={formDueDate}
+                onChange={(e) => setFormDueDate(e.target.value)}
               />
-              <Label htmlFor="formPaid" className="font-normal">
-                Already paid
-              </Label>
             </div>
-
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={formPaid} onCheckedChange={(v) => setFormPaid(!!v)} />
+              Already paid
+            </label>
             <div className="flex justify-end gap-2 pt-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowAddDialog(false);
-                  resetForm();
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleAddItem}
-                disabled={saving || !formDescription || !formAmount}
-              >
-                {saving ? "Saving..." : "Add Item"}
+              <Button variant="outline" onClick={() => { setShowDialog(false); resetForm(); }}>Cancel</Button>
+              <Button onClick={handleSave} disabled={!formDescription.trim() || !formAmount}>
+                {editingItem ? "Save" : "Add"}
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
-    </Tabs>
+
+      {/* Budget amount dialog */}
+      <Dialog open={showBudgetDialog} onOpenChange={(open) => { setShowBudgetDialog(open); if (open) setBudgetInput(budgetTotal ? String(budgetTotal) : ""); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{budget > 0 ? "Edit your budget" : "Set your budget"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Total budget</Label>
+              <Input
+                type="number"
+                value={budgetInput}
+                onChange={(e) => setBudgetInput(e.target.value)}
+                placeholder="60000"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === "Enter") handleSaveBudget(); }}
+              />
+              <p className="text-xs text-muted-foreground">
+                This is the total amount you&apos;re planning to spend. You can change it anytime as decisions evolve.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowBudgetDialog(false)}>Cancel</Button>
+              <Button onClick={handleSaveBudget} disabled={!budgetInput || isNaN(parseFloat(budgetInput))}>
+                Save
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

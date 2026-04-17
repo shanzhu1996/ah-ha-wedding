@@ -9,7 +9,11 @@ export default async function BudgetPage() {
 
   const supabase = await createClient();
 
-  const [{ data: budgetItems }, { data: vendors }] = await Promise.all([
+  const [
+    { data: budgetItems },
+    { data: vendors },
+    { data: shoppingItems },
+  ] = await Promise.all([
     supabase
       .from("budget_items")
       .select("*")
@@ -20,24 +24,20 @@ export default async function BudgetPage() {
       .select("*")
       .eq("wedding_id", wedding.id)
       .order("created_at", { ascending: true }),
+    supabase
+      .from("shopping_items")
+      .select("*")
+      .eq("wedding_id", wedding.id)
+      .order("created_at", { ascending: true }),
   ]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)]">
-          Budget
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Track spending, payments, and vendor tips.
-        </p>
-      </div>
-      <BudgetDashboard
-        budgetItems={budgetItems || []}
-        vendors={vendors || []}
-        weddingId={wedding.id}
-        budgetTotal={wedding.budget_total}
-      />
-    </div>
+    <BudgetDashboard
+      budgetItems={budgetItems || []}
+      vendors={vendors || []}
+      shoppingItems={shoppingItems || []}
+      weddingId={wedding.id}
+      budgetTotal={wedding.budget_total}
+    />
   );
 }
