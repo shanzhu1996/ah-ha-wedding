@@ -33,6 +33,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { createClient } from "@/lib/supabase/client";
 import type { BudgetItemType, VendorType, ItemStatus } from "@/types/database";
 import { cn } from "@/lib/utils";
+import {
+  PaymentSchedule,
+  type PaymentItem,
+} from "@/components/budget/payment-schedule";
+import { VENDOR_TYPE_TO_CATEGORY as CATEGORY_MAP } from "@/lib/vendor-categories";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -44,6 +49,7 @@ interface BudgetItem {
   amount: number;
   due_date: string | null;
   paid: boolean;
+  paid_at: string | null;
   item_type: BudgetItemType;
   vendor_id: string | null;
   shopping_item_id: string | null;
@@ -86,6 +92,7 @@ interface BudgetDashboardProps {
   shoppingItems: ShoppingItem[];
   weddingId: string;
   budgetTotal: number | null;
+  paymentsByVendor?: Record<string, PaymentItem[]>;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -107,24 +114,8 @@ const CATEGORIES = [
   "Other",
 ] as const;
 
-// Map vendor type → budget category
-const VENDOR_TYPE_TO_CATEGORY: Record<VendorType, string> = {
-  photographer: "Photography",
-  videographer: "Videography",
-  dj: "Music/DJ",
-  band: "Music/DJ",
-  caterer: "Catering",
-  florist: "Flowers",
-  baker: "Catering",
-  hair_makeup: "Beauty",
-  officiant: "Other",
-  rentals: "Rentals",
-  venue: "Venue",
-  transportation: "Transportation",
-  coordinator: "Other",
-  photo_booth: "Other",
-  other: "Other",
-};
+// Map vendor type → budget category (shared helper for consistency across app)
+const VENDOR_TYPE_TO_CATEGORY = CATEGORY_MAP;
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -152,6 +143,7 @@ export function BudgetDashboard({
   shoppingItems,
   weddingId,
   budgetTotal,
+  paymentsByVendor = {},
 }: BudgetDashboardProps) {
   const router = useRouter();
 
@@ -163,51 +155,57 @@ export function BudgetDashboard({
 
   // ── Aggregations ───────────────────────────────────────────────────
 
-  // From vendors: contract amounts OR deposit amounts (anything with $$$)
+  // Booked vendors: any vendor with at least one budget_items row OR with contract_amount set
   const vendorTotals = useMemo(() => {
     const booked = vendors.filter(
-      (v) => (v.contract_amount && v.contract_amount > 0) || (v.deposit_amount && v.deposit_amount > 0)
+      (v) =>
+        (paymentsByVendor[v.id]?.length ?? 0) > 0 ||
+        (v.contract_amount && v.contract_amount > 0)
     );
-    const committed = booked.reduce(
-      (sum, v) => sum + (v.contract_amount || v.deposit_amount || 0),
-      0
-    );
-    const spent = booked.reduce(
-      (sum, v) => sum + (v.deposit_paid ? v.deposit_amount || 0 : 0),
-      0
-    );
-    return { booked, committed, spent };
-  }, [vendors]);
+    // Sum all vendor-linked budget_items (these are the vendor installments)
+    const vendorItems = budgetItems.filter((b) => b.vendor_id);
+    const paid = vendorItems
+      .filter((b) => b.paid)
+      .reduce((sum, b) => sum + b.amount, 0);
+    const scheduled = vendorItems
+      .filter((b) => !b.paid)
+      .reduce((sum, b) => sum + b.amount, 0);
+    return { booked, paid, scheduled, total: paid + scheduled };
+  }, [vendors, budgetItems, paymentsByVendor]);
 
-  // From shopping: received items (spent) + ordered items (committed)
+  // From shopping: received items (paid) + ordered/unstarted items (scheduled)
   const shoppingTotals = useMemo(() => {
     const withCost = shoppingItems.filter(
       (s) => (s.actual_cost ?? s.estimated_cost ?? 0) > 0
     );
-    const spent = withCost
+    const paid = withCost
       .filter((s) => s.status === "received" || s.status === "done")
       .reduce((sum, s) => sum + (s.actual_cost ?? s.estimated_cost ?? 0), 0);
-    const committed = withCost.reduce(
-      (sum, s) => sum + (s.actual_cost ?? s.estimated_cost ?? 0),
-      0
-    );
-    return { items: withCost, committed, spent };
+    const scheduled = withCost
+      .filter((s) => s.status !== "received" && s.status !== "done")
+      .reduce((sum, s) => sum + (s.actual_cost ?? s.estimated_cost ?? 0), 0);
+    return { items: withCost, paid, scheduled, total: paid + scheduled };
   }, [shoppingItems]);
 
-  // From custom items
+  // From custom items (budget_items with no vendor_id and no shopping_item_id)
   const customTotals = useMemo(() => {
-    const committed = customItems.reduce((sum, b) => sum + b.amount, 0);
-    const spent = customItems
+    const paid = customItems
       .filter((b) => b.paid)
       .reduce((sum, b) => sum + b.amount, 0);
-    return { committed, spent };
+    const scheduled = customItems
+      .filter((b) => !b.paid)
+      .reduce((sum, b) => sum + b.amount, 0);
+    return { paid, scheduled, total: paid + scheduled };
   }, [customItems]);
 
   // Overall totals
-  const totalCommitted = vendorTotals.committed + shoppingTotals.committed + customTotals.committed;
-  const totalSpent = vendorTotals.spent + shoppingTotals.spent + customTotals.spent;
+  const totalPaid = vendorTotals.paid + shoppingTotals.paid + customTotals.paid;
+  const totalScheduled =
+    vendorTotals.scheduled + shoppingTotals.scheduled + customTotals.scheduled;
+  const totalAllocated = totalPaid + totalScheduled;
   const budget = budgetTotal || 0;
-  const remaining = budget - totalCommitted;
+  const unallocated = budget - totalAllocated;
+
 
   // Upcoming payments (vendor balances + custom items with due dates + unpaid)
   // Empty state: no vendors, no shopping costs, no custom items
@@ -341,19 +339,22 @@ export function BudgetDashboard({
               </button>
               {" "}budget
               <span className="text-muted-foreground/50"> · </span>
-              <span className="font-medium text-emerald-700">{formatCurrency(totalSpent)}</span> spent
-              {totalSpent > 0 && (
-                budget - totalSpent >= 0 ? (
-                  <>
-                    <span className="text-muted-foreground/50"> · </span>
-                    <span className="font-medium text-foreground/80">{formatCurrency(budget - totalSpent)}</span> left
-                  </>
-                ) : (
-                  <>
-                    <span className="text-muted-foreground/50"> · </span>
-                    <span className="font-medium text-red-700">{formatCurrency(Math.abs(budget - totalSpent))}</span> over
-                  </>
-                )
+              <span className="font-medium text-emerald-700">{formatCurrency(totalPaid)}</span> paid
+              {totalScheduled > 0 && (
+                <>
+                  <span className="text-muted-foreground/50"> · </span>
+                  <span className="font-medium text-foreground/80">{formatCurrency(totalScheduled)}</span> scheduled
+                </>
+              )}
+              <span className="text-muted-foreground/50"> · </span>
+              {unallocated >= 0 ? (
+                <>
+                  <span className="font-medium text-foreground/80">{formatCurrency(unallocated)}</span> unallocated
+                </>
+              ) : (
+                <>
+                  <span className="font-medium text-red-700">{formatCurrency(Math.abs(unallocated))}</span> over budget
+                </>
               )}
             </>
           ) : (
@@ -389,82 +390,46 @@ export function BudgetDashboard({
               </span>
             </span>
             <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
-              {formatCurrency(vendorTotals.committed)}
+              {formatCurrency(vendorTotals.total)}
             </span>
           </button>
 
           {expandedSections.has("vendors") && (
             vendorTotals.booked.length > 0 ? (
-              <div className="space-y-2">
+              <ul className="divide-y divide-border/40 pl-6">
                 {vendorTotals.booked.map((vendor) => {
-                  // Use contract amount if set, otherwise fall back to deposit amount
-                  const totalAmount = vendor.contract_amount || vendor.deposit_amount || 0;
-                  const deposit = vendor.deposit_paid ? vendor.deposit_amount || 0 : 0;
-                  const balance = totalAmount - deposit;
-                  const paidPercent = totalAmount > 0 ? Math.round((deposit / totalAmount) * 100) : 0;
-                  const hasFullContract = vendor.contract_amount && vendor.contract_amount > 0;
                   const category = VENDOR_TYPE_TO_CATEGORY[vendor.type];
+                  const payments = paymentsByVendor[vendor.id] ?? [];
                   return (
-                    <Link
-                      key={vendor.id}
-                      href={`/vendors/${vendor.id}`}
-                      className="block py-2.5 px-3 -mx-3 rounded-lg hover:bg-muted/20 transition-colors group"
-                    >
-                      <div className="flex items-center gap-3 mb-1.5">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-medium text-foreground">{vendor.company_name}</span>
-                            <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">
-                              {category}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-medium text-foreground/80 tabular-nums">
-                            {formatCurrency(deposit)} <span className="text-muted-foreground/60">/ {formatCurrency(totalAmount)}</span>
-                          </div>
-                          {!hasFullContract && (
-                            <div className="text-[10px] text-amber-700 mt-0.5">Contract total not set</div>
-                          )}
-                        </div>
-                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors shrink-0" />
-                      </div>
-
-                      {/* Progress bar */}
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className={cn(
-                              "h-full rounded-full transition-all",
-                              paidPercent === 100 ? "bg-emerald-500" : "bg-primary/70"
-                            )}
-                            style={{ width: `${paidPercent}%` }}
-                          />
-                        </div>
-                        <span className="text-[10px] font-medium text-muted-foreground tabular-nums w-10 text-right">
-                          {paidPercent}%
+                    <li key={vendor.id} className="py-3">
+                      <div className="flex items-baseline gap-2 mb-2">
+                        <Link
+                          href={`/vendors/${vendor.id}`}
+                          className="text-sm font-medium text-foreground hover:text-primary transition-colors"
+                        >
+                          {vendor.company_name}
+                        </Link>
+                        <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">
+                          {category}
                         </span>
-                      </div>
-
-                      {/* Status line */}
-                      <p className="text-xs text-muted-foreground mt-1.5">
-                        {paidPercent === 100 ? (
-                          <span className="text-emerald-700">Paid in full</span>
-                        ) : deposit > 0 ? (
-                          <>
-                            <span className="text-emerald-700">{formatCurrency(deposit)} paid</span>
-                            <span className="text-muted-foreground/50"> · </span>
-                            <span>{formatCurrency(balance)} due</span>
-                            {vendor.balance_due_date && <> {formatDate(vendor.balance_due_date)}</>}
-                          </>
-                        ) : (
-                          <>{formatCurrency(balance)} due{vendor.balance_due_date && <> {formatDate(vendor.balance_due_date)}</>}</>
+                        {vendor.contract_amount && (
+                          <span className="ml-auto text-xs font-medium text-foreground/80 tabular-nums">
+                            {formatCurrency(vendor.contract_amount)}
+                          </span>
                         )}
-                      </p>
-                    </Link>
+                      </div>
+                      <PaymentSchedule
+                        vendorId={vendor.id}
+                        weddingId={weddingId}
+                        category={category}
+                        contractAmount={vendor.contract_amount}
+                        items={payments}
+                        variant="inline"
+                      />
+                    </li>
                   );
                 })}
-              </div>
+              </ul>
             ) : (
               <Link href="/vendors" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
                 No vendor contracts yet — add vendors
@@ -489,13 +454,13 @@ export function BudgetDashboard({
               </span>
             </span>
             <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
-              {formatCurrency(shoppingTotals.committed)}
+              {formatCurrency(shoppingTotals.total)}
             </span>
           </button>
 
           {expandedSections.has("shopping") && (
             shoppingTotals.items.length > 0 ? (
-              <div className="space-y-1">
+              <div className="space-y-1 pl-6">
                 {shoppingTotals.items.slice(0, 8).map((item) => {
                   const cost = item.actual_cost ?? item.estimated_cost ?? 0;
                   const isSpent = item.status === "received" || item.status === "done";
@@ -555,14 +520,14 @@ export function BudgetDashboard({
               </span>
             </span>
             <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
-              {formatCurrency(customTotals.committed)}
+              {formatCurrency(customTotals.total)}
             </span>
           </button>
 
           {expandedSections.has("custom") && (
             <>
               {customItems.length > 0 && (
-                <div className="space-y-1 mb-2">
+                <div className="space-y-1 mb-2 pl-6">
                   {customItems.map((item) => (
                     <div
                       key={item.id}
@@ -618,7 +583,7 @@ export function BudgetDashboard({
                 </div>
               )}
 
-              <Button onClick={openAddDialog} variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-8 -ml-2">
+              <Button onClick={openAddDialog} variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-8 ml-4">
                 <Plus className="h-3 w-3" />
                 Add item
               </Button>

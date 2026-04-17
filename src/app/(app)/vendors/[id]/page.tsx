@@ -35,24 +35,39 @@ export default async function VendorDetailPage({
       .limit(1)
       .single();
 
-    // Render detail page — vendor may be null (new vendor mode)
+    const { data: payments } = vendor
+      ? await supabase
+          .from("budget_items")
+          .select("*")
+          .eq("vendor_id", vendor.id)
+          .order("created_at", { ascending: true })
+      : { data: [] as never[] };
+
     return (
       <VendorDetail
         vendor={vendor}
         vendorType={id}
         weddingId={wedding.id}
         weddingDate={wedding.wedding_date}
+        initialPayments={payments || []}
       />
     );
   }
 
   // id is a UUID — fetch by ID
-  const { data: vendor } = await supabase
-    .from("vendors")
-    .select("*")
-    .eq("id", id)
-    .eq("wedding_id", wedding.id)
-    .single();
+  const [{ data: vendor }, { data: payments }] = await Promise.all([
+    supabase
+      .from("vendors")
+      .select("*")
+      .eq("id", id)
+      .eq("wedding_id", wedding.id)
+      .single(),
+    supabase
+      .from("budget_items")
+      .select("*")
+      .eq("vendor_id", id)
+      .order("created_at", { ascending: true }),
+  ]);
 
   if (!vendor) redirect("/vendors");
 
@@ -62,6 +77,7 @@ export default async function VendorDetailPage({
       vendorType={vendor.type}
       weddingId={wedding.id}
       weddingDate={wedding.wedding_date}
+      initialPayments={payments || []}
     />
   );
 }

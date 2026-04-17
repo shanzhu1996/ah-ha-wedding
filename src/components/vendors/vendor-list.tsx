@@ -75,12 +75,40 @@ interface Vendor {
   extra_details: Record<string, unknown> | null;
 }
 
+interface PaymentRow {
+  id: string;
+  vendor_id: string | null;
+  paid: boolean;
+  item_type: string;
+}
+
 interface VendorListProps {
   vendors: Vendor[];
   weddingId: string;
+  paymentsByVendor?: Record<string, PaymentRow[]>;
 }
 
-export function VendorList({ vendors: initialVendors, weddingId }: VendorListProps) {
+// Small inline progress indicator — square per payment, filled when paid
+function PaymentDots({ items }: { items: PaymentRow[] }) {
+  if (!items || items.length === 0) return null;
+  // Exclude tips from the "contract paid" indicator
+  const contractItems = items.filter((i) => i.item_type !== "tip");
+  if (contractItems.length === 0) return null;
+  return (
+    <span className="mt-1 flex items-center gap-0.5">
+      {contractItems.map((i) => (
+        <span
+          key={i.id}
+          className={`inline-block h-1.5 w-1.5 rounded-sm ${
+            i.paid ? "bg-emerald-600" : "bg-muted-foreground/30"
+          }`}
+        />
+      ))}
+    </span>
+  );
+}
+
+export function VendorList({ vendors: initialVendors, weddingId, paymentsByVendor = {} }: VendorListProps) {
   const router = useRouter();
   const [showDialog, setShowDialog] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -115,6 +143,35 @@ export function VendorList({ vendors: initialVendors, weddingId }: VendorListPro
       })
       .select("id")
       .single();
+    // Scaffold payment schedule (Deposit + Final balance placeholders)
+    if (data) {
+      await supabase.from("budget_items").insert([
+        {
+          wedding_id: weddingId,
+          category: "Other",
+          description: "Deposit",
+          amount: 0,
+          due_date: null,
+          paid: false,
+          paid_at: null,
+          item_type: "deposit",
+          vendor_id: data.id,
+          shopping_item_id: null,
+        },
+        {
+          wedding_id: weddingId,
+          category: "Other",
+          description: "Final balance",
+          amount: 0,
+          due_date: null,
+          paid: false,
+          paid_at: null,
+          item_type: "balance",
+          vendor_id: data.id,
+          shopping_item_id: null,
+        },
+      ]);
+    }
     setSaving(false);
     setShowDialog(false);
     resetForm();
@@ -172,6 +229,9 @@ export function VendorList({ vendors: initialVendors, weddingId }: VendorListPro
                     <span className="text-[10px] text-muted-foreground">
                       {config.label}
                     </span>
+                    <span className="flex justify-center">
+                      <PaymentDots items={paymentsByVendor[vendor.id] ?? []} />
+                    </span>
                   </div>
                 </button>
               );
@@ -201,6 +261,9 @@ export function VendorList({ vendors: initialVendors, weddingId }: VendorListPro
                   </span>
                   <span className="text-[10px] text-muted-foreground">
                     {(vendor.extra_details as Record<string, string> | null)?.custom_type_name || "Custom"}
+                  </span>
+                  <span className="flex justify-center">
+                    <PaymentDots items={paymentsByVendor[vendor.id] ?? []} />
                   </span>
                 </div>
               </button>

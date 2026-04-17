@@ -33,7 +33,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import {
   Tabs,
@@ -49,6 +48,11 @@ import {
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { TimePicker } from "@/components/ui/time-picker";
+import {
+  PaymentSchedule,
+  type PaymentItem,
+} from "@/components/budget/payment-schedule";
+import { VENDOR_TYPE_TO_CATEGORY } from "@/lib/vendor-categories";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -78,6 +82,7 @@ interface VendorDetailProps {
   vendorType: string;
   weddingId: string;
   weddingDate: string | null;
+  initialPayments?: PaymentItem[];
 }
 
 // ---------------------------------------------------------------------------
@@ -449,21 +454,11 @@ function formatDate(date: Date): string {
   });
 }
 
-function formatCurrency(amount: number | null): string {
-  if (amount == null) return "";
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function VendorDetail({ vendor, vendorType, weddingId, weddingDate }: VendorDetailProps) {
+export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initialPayments = [] }: VendorDetailProps) {
   const router = useRouter();
   const isNew = !vendor;
   const config = getVendorConfig(vendorType);
@@ -476,13 +471,6 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate }: Ven
   const [email, setEmail] = useState(vendor?.email ?? "");
   const [contractAmount, setContractAmount] = useState(
     vendor?.contract_amount != null ? String(vendor.contract_amount) : ""
-  );
-  const [depositAmount, setDepositAmount] = useState(
-    vendor?.deposit_amount != null ? String(vendor.deposit_amount) : ""
-  );
-  const [depositPaid, setDepositPaid] = useState(vendor?.deposit_paid ?? false);
-  const [balanceDueDate, setBalanceDueDate] = useState(
-    vendor?.balance_due_date ?? ""
   );
   const [arrivalTime, setArrivalTime] = useState(vendor?.arrival_time ?? "");
   const [setupLocation, setSetupLocation] = useState(
@@ -505,15 +493,14 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate }: Ven
     setSaving(true);
     const supabase = createClient();
 
+    const contract = contractAmount ? parseFloat(contractAmount) : null;
+
     const payload = {
       company_name: companyName,
       contact_name: contactName || null,
       phone: phone || null,
       email: email || null,
-      contract_amount: contractAmount ? parseFloat(contractAmount) : null,
-      deposit_amount: depositAmount ? parseFloat(depositAmount) : null,
-      deposit_paid: depositPaid,
-      balance_due_date: balanceDueDate || null,
+      contract_amount: contract,
       arrival_time: arrivalTime || null,
       setup_location: setupLocation || null,
       breakdown_time: breakdownTime || null,
@@ -527,6 +514,38 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate }: Ven
         .insert({ ...payload, wedding_id: weddingId, type: vendorType })
         .select("id")
         .single();
+      // Scaffold payment schedule: Deposit ($0, editable) + Final balance (= contract)
+      if (data) {
+        const category = VENDOR_TYPE_TO_CATEGORY[
+          vendorType as keyof typeof VENDOR_TYPE_TO_CATEGORY
+        ] ?? "Other";
+        await supabase.from("budget_items").insert([
+          {
+            wedding_id: weddingId,
+            category,
+            description: "Deposit",
+            amount: 0,
+            due_date: null,
+            paid: false,
+            paid_at: null,
+            item_type: "deposit",
+            vendor_id: data.id,
+            shopping_item_id: null,
+          },
+          {
+            wedding_id: weddingId,
+            category,
+            description: "Final balance",
+            amount: contract ?? 0,
+            due_date: null,
+            paid: false,
+            paid_at: null,
+            item_type: "balance",
+            vendor_id: data.id,
+            shopping_item_id: null,
+          },
+        ]);
+      }
       setSaving(false);
       if (data) {
         router.push(`/vendors/${data.id}`);
@@ -667,15 +686,17 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate }: Ven
             </CardContent>
           </Card>
 
-          {/* Contract section */}
+          {/* Contract & Payment section */}
           <Card>
-            <CardContent className="pt-6">
-              <h3 className="text-sm font-medium text-muted-foreground mb-4">
-                Contract & Payment
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="contractAmount">Contract Amount</Label>
+            <CardContent className="pt-6 space-y-6">
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground mb-4">
+                  Contract total
+                </h3>
+                <div className="max-w-xs space-y-2">
+                  <Label htmlFor="contractAmount" className="sr-only">
+                    Contract total
+                  </Label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
                       $
@@ -690,52 +711,33 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate }: Ven
                     />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="depositAmount">Deposit Amount</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                      $
-                    </span>
-                    <Input
-                      id="depositAmount"
-                      type="number"
-                      value={depositAmount}
-                      onChange={(e) => setDepositAmount(e.target.value)}
-                      className="pl-7"
-                      placeholder="500"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 pt-2">
-                  <Checkbox
-                    id="depositPaid"
-                    checked={depositPaid}
-                    onCheckedChange={(checked) =>
-                      setDepositPaid(checked === true)
-                    }
-                  />
-                  <Label htmlFor="depositPaid" className="cursor-pointer">
-                    Deposit paid
-                  </Label>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="balanceDueDate">Balance Due Date</Label>
-                  <Input
-                    id="balanceDueDate"
-                    type="date"
-                    value={balanceDueDate}
-                    onChange={(e) => setBalanceDueDate(e.target.value)}
-                  />
-                </div>
               </div>
-              {contractAmount && depositAmount && (
-                <p className="text-sm text-muted-foreground mt-4">
-                  Remaining balance:{" "}
-                  <span className="font-medium text-foreground">
-                    {formatCurrency(
-                      parseFloat(contractAmount) - parseFloat(depositAmount)
-                    )}
-                  </span>
+
+              {!isNew && vendor && (
+                <div className="border-t pt-6">
+                  <h3 className="text-sm font-medium text-muted-foreground mb-3">
+                    Payment schedule
+                  </h3>
+                  <PaymentSchedule
+                    vendorId={vendor.id}
+                    weddingId={weddingId}
+                    category={
+                      VENDOR_TYPE_TO_CATEGORY[
+                        vendorType as keyof typeof VENDOR_TYPE_TO_CATEGORY
+                      ] ?? "Other"
+                    }
+                    contractAmount={
+                      contractAmount ? parseFloat(contractAmount) : null
+                    }
+                    items={initialPayments}
+                    variant="expanded"
+                  />
+                </div>
+              )}
+
+              {isNew && (
+                <p className="text-xs text-muted-foreground italic">
+                  Payment schedule will be set up after you save.
                 </p>
               )}
             </CardContent>

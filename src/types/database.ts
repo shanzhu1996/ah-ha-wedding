@@ -198,6 +198,7 @@ export interface Database {
           amount: number;
           due_date: string | null;
           paid: boolean;
+          paid_at: string | null;
           item_type: BudgetItemType;
           vendor_id: string | null;
           shopping_item_id: string | null;
