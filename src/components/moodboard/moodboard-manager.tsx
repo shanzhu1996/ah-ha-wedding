@@ -719,16 +719,11 @@ export function MoodboardManager({
             Moodboard
           </h1>
           <p className="text-sm text-muted-foreground mt-2">
-            <span className="font-medium text-foreground/80">{totalImages}</span> image{totalImages !== 1 ? "s" : ""} collected
-            {weddingDate && (() => {
-              const days = Math.ceil((new Date(weddingDate + "T00:00:00").getTime() - Date.now()) / 86400000);
-              return days > 0 ? (
-                <>
-                  <span className="text-muted-foreground/50"> · </span>
-                  <span className="font-medium text-foreground/80">{days}</span> days to go
-                </>
-              ) : null;
-            })()}
+            <span className="font-medium text-foreground/80">{totalImages}</span> image{totalImages !== 1 ? "s" : ""}
+            <span className="text-muted-foreground/50"> · </span>
+            <span className="font-medium text-foreground/80">
+              {SECTIONS.filter((s) => (sectionMap.get(s.key)?.moodboard_images?.length || 0) > 0).length}
+            </span> of {SECTIONS.length} sections planned
           </p>
         </div>
         {totalImages > 0 && (
