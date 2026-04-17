@@ -1,42 +1,18 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Plus,
-  Search,
-  Trash2,
-  Edit,
-  Users,
-  Wand2,
-  CircleOff,
-  Armchair,
-  LayoutGrid,
-} from "lucide-react";
+import { Plus, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
+import { AddTableDialog } from "./add-table-dialog";
+import { UnassignedSidebar } from "./unassigned-sidebar";
+import { TableCard } from "./table-card";
+import { useSeatAssignment } from "./use-seat-assignment";
+import type { TableShape } from "./table-templates";
 
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
+// ── Types ──────────────────────────────────────────────────────────────
 
 interface Table {
   id: string;
@@ -59,24 +35,17 @@ interface Guest {
   meal_choice: string | null;
   dietary_restrictions: string | null;
   table_id: string | null;
+  seat_number: number | null;
   relationship_tag: string | null;
-  plus_one?: boolean;
-  plus_one_name?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  notes?: string | null;
 }
 
-interface SeatingManagerProps {
+interface Props {
   tables: Table[];
   guests: Guest[];
   weddingId: string;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Relationship-tag colour palette                                    */
-/* ------------------------------------------------------------------ */
+// ── Tag color palette (carried over from old seating-manager) ──────────
 
 const TAG_COLORS: Record<string, string> = {};
 const PALETTE = [
@@ -100,623 +69,468 @@ function tagColor(tag: string | null): string {
   return TAG_COLORS[tag];
 }
 
-/* ------------------------------------------------------------------ */
-/*  Component                                                          */
-/* ------------------------------------------------------------------ */
+// ── Component ──────────────────────────────────────────────────────────
 
 export function SeatingManager({
   tables: initialTables,
   guests: initialGuests,
   weddingId,
-}: SeatingManagerProps) {
+}: Props) {
   const router = useRouter();
+  const supabase = createClient();
+  const { assign, unassign, swap, applyOverlay } = useSeatAssignment();
 
-  // --- selection state ---
-  const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
+  const [selectedGuestIds, setSelectedGuestIds] = useState<string[]>([]);
+  const [selectionLabel, setSelectionLabel] = useState<string | null>(null);
+  const selectedGuestId =
+    selectedGuestIds.length === 1 ? selectedGuestIds[0] : null;
 
-  // --- table dialog state ---
-  const [showTableDialog, setShowTableDialog] = useState(false);
-  const [editingTable, setEditingTable] = useState<Table | null>(null);
-  const [tableName, setTableName] = useState("");
-  const [tableCapacity, setTableCapacity] = useState("8");
-  const [tableShape, setTableShape] = useState("round");
-  const [saving, setSaving] = useState(false);
-
-  /* ---------------------------------------------------------------- */
-  /*  Derived data                                                     */
-  /* ---------------------------------------------------------------- */
-
-  const confirmedGuests = initialGuests.filter(
-    (g) => g.rsvp_status === "confirmed"
+  // Apply optimistic overlays to guests
+  const guests = useMemo(
+    () => initialGuests.map((g) => applyOverlay(g)),
+    [initialGuests, applyOverlay]
   );
-  const seatedGuests = initialGuests.filter((g) => g.table_id);
-  const unassignedGuests = initialGuests.filter((g) => !g.table_id);
 
-  const guestsByTable = useMemo(() => {
-    const map: Record<string, Guest[]> = {};
-    for (const g of initialGuests) {
-      if (g.table_id) {
-        if (!map[g.table_id]) map[g.table_id] = [];
-        map[g.table_id].push(g);
+  function clearSelection() {
+    setSelectedGuestIds([]);
+    setSelectionLabel(null);
+  }
+
+  // Unseat a single guest
+  async function unseatGuest(guestId: string) {
+    await unassign(guestId);
+  }
+
+  // Dismiss selection / unseat with keyboard
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") clearSelection();
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedGuestIds.length > 0) {
+        // Only unseat seated guests; don't nuke unassigned ones
+        const seatedIds = selectedGuestIds.filter((id) => {
+          const g = initialGuests.find((x) => x.id === id);
+          return g?.table_id;
+        });
+        if (seatedIds.length === 0) return;
+        e.preventDefault();
+        seatedIds.forEach((id) => unassign(id));
+        clearSelection();
       }
     }
-    return map;
-  }, [initialGuests]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGuestIds, initialGuests]);
 
-  // Group unassigned guests by relationship_tag
-  const unassignedByTag = useMemo(() => {
-    const map: Record<string, Guest[]> = {};
-    const filtered = unassignedGuests.filter((g) => {
-      const name = `${g.first_name} ${g.last_name}`.toLowerCase();
-      return name.includes(search.toLowerCase());
+  // ── Derived data ────────────────────────────────────────────────────
+
+  const unassigned = guests.filter((g) => !g.table_id);
+  const confirmed = guests.filter((g) => g.rsvp_status === "confirmed");
+  const unseatedConfirmed = confirmed.filter((g) => !g.table_id).length;
+  const totalCapacity = initialTables.reduce((s, t) => s + t.capacity, 0);
+  const recommendedTables = Math.ceil(confirmed.length / 10);
+
+  // Build a guest map for swap lookups
+  const guestMap = useMemo(() => {
+    const m = new Map<string, Guest>();
+    guests.forEach((g) => m.set(g.id, g));
+    return m;
+  }, [guests]);
+
+  // Tagline
+  const taglineParts: string[] = [];
+  if (unseatedConfirmed > 0) {
+    taglineParts.push(`${unseatedConfirmed} to seat`);
+  } else if (confirmed.length > 0 && initialTables.length > 0) {
+    taglineParts.push(`all ${confirmed.length} seated`);
+  }
+  if (initialTables.length > 0) {
+    taglineParts.push(
+      `${initialTables.length} ${
+        initialTables.length === 1 ? "table" : "tables"
+      }`
+    );
+  }
+  if (
+    initialTables.length === 0 &&
+    confirmed.length > 0 &&
+    recommendedTables > 0
+  ) {
+    taglineParts.push(
+      `need ~${recommendedTables} round 10${recommendedTables === 1 ? "" : "s"}`
+    );
+  }
+
+  // ── Mutations ───────────────────────────────────────────────────────
+
+  async function createTable(input: {
+    shape: TableShape;
+    capacity: number;
+    name: string | null;
+  }) {
+    const nextNumber =
+      initialTables.reduce((max, t) => Math.max(max, t.number), 0) + 1;
+    await supabase.from("tables").insert({
+      wedding_id: weddingId,
+      number: nextNumber,
+      name: input.name,
+      capacity: input.capacity,
+      shape: input.shape,
     });
-    for (const g of filtered) {
-      const tag = g.relationship_tag || "Ungrouped";
-      if (!map[tag]) map[tag] = [];
-      map[tag].push(g);
-    }
-    return map;
-  }, [unassignedGuests, search]);
-
-  const tablesWithOpenSeats = initialTables.filter(
-    (t) => (guestsByTable[t.id]?.length || 0) < t.capacity
-  ).length;
-
-  const unassignedConfirmed = confirmedGuests.filter(
-    (g) => !g.table_id
-  ).length;
-
-  const recommendedTables = Math.ceil(confirmedGuests.length / 8);
-
-  /* ---------------------------------------------------------------- */
-  /*  Handlers                                                         */
-  /* ---------------------------------------------------------------- */
-
-  function resetTableForm() {
-    setTableName("");
-    setTableCapacity("8");
-    setTableShape("round");
-    setEditingTable(null);
-  }
-
-  function openAddTable() {
-    resetTableForm();
-    setShowTableDialog(true);
-  }
-
-  function openEditTable(table: Table) {
-    setEditingTable(table);
-    setTableName(table.name || "");
-    setTableCapacity(String(table.capacity));
-    setTableShape(table.shape || "round");
-    setShowTableDialog(true);
-  }
-
-  async function handleSaveTable() {
-    setSaving(true);
-    const supabase = createClient();
-
-    if (editingTable) {
-      await supabase
-        .from("tables")
-        .update({
-          name: tableName || null,
-          capacity: parseInt(tableCapacity) || 8,
-          shape: tableShape,
-        })
-        .eq("id", editingTable.id);
-    } else {
-      const nextNumber =
-        initialTables.length > 0
-          ? Math.max(...initialTables.map((t) => t.number)) + 1
-          : 1;
-      await supabase.from("tables").insert({
-        wedding_id: weddingId,
-        number: nextNumber,
-        name: tableName || null,
-        capacity: parseInt(tableCapacity) || 8,
-        shape: tableShape,
-        position_x: 0,
-        position_y: 0,
-      });
-    }
-
-    setSaving(false);
-    setShowTableDialog(false);
-    resetTableForm();
     router.refresh();
   }
 
-  async function handleDeleteTable(tableId: string) {
-    const supabase = createClient();
-    // Unassign guests first
+  async function deleteTable(tableId: string) {
+    if (!confirm("Delete this table? Guests will be unseated.")) return;
+    // Clear both table_id AND seat_number first (no FK cascade in schema)
     await supabase
       .from("guests")
-      .update({ table_id: null })
+      .update({ table_id: null, seat_number: null })
       .eq("table_id", tableId);
     await supabase.from("tables").delete().eq("id", tableId);
     router.refresh();
   }
 
-  async function handleAssignGuest(guestId: string, tableId: string) {
-    const supabase = createClient();
-    await supabase.from("guests").update({ table_id: tableId }).eq("id", guestId);
-    setSelectedGuestId(null);
+  async function renameTable(tableId: string, name: string | null) {
+    await supabase.from("tables").update({ name }).eq("id", tableId);
     router.refresh();
   }
 
-  async function handleUnassignGuest(guestId: string) {
-    const supabase = createClient();
-    await supabase
-      .from("guests")
-      .update({ table_id: null })
-      .eq("id", guestId);
-    router.refresh();
-  }
+  async function autoAssign() {
+    if (!confirm("Auto-assign all unassigned confirmed guests?")) return;
+    if (initialTables.length === 0) return;
 
-  async function handleAutoSuggest() {
-    setSaving(true);
-    const supabase = createClient();
-
-    // Group unassigned guests by relationship_tag
-    const groups: Record<string, Guest[]> = {};
-    for (const g of unassignedGuests) {
-      const tag = g.relationship_tag || "Ungrouped";
-      if (!groups[tag]) groups[tag] = [];
-      groups[tag].push(g);
+    // Group unassigned confirmed guests by relationship_tag
+    const unassignedConfirmed = unassigned.filter(
+      (g) => g.rsvp_status === "confirmed"
+    );
+    const byTag = new Map<string, Guest[]>();
+    for (const g of unassignedConfirmed) {
+      const tag = g.relationship_tag?.trim() || "_ungrouped";
+      const list = byTag.get(tag) ?? [];
+      list.push(g);
+      byTag.set(tag, list);
     }
-
-    // Build a flat queue of guests, grouped by tag
+    // Alphabetical queue so same tag stays adjacent
     const queue: Guest[] = [];
-    for (const tag of Object.keys(groups).sort()) {
-      queue.push(...groups[tag]);
-    }
+    Array.from(byTag.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([, list]) => queue.push(...list));
 
-    if (queue.length === 0) {
-      setSaving(false);
+    // Current occupancy per table
+    const occupancy = new Map<string, Set<number>>();
+    initialTables.forEach((t) => occupancy.set(t.id, new Set()));
+    guests.forEach((g) => {
+      if (g.table_id && g.seat_number) {
+        occupancy.get(g.table_id)?.add(g.seat_number);
+      }
+    });
+
+    // Assign each guest to first table with an open seat
+    for (const g of queue) {
+      for (const t of initialTables) {
+        const taken = occupancy.get(t.id) ?? new Set();
+        if (taken.size >= t.capacity) continue;
+        // Find next open seat (1-based)
+        let openSeat = 1;
+        while (taken.has(openSeat)) openSeat++;
+        if (openSeat > t.capacity) continue;
+        taken.add(openSeat);
+        occupancy.set(t.id, taken);
+        await assign(g.id, t.id, openSeat);
+        break;
+      }
+    }
+    router.refresh();
+  }
+
+  // ── Click-to-assign / swap logic ────────────────────────────────────
+
+  async function handleSeatClick(tableId: string, seatNumber: number) {
+    // No selection — if seat has a guest, select them
+    if (selectedGuestIds.length === 0) {
+      const occupant = guests.find(
+        (g) => g.table_id === tableId && g.seat_number === seatNumber
+      );
+      if (occupant) setSelectedGuestIds([occupant.id]);
       return;
     }
 
-    // Collect tables that have open seats, sorted by number
-    const openTables = initialTables
-      .map((t) => ({
-        ...t,
-        seated: guestsByTable[t.id]?.length || 0,
-      }))
-      .filter((t) => t.seated < t.capacity)
-      .sort((a, b) => a.number - b.number);
-
-    const assignments: { guestId: string; tableId: string }[] = [];
-    let tableIdx = 0;
-    const seatedCounts: Record<string, number> = {};
-    for (const t of openTables) {
-      seatedCounts[t.id] = t.seated;
+    // ── Group selection: fill consecutive empty seats from the clicked seat ──
+    if (selectedGuestIds.length > 1) {
+      const table = initialTables.find((t) => t.id === tableId);
+      if (!table) return;
+      const taken = new Set(
+        guests
+          .filter(
+            (g) =>
+              g.table_id === tableId &&
+              g.seat_number &&
+              !selectedGuestIds.includes(g.id)
+          )
+          .map((g) => g.seat_number as number)
+      );
+      // Walk seat numbers starting at clicked seat, wrap around
+      const openSeats: number[] = [];
+      for (let i = 0; i < table.capacity; i++) {
+        const s = ((seatNumber - 1 + i) % table.capacity) + 1;
+        if (!taken.has(s)) openSeats.push(s);
+        if (openSeats.length >= selectedGuestIds.length) break;
+      }
+      // Assign as many as fit
+      for (let i = 0; i < Math.min(openSeats.length, selectedGuestIds.length); i++) {
+        await assign(selectedGuestIds[i], tableId, openSeats[i]);
+      }
+      clearSelection();
+      return;
     }
 
-    for (const guest of queue) {
-      // Find next table with room
-      let found = false;
-      const startIdx = tableIdx;
-      do {
-        const t = openTables[tableIdx % openTables.length];
-        if (seatedCounts[t.id] < t.capacity) {
-          assignments.push({ guestId: guest.id, tableId: t.id });
-          seatedCounts[t.id]++;
-          if (seatedCounts[t.id] >= t.capacity) {
-            tableIdx = (tableIdx + 1) % openTables.length;
-          }
-          found = true;
-          break;
-        }
-        tableIdx = (tableIdx + 1) % openTables.length;
-      } while (tableIdx !== startIdx);
-
-      if (!found) break; // no more room
+    // ── Single selection ──
+    const selected = guestMap.get(selectedGuestIds[0]);
+    if (!selected) {
+      clearSelection();
+      return;
     }
 
-    // Batch update
-    for (const { guestId, tableId } of assignments) {
-      await supabase
-        .from("guests")
-        .update({ table_id: tableId })
-        .eq("id", guestId);
+    const occupant = guests.find(
+      (g) =>
+        g.table_id === tableId &&
+        g.seat_number === seatNumber &&
+        g.id !== selected.id
+    );
+
+    if (!occupant) {
+      await assign(selected.id, tableId, seatNumber);
+      clearSelection();
+      return;
     }
 
-    setSaving(false);
-    router.refresh();
+    // Occupied seat → swap (uses RPC)
+    if (selected.table_id && selected.seat_number) {
+      await swap(
+        { id: selected.id, table_id: selected.table_id, seat_number: selected.seat_number },
+        { id: occupant.id, table_id: occupant.table_id, seat_number: occupant.seat_number }
+      );
+    } else {
+      // Selected is unassigned; bump occupant to unseated, then place selected
+      await unassign(occupant.id);
+      await assign(selected.id, tableId, seatNumber);
+    }
+    clearSelection();
   }
 
-  /* ---------------------------------------------------------------- */
-  /*  Render                                                           */
-  /* ---------------------------------------------------------------- */
+  function handleGuestPillClick(guestId: string) {
+    if (selectedGuestIds.length === 0) {
+      setSelectedGuestIds([guestId]);
+      setSelectionLabel(null);
+      return;
+    }
+    if (selectedGuestIds.length === 1 && selectedGuestIds[0] === guestId) {
+      clearSelection();
+      return;
+    }
+    // Single selection + different guest pill clicked → swap them
+    if (selectedGuestIds.length === 1) {
+      const a = guestMap.get(selectedGuestIds[0]);
+      const b = guestMap.get(guestId);
+      if (a && b) {
+        swap(
+          { id: a.id, table_id: a.table_id, seat_number: a.seat_number },
+          { id: b.id, table_id: b.table_id, seat_number: b.seat_number }
+        );
+      }
+      clearSelection();
+      return;
+    }
+    // Group selection active + pill clicked → just replace with single guest
+    setSelectedGuestIds([guestId]);
+    setSelectionLabel(null);
+  }
+
+  function handleSidebarSelectGuest(guestId: string | null) {
+    if (guestId === null) {
+      clearSelection();
+      return;
+    }
+    setSelectedGuestIds([guestId]);
+    setSelectionLabel(null);
+  }
+
+  function handleSidebarSelectGroup(guestIds: string[], groupName: string) {
+    // If same group already selected, toggle off
+    if (
+      selectedGuestIds.length === guestIds.length &&
+      guestIds.every((id) => selectedGuestIds.includes(id))
+    ) {
+      clearSelection();
+      return;
+    }
+    setSelectedGuestIds(guestIds);
+    setSelectionLabel(groupName);
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────
 
   return (
-    <>
-      {/* Stats bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold">
-              {seatedGuests.length}/{confirmedGuests.length}
-            </div>
-            <p className="text-xs text-muted-foreground">Seated / Confirmed</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold">{initialTables.length}</div>
-            <p className="text-xs text-muted-foreground">Tables</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-amber-600">
-              {tablesWithOpenSeats}
-            </div>
-            <p className="text-xs text-muted-foreground">Open Seats</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-red-600">
-              {unassignedConfirmed}
-            </div>
-            <p className="text-xs text-muted-foreground">Unassigned Confirmed</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Table math helper */}
-      <div className="text-sm text-muted-foreground flex items-center gap-2">
-        <Armchair className="h-4 w-4" />
-        {confirmedGuests.length} confirmed guests / 8 ={" "}
-        <span className="font-semibold text-foreground">
-          {recommendedTables} tables
-        </span>{" "}
-        recommended
-      </div>
-
-      {/* Actions */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={openAddTable} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Add Table
-        </Button>
-        <Button
-          variant="outline"
-          className="gap-2"
-          onClick={handleAutoSuggest}
-          disabled={saving || unassignedGuests.length === 0 || initialTables.length === 0}
-        >
-          <Wand2 className="h-4 w-4" />
-          {saving ? "Assigning..." : "Auto-Assign"}
-        </Button>
-        {selectedGuestId && (
-          <Badge variant="secondary" className="gap-1 py-1.5 px-3">
-            <Users className="h-3 w-3" />
-            Click a table to seat{" "}
-            <span className="font-semibold">
-              {(() => {
-                const g = initialGuests.find(
-                  (g) => g.id === selectedGuestId
-                );
-                return g ? `${g.first_name} ${g.last_name}` : "";
-              })()}
-            </span>
-            <button
-              className="ml-1 hover:text-foreground"
-              onClick={() => setSelectedGuestId(null)}
-            >
-              <CircleOff className="h-3 w-3" />
-            </button>
-          </Badge>
+    <div className="space-y-8">
+      {/* Editorial header */}
+      <div>
+        <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
+          Seating chart
+        </h1>
+        {taglineParts.length > 0 && (
+          <p className="text-sm text-muted-foreground mt-2">
+            {taglineParts.map((part, i) => (
+              <span key={i}>
+                {i > 0 && (
+                  <span className="text-muted-foreground/50"> · </span>
+                )}
+                <span
+                  className={cn(
+                    i === 0 &&
+                      unseatedConfirmed > 0 &&
+                      "font-medium text-foreground/80"
+                  )}
+                >
+                  {part}
+                </span>
+              </span>
+            ))}
+          </p>
         )}
       </div>
 
-      {/* Main two-panel layout */}
-      <div className="flex gap-6 items-start">
-        {/* Left panel: tables grid (70%) */}
-        <div className="flex-[7] min-w-0">
-          {initialTables.length === 0 ? (
-            <Card>
-              <CardContent className="py-16 flex flex-col items-center text-center">
-                <LayoutGrid className="h-12 w-12 text-primary/40 mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Design your perfect seating</h3>
-                <p className="text-sm text-muted-foreground max-w-md mb-6">
-                  Add tables, then click guests from the sidebar to assign them. We&apos;ll help you group by family and friends.
-                </p>
-                <Button onClick={openAddTable} className="gap-2">
-                  <Plus className="h-4 w-4" />
-                  Add Your First Table
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {initialTables.map((table) => {
-                const seated = guestsByTable[table.id] || [];
-                const isFull = seated.length >= table.capacity;
-                const canAccept =
-                  selectedGuestId && !isFull;
+      {/* Toolbar */}
+      <div className="flex items-center gap-2">
+        <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5">
+          <Plus className="h-3.5 w-3.5" />
+          Add table
+        </Button>
+        {initialTables.length > 0 && unseatedConfirmed > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={autoAssign}
+            className="gap-1.5"
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            Auto-assign
+          </Button>
+        )}
+        {selectedGuestIds.length > 0 && (
+          <div className="text-xs ml-2 px-2 py-1 rounded-md bg-primary/10 text-primary font-medium inline-flex items-center gap-2">
+            <span>
+              {selectedGuestIds.length === 1 ? (
+                <>Click a seat to place</>
+              ) : (
+                <>
+                  {selectedGuestIds.length} guests selected
+                  {selectionLabel && ` from ${selectionLabel}`} · click a seat to start filling
+                </>
+              )}
+            </span>
+            {/* Unseat button only shown when ALL selected guests are currently seated */}
+            {selectedGuestIds.every((id) => {
+              const g = initialGuests.find((x) => x.id === id);
+              return g?.table_id;
+            }) && (
+              <>
+                <span className="text-primary/40">·</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    selectedGuestIds.forEach((id) => unassign(id));
+                    clearSelection();
+                  }}
+                  className="underline hover:text-foreground"
+                >
+                  unseat
+                </button>
+              </>
+            )}
+            <span className="text-primary/40">·</span>
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="underline hover:text-foreground"
+            >
+              cancel
+            </button>
+          </div>
+        )}
+      </div>
 
+      {/* Persistent help hint when nothing selected yet and tables exist */}
+      {initialTables.length > 0 &&
+        selectedGuestIds.length === 0 &&
+        guests.length > 0 && (
+          <p className="text-xs text-muted-foreground -mt-4 leading-relaxed">
+            <strong className="font-medium text-foreground/70">Click any name</strong>{" "}
+            — unassigned on the right, or seated on a table — then click a seat to place or
+            swap. Hover a seated name to unseat (×) or press Delete.
+          </p>
+        )}
+
+      {/* Main layout: tables grid + unassigned sidebar */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
+        {/* Tables area */}
+        <div>
+          {initialTables.length === 0 ? (
+            <div className="text-center py-12 border border-dashed border-border/60 rounded-lg">
+              <p className="text-sm text-muted-foreground mb-4">
+                No tables yet. Pick a shape to get started.
+              </p>
+              <Button onClick={() => setAddOpen(true)} className="gap-1.5">
+                <Plus className="h-4 w-4" />
+                Add your first table
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {initialTables.map((t) => {
+                const seated = guests.filter((g) => g.table_id === t.id);
                 return (
-                  <Card
-                    key={table.id}
-                    className={`transition-all ${
-                      canAccept
-                        ? "ring-2 ring-primary cursor-pointer hover:shadow-md"
-                        : ""
-                    } ${isFull ? "opacity-80" : ""}`}
-                    onClick={() => {
-                      if (canAccept && selectedGuestId) {
-                        handleAssignGuest(selectedGuestId, table.id);
-                      }
-                    }}
-                  >
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-base">
-                          {table.name || `Table ${table.number}`}
-                          <span className="ml-2 text-xs font-normal text-muted-foreground capitalize">
-                            {table.shape}
-                          </span>
-                        </CardTitle>
-                        <div className="flex items-center gap-1">
-                          <Badge
-                            variant={isFull ? "destructive" : "secondary"}
-                            className="text-xs"
-                          >
-                            {seated.length}/{table.capacity}
-                          </Badge>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEditTable(table);
-                            }}
-                          >
-                            <Edit className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-destructive"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteTable(table.id);
-                            }}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                      {seated.length === 0 ? (
-                        <p className="text-xs text-muted-foreground italic py-2">
-                          No guests assigned
-                        </p>
-                      ) : (
-                        <ul className="space-y-1">
-                          {seated.map((guest) => (
-                            <li
-                              key={guest.id}
-                              className="flex items-center justify-between text-sm group/guest hover:bg-muted/50 rounded px-1 -mx-1 py-0.5"
-                            >
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span className="truncate">
-                                  {guest.first_name} {guest.last_name}
-                                </span>
-                                {guest.dietary_restrictions && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-[10px] px-1 py-0 shrink-0"
-                                  >
-                                    {guest.dietary_restrictions}
-                                  </Badge>
-                                )}
-                                {guest.relationship_tag && (
-                                  <Badge
-                                    variant="secondary"
-                                    className={`text-[10px] px-1 py-0 shrink-0 ${tagColor(
-                                      guest.relationship_tag
-                                    )}`}
-                                  >
-                                    {guest.relationship_tag}
-                                  </Badge>
-                                )}
-                              </div>
-                              <button
-                                className="text-muted-foreground hover:text-destructive opacity-0 group-hover/guest:opacity-100 transition-opacity shrink-0 ml-1"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleUnassignGuest(guest.id);
-                                }}
-                                title="Remove from table"
-                              >
-                                <CircleOff className="h-3.5 w-3.5" />
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </CardContent>
-                  </Card>
+                  <TableCard
+                    key={t.id}
+                    id={t.id}
+                    number={t.number}
+                    name={t.name}
+                    shape={t.shape as TableShape}
+                    capacity={t.capacity}
+                    seated={seated}
+                    isSelectable={selectedGuestId !== null}
+                    selectedGuestId={selectedGuestId}
+                    onSeatClick={(seat) => handleSeatClick(t.id, seat)}
+                    onGuestPillClick={handleGuestPillClick}
+                    onGuestUnassign={unseatGuest}
+                    onDelete={() => deleteTable(t.id)}
+                    onRename={(name) => renameTable(t.id, name)}
+                    tagColor={tagColor}
+                  />
                 );
               })}
             </div>
           )}
         </div>
 
-        {/* Right panel: unassigned guests sidebar (30%) */}
-        <div className="flex-[3] min-w-[240px] max-w-[360px]">
-          <Card className="sticky top-4">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">
-                Unassigned Guests
-                <Badge variant="secondary" className="ml-2 text-xs">
-                  {unassignedGuests.length}
-                </Badge>
-              </CardTitle>
-              <div className="relative mt-2">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search guests..."
-                  className="pl-8 h-8 text-sm"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <ScrollArea className="h-[60vh]">
-                {Object.keys(unassignedByTag).length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-6">
-                    {unassignedGuests.length === 0
-                      ? "All guests are seated!"
-                      : "No guests match your search."}
-                  </p>
-                ) : (
-                  <div className="space-y-4 pr-2">
-                    {Object.entries(unassignedByTag)
-                      .sort(([a], [b]) => a.localeCompare(b))
-                      .map(([tag, guests]) => (
-                        <div key={tag}>
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <Badge
-                              variant="secondary"
-                              className={`text-[10px] ${tagColor(
-                                tag === "Ungrouped" ? null : tag
-                              )}`}
-                            >
-                              {tag}
-                            </Badge>
-                            <span className="text-[10px] text-muted-foreground">
-                              ({guests.length})
-                            </span>
-                          </div>
-                          <ul className="space-y-0.5">
-                            {guests.map((guest) => (
-                              <li
-                                key={guest.id}
-                                className={`flex items-center gap-1.5 text-sm rounded px-2 py-1 cursor-pointer transition-colors ${
-                                  selectedGuestId === guest.id
-                                    ? "bg-primary/10 ring-1 ring-primary"
-                                    : "hover:bg-muted/50"
-                                }`}
-                                onClick={() =>
-                                  setSelectedGuestId(
-                                    selectedGuestId === guest.id
-                                      ? null
-                                      : guest.id
-                                  )
-                                }
-                              >
-                                <span className="truncate">
-                                  {guest.first_name} {guest.last_name}
-                                </span>
-                                {guest.rsvp_status === "confirmed" && (
-                                  <Badge
-                                    variant="secondary"
-                                    className="text-[10px] px-1 py-0 bg-green-100 text-green-800 shrink-0"
-                                  >
-                                    RSVP
-                                  </Badge>
-                                )}
-                                {guest.dietary_restrictions && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-[10px] px-1 py-0 shrink-0"
-                                  >
-                                    {guest.dietary_restrictions}
-                                  </Badge>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Unassigned sidebar */}
+        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+          <UnassignedSidebar
+            guests={unassigned}
+            selectedGuestIds={selectedGuestIds}
+            onSelectGuest={handleSidebarSelectGuest}
+            onSelectGroup={handleSidebarSelectGroup}
+            tagColor={tagColor}
+          />
+        </aside>
       </div>
 
-      {/* Add / Edit Table Dialog */}
-      <Dialog open={showTableDialog} onOpenChange={setShowTableDialog}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>
-              {editingTable ? "Edit Table" : "Add Table"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Table Name (optional)</Label>
-              <Input
-                value={tableName}
-                onChange={(e) => setTableName(e.target.value)}
-                placeholder="e.g. Head Table, Family Table"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Capacity</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={tableCapacity}
-                  onChange={(e) => setTableCapacity(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Shape</Label>
-                <Select
-                  value={tableShape}
-                  onValueChange={(v) => setTableShape(v ?? "round")}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="round">Round</SelectItem>
-                    <SelectItem value="rectangle">Rectangle</SelectItem>
-                    <SelectItem value="square">Square</SelectItem>
-                    <SelectItem value="sweetheart">Sweetheart</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowTableDialog(false);
-                  resetTableForm();
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSaveTable}
-                disabled={saving}
-              >
-                {saving
-                  ? "Saving..."
-                  : editingTable
-                  ? "Update Table"
-                  : "Add Table"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
+      <AddTableDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onCreate={createTable}
+      />
+    </div>
   );
 }

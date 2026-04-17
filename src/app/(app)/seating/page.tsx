@@ -23,23 +23,10 @@ export default async function SeatingPage() {
   ]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)]">
-          Seating Chart
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          The seating chart decides who sits where at your reception. It
-          goes to your coordinator, caterer, and stationer (for escort
-          cards). Group guests by family and friends so everyone has people
-          they know at their table — no awkward strangers.
-        </p>
-      </div>
-      <SeatingManager
-        tables={tables || []}
-        guests={guests || []}
-        weddingId={wedding.id}
-      />
-    </div>
+    <SeatingManager
+      tables={tables || []}
+      guests={guests || []}
+      weddingId={wedding.id}
+    />
   );
 }

@@ -126,6 +126,7 @@ export interface Database {
           email: string | null;
           phone: string | null;
           table_id: string | null;
+          seat_number: number | null;
           relationship_tag: string | null;
           gift_description: string | null;
           thank_you_sent: boolean;
