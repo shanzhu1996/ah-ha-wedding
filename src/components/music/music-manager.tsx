@@ -10,12 +10,11 @@ import {
   Ban,
   ChevronUp,
   ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -23,13 +22,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
+
+// ── Types ──────────────────────────────────────────────────────────────
 
 interface Song {
   id: string;
@@ -48,70 +44,63 @@ interface MusicManagerProps {
   weddingId: string;
 }
 
-const PHASES = [
-  { value: "prelude", label: "Prelude" },
-  { value: "processional", label: "Processional" },
-  { value: "recessional", label: "Recessional" },
-  { value: "cocktail_hour", label: "Cocktail Hour" },
-  { value: "dinner", label: "Dinner" },
-  { value: "first_dance", label: "First Dance" },
-  { value: "parent_dances", label: "Parent Dances" },
-  { value: "open_dancing", label: "Open Dancing" },
-  { value: "last_dance", label: "Last Dance" },
-] as const;
+// ── Phases: grouped by wedding day flow ────────────────────────────────
 
-const PHASE_SUGGESTIONS: Record<string, string[]> = {
-  prelude: [
-    "Canon in D - Pachelbel",
-    "Clair de Lune - Debussy",
-    "A Thousand Years - Christina Perri",
-  ],
-  processional: [
-    "Here Comes the Sun - Beatles",
-    "Bridal Chorus - Wagner",
-    "Can't Help Falling in Love - Elvis",
-  ],
-  recessional: [
-    "Signed, Sealed, Delivered - Stevie Wonder",
-    "Beautiful Day - U2",
-    "Happy - Pharrell Williams",
-  ],
-  cocktail_hour: [
-    "Jazz standards playlist",
-    "Bossa nova classics",
-    "Acoustic covers of pop hits",
-  ],
-  dinner: [
-    "Frank Sinatra classics",
-    "Norah Jones - Come Away with Me",
-    "Michael Buble - Everything",
-  ],
-  first_dance: [
-    "At Last - Etta James",
-    "Perfect - Ed Sheeran",
-    "Thinking Out Loud - Ed Sheeran",
-  ],
-  parent_dances: [
-    "My Girl - The Temptations",
-    "Unforgettable - Nat King Cole",
-    "What a Wonderful World - Louis Armstrong",
-  ],
-  open_dancing: [
-    "Uptown Funk - Bruno Mars",
-    "Shut Up and Dance - Walk the Moon",
-    "September - Earth, Wind & Fire",
-  ],
-  last_dance: [
-    "Last Dance - Donna Summer",
-    "Don't Stop Believin' - Journey",
-    "I Gotta Feeling - Black Eyed Peas",
-  ],
-};
+interface Phase {
+  value: string;
+  label: string;
+  description: string;
+}
+
+interface PhaseGroup {
+  label: string;
+  phases: Phase[];
+}
+
+const PHASE_GROUPS: PhaseGroup[] = [
+  {
+    label: "Ceremony",
+    phases: [
+      { value: "prelude", label: "Guest Arrival", description: "Background playlist as guests are seated · ~10 songs" },
+      { value: "processional", label: "Walking Down the Aisle", description: "The wedding party and couple enter · 1-2 songs" },
+      { value: "recessional", label: "Walking Back Up", description: "The celebratory exit after the kiss · 1 song" },
+    ],
+  },
+  {
+    label: "Cocktail & Dinner",
+    phases: [
+      { value: "cocktail_hour", label: "Cocktail Hour", description: "Background vibes while guests mingle · ~15 songs" },
+      { value: "dinner", label: "Dinner", description: "Background music during the meal · ~10-15 songs" },
+    ],
+  },
+  {
+    label: "The Moments",
+    phases: [
+      { value: "grand_entrance", label: "Grand Entrance", description: "Your dramatic entrance into the reception · 1 song" },
+      { value: "first_dance", label: "First Dance", description: "Your first dance as a married couple · 1 song" },
+      { value: "parent_dances", label: "Parent Dances", description: "Father-daughter, mother-son dances · 1-2 songs" },
+      { value: "cake_cutting", label: "Cake Cutting", description: "The song for cutting the cake · 1 song" },
+    ],
+  },
+  {
+    label: "The Party",
+    phases: [
+      { value: "open_dancing", label: "Party Playlist", description: "The songs that get everyone dancing · ~30-45 songs" },
+      { value: "last_dance", label: "Last Dance", description: "The final song of the night · 1 song" },
+    ],
+  },
+];
+
+const ALL_PHASES = PHASE_GROUPS.flatMap((g) => g.phases);
+
+
+// ── Component ──────────────────────────────────────────────────────────
 
 export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerProps) {
   const router = useRouter();
-  const [tab, setTab] = useState("prelude");
+  const [expandedPhase, setExpandedPhase] = useState<string | null>(null);
   const [showDialog, setShowDialog] = useState(false);
+  const [addingToPhase, setAddingToPhase] = useState<string>("first_dance");
   const [saving, setSaving] = useState(false);
 
   // Form state
@@ -120,6 +109,8 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
   const [notes, setNotes] = useState("");
 
   const doNotPlaySongs = initialSongs.filter((s) => s.is_do_not_play);
+  const totalSongs = initialSongs.filter((s) => !s.is_do_not_play).length;
+  const phasesPlanned = ALL_PHASES.filter((p) => songsForPhase(p.value).length > 0).length;
 
   function songsForPhase(phase: string): Song[] {
     return initialSongs
@@ -133,7 +124,8 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
     setNotes("");
   }
 
-  function openAddDialog() {
+  function openAddDialog(phase: string) {
+    setAddingToPhase(phase);
     resetForm();
     setShowDialog(true);
   }
@@ -143,13 +135,12 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
     setSaving(true);
     const supabase = createClient();
 
-    const isDoNotPlay = tab === "do_not_play";
-    const phase = isDoNotPlay ? "do_not_play" : tab;
-    const existingSongs = isDoNotPlay ? doNotPlaySongs : songsForPhase(phase);
+    const isDoNotPlay = addingToPhase === "do_not_play";
+    const existingSongs = isDoNotPlay ? doNotPlaySongs : songsForPhase(addingToPhase);
 
     await supabase.from("music_selections").insert({
       wedding_id: weddingId,
-      phase,
+      phase: addingToPhase,
       song_title: songTitle.trim(),
       artist: artist.trim(),
       notes: notes.trim() || null,
@@ -163,22 +154,6 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
     router.refresh();
   }
 
-  async function handleQuickAdd(title: string, artistName: string) {
-    const supabase = createClient();
-    const existing = songsForPhase(tab);
-
-    await supabase.from("music_selections").insert({
-      wedding_id: weddingId,
-      phase: tab,
-      song_title: title,
-      artist: artistName,
-      notes: null,
-      is_do_not_play: false,
-      sort_order: existing.length,
-    });
-
-    router.refresh();
-  }
 
   async function handleDelete(id: string) {
     const supabase = createClient();
@@ -186,9 +161,8 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
     router.refresh();
   }
 
-  async function handleReorder(id: string, direction: "up" | "down") {
-    const phase = tab;
-    const isDoNotPlay = tab === "do_not_play";
+  async function handleReorder(phase: string, id: string, direction: "up" | "down") {
+    const isDoNotPlay = phase === "do_not_play";
     const list = isDoNotPlay ? doNotPlaySongs : songsForPhase(phase);
     const idx = list.findIndex((s) => s.id === id);
     if (idx < 0) return;
@@ -197,255 +171,212 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
     if (swapIdx < 0 || swapIdx >= list.length) return;
 
     const supabase = createClient();
-    const current = list[idx];
-    const swap = list[swapIdx];
-
     await Promise.all([
-      supabase
-        .from("music_selections")
-        .update({ sort_order: swap.sort_order })
-        .eq("id", current.id),
-      supabase
-        .from("music_selections")
-        .update({ sort_order: current.sort_order })
-        .eq("id", swap.id),
+      supabase.from("music_selections").update({ sort_order: list[swapIdx].sort_order }).eq("id", list[idx].id),
+      supabase.from("music_selections").update({ sort_order: list[idx].sort_order }).eq("id", list[swapIdx].id),
     ]);
-
     router.refresh();
   }
 
-  function renderSongList(songs: Song[]) {
-    if (songs.length === 0) {
-      return (
-        <Card>
-          <CardContent className="py-16 flex flex-col items-center text-center">
-            <Music className="h-12 w-12 text-primary/40 mb-4" />
-            <h3 className="text-lg font-semibold mb-2">Set the mood</h3>
-            <p className="text-sm text-muted-foreground max-w-md mb-6">
-              Plan every musical moment — from the processional to the last dance. Use our suggestions or add your own.
-            </p>
-            <Button onClick={openAddDialog} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Add Song
-            </Button>
-          </CardContent>
-        </Card>
-      );
-    }
+  // ── Render helpers ─────────────────────────────────────────────────
 
+  function renderSongRow(song: Song, idx: number, total: number, phase: string) {
     return (
-      <div className="space-y-2">
-        {songs.map((song, idx) => (
-          <div
-            key={song.id}
-            className="flex items-center gap-3 p-3 border rounded-lg group hover:bg-muted/30 transition-colors"
-          >
-            <div className="flex flex-col gap-0.5 shrink-0">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-5 w-5 opacity-0 group-hover:opacity-100"
-                disabled={idx === 0}
-                onClick={() => handleReorder(song.id, "up")}
-              >
-                <ChevronUp className="h-3.5 w-3.5" />
-              </Button>
-              <GripVertical className="h-4 w-4 text-muted-foreground/40 mx-auto" />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-5 w-5 opacity-0 group-hover:opacity-100"
-                disabled={idx === songs.length - 1}
-                onClick={() => handleReorder(song.id, "down")}
-              >
-                <ChevronDown className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="font-medium truncate">{song.song_title}</span>
-                {song.is_do_not_play && (
-                  <Badge variant="destructive" className="text-xs shrink-0">
-                    <Ban className="h-3 w-3 mr-1" />
-                    Do Not Play
-                  </Badge>
-                )}
-              </div>
-              {song.artist && (
-                <p className="text-sm text-muted-foreground truncate">
-                  {song.artist}
-                </p>
-              )}
-              {song.notes && (
-                <p className="text-xs text-muted-foreground/70 mt-0.5 truncate">
-                  {song.notes}
-                </p>
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 opacity-0 group-hover:opacity-100 text-destructive shrink-0"
-              onClick={() => handleDelete(song.id)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+      <div
+        key={song.id}
+        className="flex items-center gap-2 group"
+      >
+        {/* Song pill */}
+        <div className="flex-1 min-w-0 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/40 border border-border/30 group-hover:border-border/60 transition-colors">
+          <span className="text-[11px] text-muted-foreground/50 shrink-0 tabular-nums">{idx + 1}</span>
+          <div className="flex-1 min-w-0">
+            <span className="text-sm font-medium text-foreground">{song.song_title}</span>
+            {song.artist && (
+              <span className="text-xs text-muted-foreground ml-1.5">{song.artist}</span>
+            )}
           </div>
-        ))}
-      </div>
-    );
-  }
+        </div>
 
-  function renderSuggestions(phase: string) {
-    const suggestions = PHASE_SUGGESTIONS[phase];
-    if (!suggestions) return null;
-
-    // Check which suggestions are already added
-    const phaseSongs = songsForPhase(phase);
-    const addedTitles = new Set(
-      phaseSongs.map((s) => s.song_title.toLowerCase())
-    );
-
-    const available = suggestions.filter((s) => {
-      const title = s.split(" - ")[0]?.trim().toLowerCase() ?? "";
-      return !addedTitles.has(title);
-    });
-
-    if (available.length === 0) return null;
-
-    return (
-      <div className="mt-4">
-        <p className="text-xs font-medium text-muted-foreground mb-2">
-          Popular suggestions
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {available.map((suggestion) => {
-            const parts = suggestion.split(" - ");
-            const title = parts[0]?.trim() ?? suggestion;
-            const suggArtist = parts[1]?.trim() ?? "";
-            return (
-              <Button
-                key={suggestion}
-                variant="outline"
-                size="sm"
-                className="text-xs h-7"
-                onClick={() => handleQuickAdd(title, suggArtist)}
-              >
-                <Plus className="h-3 w-3 mr-1" />
-                {suggestion}
-              </Button>
-            );
-          })}
+        {/* Actions — hover only */}
+        <div className="flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          <button
+            disabled={idx === 0}
+            onClick={() => handleReorder(phase, song.id, "up")}
+            className="h-6 w-6 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-20 rounded"
+          >
+            <ChevronUp className="h-3 w-3" />
+          </button>
+          <button
+            disabled={idx === total - 1}
+            onClick={() => handleReorder(phase, song.id, "down")}
+            className="h-6 w-6 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-20 rounded"
+          >
+            <ChevronDown className="h-3 w-3" />
+          </button>
+          <button
+            onClick={() => handleDelete(song.id)}
+            className="h-6 w-6 inline-flex items-center justify-center text-muted-foreground hover:text-destructive rounded"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
         </div>
       </div>
     );
   }
 
-  // Count songs per phase for badge display
-  function phaseCount(phase: string): number {
-    return initialSongs.filter(
-      (s) => s.phase === phase && !s.is_do_not_play
-    ).length;
+
+  function renderPhaseRow(phase: Phase) {
+    const songs = songsForPhase(phase.value);
+    const isExpanded = expandedPhase === phase.value;
+    const count = songs.length;
+
+    return (
+      <div key={phase.value}>
+        {/* Phase header — clickable */}
+        <button
+          onClick={() => setExpandedPhase(isExpanded ? null : phase.value)}
+          className="w-full flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-lg hover:bg-muted/20 transition-colors text-left"
+        >
+          <ChevronRight className={cn("h-3.5 w-3.5 text-muted-foreground/60 transition-transform shrink-0", isExpanded && "rotate-90")} />
+          <div className="flex-1 min-w-0">
+            <span className="text-sm font-semibold text-foreground">{phase.label}</span>
+            {!isExpanded && (
+              <span className="text-xs text-muted-foreground ml-1.5">— {phase.description.split(" · ")[0]}</span>
+            )}
+          </div>
+          {/* Count: "3 / 1-2" — yours vs suggested */}
+          {(() => {
+            const guidancePart = phase.description.split(" · ")[1];
+            return (
+              <span className="text-[11px] tabular-nums shrink-0">
+                <span className="font-semibold text-foreground/80">{count}</span>
+                {guidancePart && (
+                  <span className="text-muted-foreground/50"> / {guidancePart.replace(/^~/, "")}</span>
+                )}
+              </span>
+            );
+          })()}
+        </button>
+
+        {/* Expanded content */}
+        {isExpanded && (
+          <div className="pl-7 pb-3">
+            <p className="text-xs text-muted-foreground mb-2">{phase.description.split(" · ")[0]}</p>
+            {songs.length > 0 && (
+              <div className="space-y-1.5 mb-2">
+                {songs.map((song, idx) => renderSongRow(song, idx, songs.length, phase.value))}
+              </div>
+            )}
+
+            <button
+              onClick={() => openAddDialog(phase.value)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors mt-1"
+            >
+              <Plus className="h-3 w-3" />
+              Add song
+            </button>
+          </div>
+        )}
+      </div>
+    );
   }
+
+  // ── Main render ────────────────────────────────────────────────────
 
   return (
-    <>
-      {/* Stats row */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold">
-              {initialSongs.filter((s) => !s.is_do_not_play).length}
-            </div>
-            <p className="text-xs text-muted-foreground">Total Songs</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold">
-              {PHASES.filter((p) => phaseCount(p.value) > 0).length}
-            </div>
-            <p className="text-xs text-muted-foreground">Phases Planned</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-red-600">
-              {doNotPlaySongs.length}
-            </div>
-            <p className="text-xs text-muted-foreground">Do Not Play</p>
-          </CardContent>
-        </Card>
+    <div className="space-y-8">
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
+          Music
+        </h1>
+        <p className="text-sm text-muted-foreground mt-2">
+          <span className="font-medium text-foreground/80">{totalSongs}</span> song{totalSongs !== 1 ? "s" : ""}
+          <span className="text-muted-foreground/50"> · </span>
+          <span className="font-medium text-foreground/80">{phasesPlanned}</span> of {ALL_PHASES.length} moments planned
+          {doNotPlaySongs.length > 0 && (
+            <>
+              <span className="text-muted-foreground/50"> · </span>
+              <span className="font-medium text-foreground/80">{doNotPlaySongs.length}</span> do-not-play
+            </>
+          )}
+        </p>
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v ?? "prelude")}>
-        <div className="flex items-center justify-between gap-4">
-          <div className="overflow-x-auto">
-            <TabsList className="h-auto flex-wrap">
-              {PHASES.map((phase) => {
-                const count = phaseCount(phase.value);
-                return (
-                  <TabsTrigger key={phase.value} value={phase.value} className="gap-1.5">
-                    {phase.label}
-                    {count > 0 && (
-                      <Badge variant="secondary" className="text-[10px] h-4 min-w-4 px-1">
-                        {count}
-                      </Badge>
-                    )}
-                  </TabsTrigger>
-                );
-              })}
-              <TabsTrigger value="do_not_play" className="gap-1.5 text-red-600">
-                <Ban className="h-3.5 w-3.5" />
-                Do Not Play
-                {doNotPlaySongs.length > 0 && (
-                  <Badge variant="destructive" className="text-[10px] h-4 min-w-4 px-1">
-                    {doNotPlaySongs.length}
-                  </Badge>
-                )}
-              </TabsTrigger>
-            </TabsList>
+      {/* Description */}
+      <p className="text-sm text-muted-foreground max-w-xl leading-relaxed">
+        Plan songs for every moment of your day. Your DJ or band will use this as their playbook.
+      </p>
+
+      {/* Phase groups */}
+      {PHASE_GROUPS.map((group) => (
+        <div key={group.label}>
+          {/* Group label */}
+          <div className="flex items-center gap-3 mb-2 pb-1 border-b border-border/50">
+            <span className="text-xs font-semibold tracking-[0.12em] uppercase text-foreground/80">
+              {group.label}
+            </span>
           </div>
-          <Button onClick={openAddDialog} className="gap-2 shrink-0">
-            <Plus className="h-4 w-4" />
-            Add Song
-          </Button>
+
+          {/* Phases in group */}
+          <div className="space-y-0">
+            {group.phases.map((phase) => renderPhaseRow(phase))}
+          </div>
         </div>
+      ))}
 
-        {/* Phase tab content */}
-        {PHASES.map((phase) => (
-          <TabsContent key={phase.value} value={phase.value} className="mt-6">
-            {renderSongList(songsForPhase(phase.value))}
-            {renderSuggestions(phase.value)}
-          </TabsContent>
-        ))}
+      {/* Do Not Play */}
+      <div>
+        <div className="flex items-center gap-3 mb-2 pb-1 border-b border-border/50">
+          <span className="text-xs font-semibold tracking-[0.12em] uppercase text-foreground/80">
+            Do Not Play
+          </span>
+        </div>
+        <div>
+          <button
+            onClick={() => setExpandedPhase(expandedPhase === "do_not_play" ? null : "do_not_play")}
+            className="w-full flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-lg hover:bg-muted/20 transition-colors text-left"
+          >
+            <ChevronRight className={cn("h-4 w-4 text-muted-foreground/60 transition-transform shrink-0", expandedPhase === "do_not_play" && "rotate-90")} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <Ban className="h-3.5 w-3.5 text-red-500" />
+                <span className="text-sm font-semibold text-foreground">Do Not Play List</span>
+                {doNotPlaySongs.length > 0 && (
+                  <span className="text-[11px] font-medium text-muted-foreground tabular-nums">{doNotPlaySongs.length} song{doNotPlaySongs.length !== 1 ? "s" : ""}</span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">Songs you absolutely do not want played</p>
+            </div>
+          </button>
 
-        {/* Do Not Play tab */}
-        <TabsContent value="do_not_play" className="mt-6">
-          {doNotPlaySongs.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                <Ban className="h-8 w-8 mx-auto mb-3 opacity-40" />
-                <p>No songs on the do-not-play list.</p>
-                <p className="text-sm mt-1">
-                  Add songs here that you absolutely do not want played at your wedding.
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            renderSongList(doNotPlaySongs)
+          {expandedPhase === "do_not_play" && (
+            <div className="pl-7 pb-4">
+              {doNotPlaySongs.length > 0 && (
+                <div className="space-y-1.5 mb-2">
+                  {doNotPlaySongs.map((song, idx) => renderSongRow(song, idx, doNotPlaySongs.length, "do_not_play"))}
+                </div>
+              )}
+              <button
+                onClick={() => openAddDialog("do_not_play")}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors mt-1"
+              >
+                <Plus className="h-3 w-3" />
+                Add to do-not-play list
+              </button>
+            </div>
           )}
-        </TabsContent>
-      </Tabs>
+        </div>
+      </div>
 
       {/* Add Song Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {tab === "do_not_play"
+              {addingToPhase === "do_not_play"
                 ? "Add to Do Not Play List"
-                : `Add Song — ${PHASES.find((p) => p.value === tab)?.label ?? tab}`}
+                : `Add Song — ${ALL_PHASES.find((p) => p.value === addingToPhase)?.label ?? addingToPhase}`}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -455,9 +386,7 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
                 value={songTitle}
                 onChange={(e) => setSongTitle(e.target.value)}
                 placeholder="Enter song title"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && songTitle.trim()) handleAddSong();
-                }}
+                onKeyDown={(e) => { if (e.key === "Enter" && songTitle.trim()) handleAddSong(); }}
               />
             </div>
             <div className="space-y-2">
@@ -466,9 +395,7 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
                 value={artist}
                 onChange={(e) => setArtist(e.target.value)}
                 placeholder="Enter artist name"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && songTitle.trim()) handleAddSong();
-                }}
+                onKeyDown={(e) => { if (e.key === "Enter" && songTitle.trim()) handleAddSong(); }}
               />
             </div>
             <div className="space-y-2">
@@ -477,37 +404,18 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
-                placeholder={
-                  tab === "do_not_play"
-                    ? "Why should this not be played?"
-                    : "Any notes for the DJ or band"
-                }
+                placeholder={addingToPhase === "do_not_play" ? "Why should this not be played?" : "Any notes for the DJ or band"}
               />
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowDialog(false);
-                  resetForm();
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleAddSong}
-                disabled={saving || !songTitle.trim()}
-              >
-                {saving
-                  ? "Adding..."
-                  : tab === "do_not_play"
-                    ? "Add to Do Not Play"
-                    : "Add Song"}
+              <Button variant="outline" onClick={() => { setShowDialog(false); resetForm(); }}>Cancel</Button>
+              <Button onClick={handleAddSong} disabled={saving || !songTitle.trim()}>
+                {saving ? "Adding..." : addingToPhase === "do_not_play" ? "Add to Do Not Play" : "Add Song"}
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }
