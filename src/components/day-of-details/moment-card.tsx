@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, GripVertical, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  GripVertical,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  ArrowUpRight,
+} from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
@@ -22,6 +29,11 @@ interface MomentCardProps {
   title: string;
   /** Optional time (e.g., "7:00 PM") — reserves space even when blank. */
   time?: string;
+  /** True when the displayed time is derived from the Schedule tab. Makes the
+   *  time clickable and adds a small ↗ affordance. */
+  timeFromSchedule?: boolean;
+  /** Jump to Schedule tab. Invoked when the time pill is clicked. */
+  onNavigateToSchedule?: () => void;
   summaryChips?: MomentSummaryChip[];
   children: ReactNode;
   defaultOpen?: boolean;
@@ -40,6 +52,8 @@ export function MomentCard({
   id,
   title,
   time,
+  timeFromSchedule = false,
+  onNavigateToSchedule,
   summaryChips,
   children,
   defaultOpen = false,
@@ -131,11 +145,26 @@ export function MomentCard({
             "flex-1 flex items-center gap-3 px-2 py-2.5 min-w-0"
           )}
         >
-          {/* Time slot — always reserved */}
+          {/* Time slot — always reserved; clickable when derived from Schedule */}
           {time ? (
-            <span className="text-xs tabular-nums shrink-0 w-16 font-medium text-muted-foreground">
-              {time}
-            </span>
+            timeFromSchedule && onNavigateToSchedule ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNavigateToSchedule();
+                }}
+                title="From Schedule — click to edit"
+                className="text-xs tabular-nums shrink-0 w-16 font-medium text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-0.5 group/time"
+              >
+                <span>{time}</span>
+                <ArrowUpRight className="h-3 w-3 opacity-0 group-hover/time:opacity-70 transition-opacity" />
+              </button>
+            ) : (
+              <span className="text-xs tabular-nums shrink-0 w-16 font-medium text-muted-foreground">
+                {time}
+              </span>
+            )
           ) : (
             <span
               aria-hidden

@@ -173,7 +173,7 @@ export function MomentUniformFields({
         </OptionalCard>
       )}
 
-      {/* Time input / Schedule link */}
+      {/* Local time input only for custom moments (no Schedule entry) */}
       {showTime && !scheduleOwnsTime && (
         <div className="flex items-center gap-2 pt-1">
           <Clock className="h-3.5 w-3.5 text-muted-foreground/60" />
@@ -189,23 +189,6 @@ export function MomentUniformFields({
           <span className="text-[10px] text-muted-foreground/60">
             Sorts this moment chronologically
           </span>
-        </div>
-      )}
-
-      {scheduleOwnsTime && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground/70 pt-1">
-          <Clock className="h-3 w-3" />
-          <span>Time is set in the Schedule tab.</span>
-          {onNavigateToSchedule && (
-            <button
-              type="button"
-              onClick={onNavigateToSchedule}
-              className="inline-flex items-center gap-0.5 text-primary/70 hover:text-primary transition-colors"
-            >
-              Open Schedule
-              <ArrowRight className="h-3 w-3" />
-            </button>
-          )}
         </div>
       )}
     </div>

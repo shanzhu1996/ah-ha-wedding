@@ -556,6 +556,8 @@ export function ReceptionSection({
         id="grand_entrance"
         title={title}
         time={effectiveTimeById["grand_entrance"]}
+        timeFromSchedule={timeIsFromScheduleById["grand_entrance"]}
+        onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("grand_entrance", t)}
         onRemove={() => hideBuiltInMoment("grand_entrance")}
@@ -613,6 +615,8 @@ export function ReceptionSection({
         id="first_dance"
         title={title}
         time={effectiveTimeById["first_dance"]}
+        timeFromSchedule={timeIsFromScheduleById["first_dance"]}
+        onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("first_dance", t)}
         onRemove={() => hideBuiltInMoment("first_dance")}
@@ -686,6 +690,8 @@ export function ReceptionSection({
         id="dinner"
         title={title}
         time={effectiveTimeById["dinner"]}
+        timeFromSchedule={timeIsFromScheduleById["dinner"]}
+        onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("dinner", t)}
         onRemove={() => hideBuiltInMoment("dinner")}
@@ -755,6 +761,8 @@ export function ReceptionSection({
         id="parent_dances"
         title={title}
         time={effectiveTimeById["parent_dances"]}
+        timeFromSchedule={timeIsFromScheduleById["parent_dances"]}
+        onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("parent_dances", t)}
         onRemove={() => hideBuiltInMoment("parent_dances")}
@@ -838,6 +846,8 @@ export function ReceptionSection({
         id="speeches"
         title={title}
         time={effectiveTimeById["speeches"]}
+        timeFromSchedule={timeIsFromScheduleById["speeches"]}
+        onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("speeches", t)}
         onRemove={() => hideBuiltInMoment("speeches")}
@@ -950,6 +960,8 @@ export function ReceptionSection({
         id="cake_cutting"
         title={title}
         time={effectiveTimeById["cake_cutting"]}
+        timeFromSchedule={timeIsFromScheduleById["cake_cutting"]}
+        onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("cake_cutting", t)}
         onRemove={() => hideBuiltInMoment("cake_cutting")}
@@ -1007,6 +1019,8 @@ export function ReceptionSection({
         id="last_dance"
         title={title}
         time={effectiveTimeById["last_dance"]}
+        timeFromSchedule={timeIsFromScheduleById["last_dance"]}
+        onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("last_dance", t)}
         onRemove={() => hideBuiltInMoment("last_dance")}
@@ -1070,6 +1084,8 @@ export function ReceptionSection({
         id="exit"
         title={title}
         time={effectiveTimeById["exit"]}
+        timeFromSchedule={timeIsFromScheduleById["exit"]}
+        onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("exit", t)}
         onRemove={() => hideBuiltInMoment("exit")}
@@ -1209,6 +1225,8 @@ export function ReceptionSection({
         id={id}
         title={title}
         time={effectiveTimeById[id]}
+        timeFromSchedule={timeIsFromScheduleById[id]}
+        onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={tossSummary}
         onRename={(t) => renameMoment(id, t)}
         onRemove={() => set({ [id]: false } as Partial<ReceptionData>)}
