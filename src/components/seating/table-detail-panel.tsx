@@ -11,6 +11,8 @@ import {
   ArrowLeft,
   ArrowRight,
   GripVertical,
+  Lock,
+  LockOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +41,8 @@ interface Props {
   shape: TableShape;
   capacity: number;
   rotation: Rotation;
+  notes: string | null;
+  locked: boolean;
   seated: SeatedGuest[];
   isSelectable: boolean;
   selectedGuestId: string | null;
@@ -49,6 +53,8 @@ interface Props {
   onDelete: () => void;
   onRename: (newName: string | null) => Promise<void> | void;
   onRotate: (newRotation: Rotation) => Promise<void> | void;
+  onNotesChange: (notes: string | null) => Promise<void> | void;
+  onLockToggle: (locked: boolean) => Promise<void> | void;
   /**
    * Called when a seated guest is dragged onto another seat in this table.
    * Empty target → move. Occupied target → swap.
@@ -135,14 +141,20 @@ export function TableDetailPanel({
   onDelete,
   onRename,
   onRotate,
+  onNotesChange,
+  onLockToggle,
   onGuestDragToSeat,
   tagColor,
+  notes,
+  locked,
 }: Props) {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(name ?? "");
   const [saving, setSaving] = useState(false);
   const [dragOverSeat, setDragOverSeat] = useState<number | null>(null);
   const [draggingGuestId, setDraggingGuestId] = useState<string | null>(null);
+  const [notesDraft, setNotesDraft] = useState(notes ?? "");
+  const [notesSaving, setNotesSaving] = useState(false);
 
   // Build seat_number → guest map
   const assigned: Record<number, SeatAssignment> = {};
@@ -231,6 +243,28 @@ export function TableDetailPanel({
         <div className="flex items-center gap-1">
           <button
             type="button"
+            onClick={() => onLockToggle(!locked)}
+            className={cn(
+              "h-8 w-8 inline-flex items-center justify-center rounded-md transition-colors",
+              locked
+                ? "text-primary bg-primary/10 hover:bg-primary/20"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+            aria-label={locked ? "Unlock table" : "Lock table"}
+            title={
+              locked
+                ? "Unlock — Fill empty seats will use it"
+                : "Lock — Fill empty seats will skip it"
+            }
+          >
+            {locked ? (
+              <Lock className="h-3.5 w-3.5" />
+            ) : (
+              <LockOpen className="h-3.5 w-3.5" />
+            )}
+          </button>
+          <button
+            type="button"
             onClick={onDelete}
             className="h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
             aria-label="Delete table"
@@ -268,6 +302,7 @@ export function TableDetailPanel({
                   ? "full"
                   : "partial"
             }
+            locked={locked}
           />
           <div className="flex flex-col gap-1 pt-3">
             <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -484,6 +519,36 @@ export function TableDetailPanel({
               })}
             </ul>
           )}
+
+          {/* Per-table notes */}
+          <div className="pt-2">
+            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+              Notes
+            </label>
+            <textarea
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              onBlur={async () => {
+                const next = notesDraft.trim() || null;
+                const current = notes ?? null;
+                if (next === current) return;
+                setNotesSaving(true);
+                try {
+                  await onNotesChange(next);
+                } finally {
+                  setNotesSaving(false);
+                }
+              }}
+              placeholder="Centerpiece, linens, special requests…"
+              rows={2}
+              className="mt-1 w-full resize-y text-sm px-2 py-1.5 rounded-md border border-border/60 bg-background placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            {notesSaving && (
+              <span className="text-[10px] text-muted-foreground">
+                Saving…
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -148,6 +148,8 @@ export interface Database {
           position_x: number | null;
           position_y: number | null;
           rotation: number;
+          notes: string | null;
+          locked: boolean;
           created_at: string;
         };
         Insert: Omit<Database["public"]["Tables"]["tables"]["Row"], "id" | "created_at">;

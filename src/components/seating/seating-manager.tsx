@@ -4,6 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Wand2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { AddTableDialog } from "./add-table-dialog";
@@ -33,6 +39,8 @@ interface Table {
   position_x: number | null;
   position_y: number | null;
   rotation: number;
+  notes: string | null;
+  locked: boolean;
   created_at: string;
 }
 
@@ -273,6 +281,16 @@ export function SeatingManager({
     router.refresh();
   }
 
+  async function updateTableNotes(tableId: string, notes: string | null) {
+    await supabase.from("tables").update({ notes }).eq("id", tableId);
+    router.refresh();
+  }
+
+  async function toggleTableLock(tableId: string, locked: boolean) {
+    await supabase.from("tables").update({ locked }).eq("id", tableId);
+    router.refresh();
+  }
+
   // Debounced position save (canvas drag)
   const saveTimeoutRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const moveTable = useCallback(
@@ -296,14 +314,39 @@ export function SeatingManager({
     await unassign(guestId);
   }
 
-  // ── Auto-assign (unchanged) ─────────────────────────────────────────
+  // ── Fill empty seats (previously "Auto-assign") ─────────────────────
 
-  async function autoAssign() {
-    if (!confirm("Auto-assign all unassigned confirmed guests?")) return;
+  const [fillPreviewOpen, setFillPreviewOpen] = useState(false);
+
+  // Compute the preview stats whenever the dialog opens
+  const fillPreview = useMemo(() => {
+    const unassignedConfirmed = unassigned.filter(
+      (g) => g.rsvp_status === "confirmed"
+    );
+    const openSeatsPerTable = initialTables.map((t) => {
+      if (t.locked) return 0;
+      const taken = guests.filter((g) => g.table_id === t.id).length;
+      return Math.max(0, t.capacity - taken);
+    });
+    const totalOpenSeats = openSeatsPerTable.reduce((s, n) => s + n, 0);
+    const tablesEligible = initialTables.filter((t) => !t.locked).length;
+    const tablesLocked = initialTables.filter((t) => t.locked).length;
+    const willPlace = Math.min(unassignedConfirmed.length, totalOpenSeats);
+    return {
+      unassignedCount: unassignedConfirmed.length,
+      totalOpenSeats,
+      tablesEligible,
+      tablesLocked,
+      willPlace,
+      overflow: Math.max(0, unassignedConfirmed.length - totalOpenSeats),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fillPreviewOpen, unassigned, initialTables, guests]);
+
+  async function fillEmptySeats() {
     if (initialTables.length === 0) return;
 
-    // Group by last_name so family members end up adjacent. Falls back cleanly
-    // when many guests share "" last names — they land together, one group.
+    // Group by last_name so family members end up adjacent.
     const unassignedConfirmed = unassigned.filter(
       (g) => g.rsvp_status === "confirmed"
     );
@@ -329,6 +372,7 @@ export function SeatingManager({
 
     for (const g of queue) {
       for (const t of initialTables) {
+        if (t.locked) continue;
         const taken = occupancy.get(t.id) ?? new Set();
         if (taken.size >= t.capacity) continue;
         let openSeat = 1;
@@ -510,11 +554,11 @@ export function SeatingManager({
           <Button
             size="sm"
             variant="outline"
-            onClick={autoAssign}
+            onClick={() => setFillPreviewOpen(true)}
             className="gap-1.5"
           >
             <Wand2 className="h-3.5 w-3.5" />
-            Auto-assign
+            Fill empty seats
           </Button>
         )}
         {selectedGuestId && (
@@ -617,6 +661,8 @@ export function SeatingManager({
           deleteTable={deleteTable}
           renameTable={renameTable}
           rotateTable={rotateTable}
+          updateTableNotes={updateTableNotes}
+          toggleTableLock={toggleTableLock}
           tagColor={tagColor}
         />
       ) : (
@@ -677,6 +723,84 @@ export function SeatingManager({
         onOpenChange={setAddOpen}
         onCreate={createTable}
       />
+
+      {/* Fill empty seats — preview dialog */}
+      <Dialog open={fillPreviewOpen} onOpenChange={setFillPreviewOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Fill empty seats</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            {fillPreview.unassignedCount === 0 ? (
+              <p className="text-muted-foreground">
+                Every confirmed guest already has a seat. Nothing to fill.
+              </p>
+            ) : fillPreview.tablesEligible === 0 ? (
+              <p className="text-muted-foreground">
+                All your tables are locked. Unlock at least one to fill seats.
+              </p>
+            ) : (
+              <>
+                <p>
+                  This will place{" "}
+                  <strong className="text-foreground">
+                    {fillPreview.willPlace}
+                  </strong>{" "}
+                  unseated confirmed guest
+                  {fillPreview.willPlace === 1 ? "" : "s"} into open seats,
+                  grouped by last name.
+                </p>
+                <ul className="text-xs text-muted-foreground space-y-1">
+                  <li>
+                    · {fillPreview.tablesEligible} eligible table
+                    {fillPreview.tablesEligible === 1 ? "" : "s"}
+                    {fillPreview.tablesLocked > 0 && (
+                      <>
+                        {" "}
+                        ({fillPreview.tablesLocked} locked, will be skipped)
+                      </>
+                    )}
+                  </li>
+                  <li>
+                    · {fillPreview.totalOpenSeats} open seat
+                    {fillPreview.totalOpenSeats === 1 ? "" : "s"} available
+                  </li>
+                  {fillPreview.overflow > 0 && (
+                    <li className="text-amber-700">
+                      · {fillPreview.overflow} guest
+                      {fillPreview.overflow === 1 ? "" : "s"} won&apos;t fit —
+                      add more tables after this runs
+                    </li>
+                  )}
+                </ul>
+              </>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setFillPreviewOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={async () => {
+                  setFillPreviewOpen(false);
+                  await fillEmptySeats();
+                }}
+                disabled={
+                  fillPreview.willPlace === 0 ||
+                  fillPreview.tablesEligible === 0
+                }
+              >
+                Fill {fillPreview.willPlace} seat
+                {fillPreview.willPlace === 1 ? "" : "s"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -710,6 +834,14 @@ interface RoomViewLayoutProps {
     tableId: string,
     rotation: 0 | 90 | 180 | 270
   ) => Promise<void> | void;
+  updateTableNotes: (
+    tableId: string,
+    notes: string | null
+  ) => Promise<void> | void;
+  toggleTableLock: (
+    tableId: string,
+    locked: boolean
+  ) => Promise<void> | void;
   tagColor: (tag: string | null) => string;
 }
 
@@ -731,6 +863,8 @@ function RoomViewLayout({
   deleteTable,
   renameTable,
   rotateTable,
+  updateTableNotes,
+  toggleTableLock,
   tagColor,
 }: RoomViewLayoutProps) {
   const detailRef = useRef<HTMLDivElement>(null);
@@ -817,6 +951,7 @@ function RoomViewLayout({
                     ? "full"
                     : "partial"
               }
+              locked={t.locked}
             />
             <div className="text-center">
               <div className="text-xs font-medium text-foreground">
@@ -854,6 +989,8 @@ function RoomViewLayout({
         shape={selectedTable.shape as TableShape}
         capacity={selectedTable.capacity}
         rotation={(selectedTable.rotation as 0 | 90 | 180 | 270) ?? 0}
+        notes={selectedTable.notes}
+        locked={selectedTable.locked}
         seated={seatedAtSelected}
         isSelectable={selectedGuestId !== null}
         selectedGuestId={selectedGuestId}
@@ -866,6 +1003,8 @@ function RoomViewLayout({
         onDelete={() => deleteTable(selectedTable.id)}
         onRename={(n) => renameTable(selectedTable.id, n)}
         onRotate={(r) => rotateTable(selectedTable.id, r)}
+        onNotesChange={(n) => updateTableNotes(selectedTable.id, n)}
+        onLockToggle={(l) => toggleTableLock(selectedTable.id, l)}
         onGuestDragToSeat={(draggedGuestId, targetSeat) =>
           handleGuestDragToSeat(draggedGuestId, selectedTable.id, targetSeat)
         }
