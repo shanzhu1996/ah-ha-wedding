@@ -42,6 +42,7 @@ interface Table {
   rotation: number;
   notes: string | null;
   locked: boolean;
+  sweetheart_partner_swap: boolean;
   created_at: string;
 }
 
@@ -111,30 +112,41 @@ export function SeatingManager({
   partner2Name,
 }: Props) {
   // Friendly label for a sweetheart table, and virtual seat assignments for
-  // seats 1/2 so the couple's names show up as defaults.
+  // seats 1/2 so the couple's names show up as defaults. When a specific
+  // sweetheart has partner_swap=true, partner2 takes seat 1.
   const sweetheartLabel =
     partner1Name && partner2Name
       ? `${partner1Name} & ${partner2Name}`
       : "Sweetheart";
   const firstInitial = (name: string | null | undefined) =>
     name?.trim()?.[0]?.toUpperCase() ?? "";
-  const sweetheartVirtualSeats: Record<number, SeatAssignment> = {};
-  if (partner1Name?.trim()) {
-    sweetheartVirtualSeats[1] = {
-      guestId: "__partner1__",
-      initials: firstInitial(partner1Name),
-      dietaryKind: null,
-      fullName: partner1Name,
-    };
-  }
-  if (partner2Name?.trim()) {
-    sweetheartVirtualSeats[2] = {
-      guestId: "__partner2__",
-      initials: firstInitial(partner2Name),
-      dietaryKind: null,
-      fullName: partner2Name,
-    };
-  }
+  const buildSweetheartVirtualSeats = useCallback(
+    (swap: boolean): Record<number, SeatAssignment> => {
+      const seats: Record<number, SeatAssignment> = {};
+      const seatOneName = swap ? partner2Name : partner1Name;
+      const seatTwoName = swap ? partner1Name : partner2Name;
+      const seatOneId = swap ? "__partner2__" : "__partner1__";
+      const seatTwoId = swap ? "__partner1__" : "__partner2__";
+      if (seatOneName?.trim()) {
+        seats[1] = {
+          guestId: seatOneId,
+          initials: firstInitial(seatOneName),
+          dietaryKind: null,
+          fullName: seatOneName,
+        };
+      }
+      if (seatTwoName?.trim()) {
+        seats[2] = {
+          guestId: seatTwoId,
+          initials: firstInitial(seatTwoName),
+          dietaryKind: null,
+          fullName: seatTwoName,
+        };
+      }
+      return seats;
+    },
+    [partner1Name, partner2Name]
+  );
   const router = useRouter();
   const supabase = createClient();
   const { assign, unassign, swap, applyOverlay } = useSeatAssignment();
@@ -448,6 +460,14 @@ export function SeatingManager({
 
   async function toggleTableLock(tableId: string, locked: boolean) {
     await supabase.from("tables").update({ locked }).eq("id", tableId);
+    router.refresh();
+  }
+
+  async function toggleSweetheartSwap(tableId: string, swap: boolean) {
+    await supabase
+      .from("tables")
+      .update({ sweetheart_partner_swap: swap })
+      .eq("id", tableId);
     router.refresh();
   }
 
@@ -1009,8 +1029,9 @@ export function SeatingManager({
         rotateTable={rotateTable}
         updateTableNotes={updateTableNotes}
         toggleTableLock={toggleTableLock}
+        toggleSweetheartSwap={toggleSweetheartSwap}
         sweetheartLabel={sweetheartLabel}
-        sweetheartVirtualSeats={sweetheartVirtualSeats}
+        buildSweetheartVirtualSeats={buildSweetheartVirtualSeats}
         highlightSeat={highlightSeat}
         previewByTable={previewByTable}
         tagColor={tagColor}
@@ -1142,8 +1163,12 @@ interface RoomViewLayoutProps {
     tableId: string,
     locked: boolean
   ) => Promise<void> | void;
+  toggleSweetheartSwap: (
+    tableId: string,
+    swap: boolean
+  ) => Promise<void> | void;
   sweetheartLabel: string;
-  sweetheartVirtualSeats: Record<number, SeatAssignment>;
+  buildSweetheartVirtualSeats: (swap: boolean) => Record<number, SeatAssignment>;
   /** Seat to pulse in the detail panel when this table is the selected one. */
   highlightSeat: { tableId: string; seatNumber: number } | null;
   /** Per-table ghost seat assignments shown while the Fill-empty preview is open. */
@@ -1171,8 +1196,9 @@ function RoomViewLayout({
   rotateTable,
   updateTableNotes,
   toggleTableLock,
+  toggleSweetheartSwap,
   sweetheartLabel,
-  sweetheartVirtualSeats,
+  buildSweetheartVirtualSeats,
   highlightSeat,
   previewByTable,
   tagColor,
@@ -1243,7 +1269,9 @@ function RoomViewLayout({
         // Sweetheart tables render the couple's names as virtual seats (dim,
         // non-interactive). Real assignments still win on the same seat.
         const virtualSeats =
-          t.shape === "sweetheart" ? sweetheartVirtualSeats : undefined;
+          t.shape === "sweetheart"
+            ? buildSweetheartVirtualSeats(t.sweetheart_partner_swap)
+            : undefined;
         const previewSeats = previewByTable[t.id];
         return (
           <div
@@ -1317,7 +1345,14 @@ function RoomViewLayout({
         }
         virtualSeats={
           selectedTable.shape === "sweetheart"
-            ? sweetheartVirtualSeats
+            ? buildSweetheartVirtualSeats(
+                selectedTable.sweetheart_partner_swap
+              )
+            : undefined
+        }
+        sweetheartPartnerSwap={
+          selectedTable.shape === "sweetheart"
+            ? selectedTable.sweetheart_partner_swap
             : undefined
         }
         previewSeats={previewByTable[selectedTable.id]}
@@ -1339,6 +1374,9 @@ function RoomViewLayout({
         onRotate={(r) => rotateTable(selectedTable.id, r)}
         onNotesChange={(n) => updateTableNotes(selectedTable.id, n)}
         onLockToggle={(l) => toggleTableLock(selectedTable.id, l)}
+        onSweetheartSwapToggle={(s) =>
+          toggleSweetheartSwap(selectedTable.id, s)
+        }
         onGuestDragToSeat={(draggedGuestId, targetSeat) =>
           handleGuestDragToSeat(draggedGuestId, selectedTable.id, targetSeat)
         }

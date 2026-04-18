@@ -10,9 +10,11 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
+  ArrowLeftRight,
   GripVertical,
   Lock,
   LockOpen,
+  Heart,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +58,8 @@ interface Props {
   previewSeats?: Record<number, SeatAssignment>;
   /** Seat number to pulse briefly (e.g. after guest search jump-to-seat). */
   highlightSeat?: number;
+  /** For sweetheart only: current swap state (partner2 in seat 1 when true). */
+  sweetheartPartnerSwap?: boolean;
   isSelectable: boolean;
   selectedGuestId: string | null;
   onClose: () => void;
@@ -67,6 +71,8 @@ interface Props {
   onRotate: (newRotation: Rotation) => Promise<void> | void;
   onNotesChange: (notes: string | null) => Promise<void> | void;
   onLockToggle: (locked: boolean) => Promise<void> | void;
+  /** For sweetheart only: toggle which partner sits in seat 1. */
+  onSweetheartSwapToggle?: (swap: boolean) => Promise<void> | void;
   /**
    * Called when a seated guest is dragged onto another seat in this table.
    * Empty target → move. Occupied target → swap.
@@ -155,6 +161,7 @@ export function TableDetailPanel({
   onRotate,
   onNotesChange,
   onLockToggle,
+  onSweetheartSwapToggle,
   onGuestDragToSeat,
   tagColor,
   notes,
@@ -163,7 +170,9 @@ export function TableDetailPanel({
   virtualSeats,
   previewSeats,
   highlightSeat,
+  sweetheartPartnerSwap,
 }: Props) {
+  const isSweetheart = shape === "sweetheart";
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(name ?? "");
   const [saving, setSaving] = useState(false);
@@ -206,54 +215,73 @@ export function TableDetailPanel({
       {/* Header */}
       <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-border/60">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="text-xs font-semibold tracking-[0.12em] uppercase text-muted-foreground">
-              {displayLabel ?? `Table ${number}`}
-            </span>
-            <span className="text-xs text-muted-foreground/60">
-              · {SHAPE_LABEL[shape]} · {seated.length} / {capacity}
-            </span>
-          </div>
-          {editingName ? (
-            <div className="flex items-center gap-1">
-              <Input
-                value={nameDraft}
-                onChange={(e) => setNameDraft(e.target.value)}
-                placeholder="Table name"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleRenameSubmit();
-                  if (e.key === "Escape") {
-                    setNameDraft(name ?? "");
-                    setEditingName(false);
-                  }
-                }}
-                className="h-7 text-sm max-w-xs"
-                disabled={saving}
-              />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 p-0"
-                onClick={handleRenameSubmit}
-                disabled={saving}
-              >
-                <Check className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEditingName(true)}
-              className="text-base font-medium text-foreground hover:text-primary transition-colors inline-flex items-center gap-1.5 group/name"
-            >
-              {name || (
-                <span className="italic text-muted-foreground">
-                  Add a name
+          {isSweetheart ? (
+            <>
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <Heart className="h-3 w-3 text-primary fill-primary/30" />
+                <span className="text-xs font-semibold tracking-[0.12em] uppercase text-muted-foreground">
+                  Sweetheart
                 </span>
+                <span className="text-xs text-muted-foreground/60">
+                  · {seated.length} / {capacity}
+                </span>
+              </div>
+              <div className="text-base font-medium text-foreground truncate">
+                {displayLabel}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-xs font-semibold tracking-[0.12em] uppercase text-muted-foreground">
+                  {displayLabel ?? `Table ${number}`}
+                </span>
+                <span className="text-xs text-muted-foreground/60">
+                  · {SHAPE_LABEL[shape]} · {seated.length} / {capacity}
+                </span>
+              </div>
+              {editingName ? (
+                <div className="flex items-center gap-1">
+                  <Input
+                    value={nameDraft}
+                    onChange={(e) => setNameDraft(e.target.value)}
+                    placeholder="Table name"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleRenameSubmit();
+                      if (e.key === "Escape") {
+                        setNameDraft(name ?? "");
+                        setEditingName(false);
+                      }
+                    }}
+                    className="h-7 text-sm max-w-xs"
+                    disabled={saving}
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0"
+                    onClick={handleRenameSubmit}
+                    disabled={saving}
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setEditingName(true)}
+                  className="text-base font-medium text-foreground hover:text-primary transition-colors inline-flex items-center gap-1.5 group/name"
+                >
+                  {name || (
+                    <span className="italic text-muted-foreground">
+                      Add a name
+                    </span>
+                  )}
+                  <Pencil className="h-3 w-3 opacity-0 group-hover/name:opacity-40 transition-opacity" />
+                </button>
               )}
-              <Pencil className="h-3 w-3 opacity-0 group-hover/name:opacity-40 transition-opacity" />
-            </button>
+            </>
           )}
         </div>
         <div className="flex items-center gap-1">
@@ -396,6 +424,19 @@ export function TableDetailPanel({
               </button>
               <div />
             </div>
+            {isSweetheart && onSweetheartSwapToggle && (
+              <button
+                type="button"
+                onClick={() =>
+                  onSweetheartSwapToggle(!sweetheartPartnerSwap)
+                }
+                className="mt-2 inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-md border border-border/60 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                title="Swap who sits on which side"
+              >
+                <ArrowLeftRight className="h-3 w-3" />
+                Swap sides
+              </button>
+            )}
           </div>
         </div>
 
@@ -410,7 +451,7 @@ export function TableDetailPanel({
             </div>
           )}
 
-          {seated.length === 0 ? (
+          {seated.length === 0 && !isSweetheart ? (
             <p className="text-sm text-muted-foreground italic">
               No guests seated yet. Pick a guest and click a seat.
             </p>

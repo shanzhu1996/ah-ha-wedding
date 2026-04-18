@@ -150,6 +150,7 @@ export interface Database {
           rotation: number;
           notes: string | null;
           locked: boolean;
+          sweetheart_partner_swap: boolean;
           created_at: string;
         };
         Insert: Omit<Database["public"]["Tables"]["tables"]["Row"], "id" | "created_at">;
