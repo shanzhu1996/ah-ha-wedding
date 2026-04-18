@@ -23,6 +23,7 @@ import {
   type SeatAssignment,
 } from "./table-visual";
 import { DietarySummary } from "./dietary-summary";
+import { triggerConfetti } from "@/components/ui/confetti";
 import { ViewToggle, type SeatingView } from "./view-toggle";
 import { useSeatAssignment } from "./use-seat-assignment";
 import type { TableShape } from "./table-templates";
@@ -178,6 +179,20 @@ export function SeatingManager({
   const pendingRsvp = guests.filter(
     (g) => g.rsvp_status === "pending" || g.rsvp_status === "no_response"
   ).length;
+
+  // Completion celebration — fires once per wedding when every confirmed
+  // guest has a seat. Uses localStorage so undo/redo or returning users
+  // don't re-trigger the confetti.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (confirmed.length === 0) return;
+    if (unseatedConfirmed > 0) return;
+    const key = `ahha:seating-confetti-seen:${weddingId}`;
+    if (localStorage.getItem(key) === "1") return;
+    triggerConfetti();
+    localStorage.setItem(key, "1");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unseatedConfirmed, confirmed.length, weddingId]);
   const recommendedTables = Math.ceil(confirmed.length / 10);
 
   // Tables full/partial counts

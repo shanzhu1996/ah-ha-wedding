@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 
 export interface OptimisticGuestOverlay {
@@ -44,6 +45,13 @@ export function useSeatAssignment() {
           delete next[guestId];
           return next;
         });
+        toast.error("Couldn’t seat that guest", {
+          description: error.message,
+          action: {
+            label: "Retry",
+            onClick: () => assign(guestId, tableId, seatNumber),
+          },
+        });
         return { ok: false, error };
       }
       startTransition(() => router.refresh());
@@ -67,6 +75,13 @@ export function useSeatAssignment() {
           const next = { ...prev };
           delete next[guestId];
           return next;
+        });
+        toast.error("Couldn’t unseat that guest", {
+          description: error.message,
+          action: {
+            label: "Retry",
+            onClick: () => unassign(guestId),
+          },
         });
         return { ok: false, error };
       }
@@ -103,6 +118,13 @@ export function useSeatAssignment() {
           delete next[guestA.id];
           delete next[guestB.id];
           return next;
+        });
+        toast.error("Couldn’t swap seats", {
+          description: error.message,
+          action: {
+            label: "Retry",
+            onClick: () => swap(guestA, guestB),
+          },
         });
         return { ok: false, error };
       }
