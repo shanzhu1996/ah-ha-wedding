@@ -11,6 +11,7 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronRight,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,6 +121,7 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
   }, []);
   const [showDialog, setShowDialog] = useState(false);
   const [addingToPhase, setAddingToPhase] = useState<string>("first_dance");
+  const [editingSongId, setEditingSongId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Form state
@@ -145,30 +147,54 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
 
   function openAddDialog(phase: string) {
     setAddingToPhase(phase);
+    setEditingSongId(null);
     resetForm();
     setShowDialog(true);
   }
 
-  async function handleAddSong() {
+  function openEditDialog(song: Song) {
+    setAddingToPhase(song.phase);
+    setEditingSongId(song.id);
+    setSongTitle(song.song_title);
+    setArtist(song.artist ?? "");
+    setNotes(song.notes ?? "");
+    setShowDialog(true);
+  }
+
+  async function handleSaveSong() {
     if (!songTitle.trim()) return;
     setSaving(true);
     const supabase = createClient();
 
-    const isDoNotPlay = addingToPhase === "do_not_play";
-    const existingSongs = isDoNotPlay ? doNotPlaySongs : songsForPhase(addingToPhase);
+    if (editingSongId) {
+      // Update existing song
+      await supabase
+        .from("music_selections")
+        .update({
+          song_title: songTitle.trim(),
+          artist: artist.trim(),
+          notes: notes.trim() || null,
+        })
+        .eq("id", editingSongId);
+    } else {
+      // Insert new song
+      const isDoNotPlay = addingToPhase === "do_not_play";
+      const existingSongs = isDoNotPlay ? doNotPlaySongs : songsForPhase(addingToPhase);
 
-    await supabase.from("music_selections").insert({
-      wedding_id: weddingId,
-      phase: addingToPhase,
-      song_title: songTitle.trim(),
-      artist: artist.trim(),
-      notes: notes.trim() || null,
-      is_do_not_play: isDoNotPlay,
-      sort_order: existingSongs.length,
-    });
+      await supabase.from("music_selections").insert({
+        wedding_id: weddingId,
+        phase: addingToPhase,
+        song_title: songTitle.trim(),
+        artist: artist.trim(),
+        notes: notes.trim() || null,
+        is_do_not_play: isDoNotPlay,
+        sort_order: existingSongs.length,
+      });
+    }
 
     setSaving(false);
     setShowDialog(false);
+    setEditingSongId(null);
     resetForm();
     router.refresh();
   }
@@ -222,6 +248,7 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
             disabled={idx === 0}
             onClick={() => handleReorder(phase, song.id, "up")}
             className="h-6 w-6 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-20 rounded"
+            title="Move up"
           >
             <ChevronUp className="h-3 w-3" />
           </button>
@@ -229,12 +256,21 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
             disabled={idx === total - 1}
             onClick={() => handleReorder(phase, song.id, "down")}
             className="h-6 w-6 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-20 rounded"
+            title="Move down"
           >
             <ChevronDown className="h-3 w-3" />
           </button>
           <button
+            onClick={() => openEditDialog(song)}
+            className="h-6 w-6 inline-flex items-center justify-center text-muted-foreground hover:text-foreground rounded"
+            title="Edit"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+          <button
             onClick={() => handleDelete(song.id)}
             className="h-6 w-6 inline-flex items-center justify-center text-muted-foreground hover:text-destructive rounded"
+            title="Delete"
           >
             <Trash2 className="h-3 w-3" />
           </button>
@@ -402,9 +438,19 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {addingToPhase === "do_not_play"
+              {editingSongId
+                ? `Edit Song — ${
+                    addingToPhase === "do_not_play"
+                      ? "Do Not Play"
+                      : ALL_PHASES.find((p) => p.value === addingToPhase)?.label ??
+                        addingToPhase
+                  }`
+                : addingToPhase === "do_not_play"
                 ? "Add to Do Not Play List"
-                : `Add Song — ${ALL_PHASES.find((p) => p.value === addingToPhase)?.label ?? addingToPhase}`}
+                : `Add Song — ${
+                    ALL_PHASES.find((p) => p.value === addingToPhase)?.label ??
+                    addingToPhase
+                  }`}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -414,7 +460,7 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
                 value={songTitle}
                 onChange={(e) => setSongTitle(e.target.value)}
                 placeholder="Enter song title"
-                onKeyDown={(e) => { if (e.key === "Enter" && songTitle.trim()) handleAddSong(); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && songTitle.trim()) handleSaveSong(); }}
               />
             </div>
             <div className="space-y-2">
@@ -423,7 +469,7 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
                 value={artist}
                 onChange={(e) => setArtist(e.target.value)}
                 placeholder="Enter artist name"
-                onKeyDown={(e) => { if (e.key === "Enter" && songTitle.trim()) handleAddSong(); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && songTitle.trim()) handleSaveSong(); }}
               />
             </div>
             <div className="space-y-2">
@@ -436,9 +482,26 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
               />
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => { setShowDialog(false); resetForm(); }}>Cancel</Button>
-              <Button onClick={handleAddSong} disabled={saving || !songTitle.trim()}>
-                {saving ? "Adding..." : addingToPhase === "do_not_play" ? "Add to Do Not Play" : "Add Song"}
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowDialog(false);
+                  setEditingSongId(null);
+                  resetForm();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleSaveSong} disabled={saving || !songTitle.trim()}>
+                {saving
+                  ? editingSongId
+                    ? "Saving..."
+                    : "Adding..."
+                  : editingSongId
+                  ? "Save changes"
+                  : addingToPhase === "do_not_play"
+                  ? "Add to Do Not Play"
+                  : "Add Song"}
               </Button>
             </div>
           </div>

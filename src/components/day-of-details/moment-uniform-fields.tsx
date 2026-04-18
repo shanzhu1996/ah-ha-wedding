@@ -52,11 +52,8 @@ export function MomentUniformFields({
   const [notesOpen, setNotesOpen] = useState(false);
 
   const mcTypical = TYPICAL_MC_MOMENTS.has(momentId);
-  // MC is on iff there's a line. mc_needed is kept in sync for back-compat
-  // (old data may have mc_needed=true without a line; treat as "on").
-  const mcFilledValue =
-    extras?.mc_line?.trim() ||
-    (extras?.mc_needed ? "MC announces this moment" : "");
+  // Chip state = line content only. Deleting all text = chip goes empty.
+  const mcFilledValue = extras?.mc_line?.trim() || "";
   const guestsFilledValue = extras?.guest_action?.trim() || "";
   const notesFilledValue = extras?.notes?.trim() || "";
 
@@ -137,9 +134,12 @@ export function MomentUniformFields({
             <Textarea
               autoFocus={!extras?.mc_line}
               value={extras?.mc_line ?? ""}
-              onChange={(e) =>
-                onChange({ mc_line: e.target.value, mc_needed: true })
-              }
+              onChange={(e) => {
+                const v = e.target.value;
+                // Keep mc_needed in sync with content — deleting all text
+                // disables MC so the chip + "needs MC" pill chip go away.
+                onChange({ mc_line: v, mc_needed: v.trim().length > 0 });
+              }}
               placeholder="Edit the suggested script, or write your own"
               className="text-sm min-h-[52px] bg-background"
               rows={2}
