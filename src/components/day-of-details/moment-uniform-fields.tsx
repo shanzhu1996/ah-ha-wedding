@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Mic, Users2, StickyNote, Clock, ArrowRight, Plus, X } from "lucide-react";
+import { Mic, Users2, StickyNote, Clock, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -23,19 +23,20 @@ interface Props {
 }
 
 /**
- * Shared optional fields for any reception moment.
+ * Shared optional fields for any reception moment (Variant A+).
  *
- * Design goal (Variant A): universal extras (MC, Guest action, Notes) hide
- * behind chip buttons so the couple only sees fields that are filled in or
- * that they've explicitly opted to add. This keeps the moment card focused
- * on its primary decision and matches native-mobile UX conventions
- * (iOS / Notion / Linear).
+ * Behavior:
+ *   - Every field starts as a chip — even if it already has content. This
+ *     enforces consistent visual weight between moments so the hierarchy
+ *     (primary > optional) reads at a glance.
+ *   - Filled chips show a salmon dot + inline value preview so the couple
+ *     knows the content exists without having to expand it.
+ *   - Clicking a chip swaps it for an inline row (no border/background) —
+ *     Done and Clear actions live in the row's header.
+ *   - MC chips on "typical" moments (Grand entrance, First dance, etc.)
+ *     get a subtle "typical" hint to surface planner wisdom.
  *
- * States per field:
- *   - empty + not opted: chip visible, input hidden
- *   - opted or has content: input visible in a soft sub-card with close "×"
- *
- * Time input (when Schedule doesn't own it) always renders.
+ * The OPTIONAL divider above the chips makes the hierarchy break explicit.
  */
 export function MomentUniformFields({
   momentId,
@@ -44,20 +45,19 @@ export function MomentUniformFields({
   receptionData,
   showTime = true,
   scheduleOwnsTime = false,
-  onNavigateToSchedule,
 }: Props) {
-  // Each optional field stays expanded once the user either clicks the chip or
-  // types anything. It collapses back only when the user clicks × to clear.
-  const [mcOpen, setMcOpen] = useState(
-    () => !!(extras?.mc_needed || extras?.mc_line?.trim())
-  );
-  const [guestsOpen, setGuestsOpen] = useState(
-    () => !!extras?.guest_action?.trim()
-  );
-  const [notesOpen, setNotesOpen] = useState(() => !!extras?.notes?.trim());
+  // Always chip-first. Never auto-expand based on data — the filled chip
+  // carries the information, and the couple chooses to expand for edits.
+  const [mcOpen, setMcOpen] = useState(false);
+  const [guestsOpen, setGuestsOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
 
-  const anyChipVisible = !mcOpen || !guestsOpen || !notesOpen;
   const mcTypical = TYPICAL_MC_MOMENTS.has(momentId);
+  const mcFilledValue =
+    extras?.mc_line?.trim() ||
+    (extras?.mc_needed ? "MC announces this moment" : "");
+  const guestsFilledValue = extras?.guest_action?.trim() || "";
+  const notesFilledValue = extras?.notes?.trim() || "";
 
   function handleMcToggle(checked: boolean) {
     if (checked && !extras?.mc_line?.trim()) {
@@ -85,93 +85,109 @@ export function MomentUniformFields({
 
   return (
     <div className="space-y-3">
-      {/* Chip row — only for closed fields */}
-      {anyChipVisible && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-muted-foreground/70">
-            Optional
-          </span>
+      {/* Divider + OPTIONAL label — clear hierarchy break from primary */}
+      <div className="border-t border-border/40 pt-3 space-y-2">
+        <p className="text-[10px] font-semibold tracking-[0.14em] uppercase text-muted-foreground/60">
+          Optional · click to add or edit
+        </p>
+
+        {/* Chip row */}
+        <div className="flex items-center gap-1.5 flex-wrap">
           {!mcOpen && (
-            <ChipButton
+            <InlineChip
               icon={<Mic />}
-              onClick={() => setMcOpen(true)}
+              label="MC announcement"
+              value={mcFilledValue}
               typical={mcTypical}
-            >
-              MC announcement
-            </ChipButton>
+              onClick={() => setMcOpen(true)}
+            />
           )}
           {!guestsOpen && (
-            <ChipButton icon={<Users2 />} onClick={() => setGuestsOpen(true)}>
-              Guest action
-            </ChipButton>
+            <InlineChip
+              icon={<Users2 />}
+              label="Guest action"
+              value={guestsFilledValue}
+              onClick={() => setGuestsOpen(true)}
+            />
           )}
           {!notesOpen && (
-            <ChipButton icon={<StickyNote />} onClick={() => setNotesOpen(true)}>
-              Notes
-            </ChipButton>
+            <InlineChip
+              icon={<StickyNote />}
+              label="Notes"
+              value={notesFilledValue}
+              onClick={() => setNotesOpen(true)}
+            />
           )}
         </div>
-      )}
 
-      {/* Expanded MC field */}
-      {mcOpen && (
-        <OptionalCard icon={<Mic />} label="MC announcement" onClear={clearMc}>
-          <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
-            <Checkbox
-              checked={extras?.mc_needed ?? false}
-              onCheckedChange={(v) => handleMcToggle(!!v)}
+        {/* Expanded inline rows */}
+        {mcOpen && (
+          <InlineRow
+            icon={<Mic />}
+            label="MC announcement"
+            onDone={() => setMcOpen(false)}
+            onClear={clearMc}
+            canClear={!!(extras?.mc_needed || extras?.mc_line?.trim())}
+          >
+            <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox
+                checked={extras?.mc_needed ?? false}
+                onCheckedChange={(v) => handleMcToggle(!!v)}
+              />
+              <span
+                className={cn(!extras?.mc_needed && "text-muted-foreground")}
+              >
+                MC announces this moment
+              </span>
+            </label>
+            {extras?.mc_needed && (
+              <Textarea
+                value={extras?.mc_line ?? ""}
+                onChange={(e) => onChange({ mc_line: e.target.value })}
+                placeholder="What the MC says (we've suggested one — edit freely)"
+                className="text-sm min-h-[52px] bg-background mt-2"
+                rows={2}
+              />
+            )}
+          </InlineRow>
+        )}
+        {guestsOpen && (
+          <InlineRow
+            icon={<Users2 />}
+            label="Guest action"
+            hint='What guests do — e.g., "stand", "applaud"'
+            onDone={() => setGuestsOpen(false)}
+            onClear={clearGuests}
+            canClear={!!extras?.guest_action?.trim()}
+          >
+            <Input
+              autoFocus={!extras?.guest_action}
+              placeholder='e.g., "everyone stand"'
+              value={extras?.guest_action ?? ""}
+              onChange={(e) => onChange({ guest_action: e.target.value })}
+              className="h-9 text-sm bg-background max-w-sm"
             />
-            <span
-              className={cn(
-                !extras?.mc_needed && "text-muted-foreground"
-              )}
-            >
-              MC announces this moment
-            </span>
-          </label>
-          {extras?.mc_needed && (
+          </InlineRow>
+        )}
+        {notesOpen && (
+          <InlineRow
+            icon={<StickyNote />}
+            label="Notes"
+            onDone={() => setNotesOpen(false)}
+            onClear={clearNotes}
+            canClear={!!extras?.notes?.trim()}
+          >
             <Textarea
-              value={extras?.mc_line ?? ""}
-              onChange={(e) => onChange({ mc_line: e.target.value })}
-              placeholder="What the MC says (we've suggested one — edit freely)"
-              className="text-sm min-h-[52px] bg-background mt-2"
+              autoFocus={!extras?.notes}
+              value={extras?.notes ?? ""}
+              onChange={(e) => onChange({ notes: e.target.value })}
+              placeholder="Anything else for this moment"
+              className="text-sm min-h-[52px] bg-background"
               rows={2}
             />
-          )}
-        </OptionalCard>
-      )}
-
-      {/* Expanded Guests field */}
-      {guestsOpen && (
-        <OptionalCard
-          icon={<Users2 />}
-          label="Guest action"
-          hint='What guests do — e.g., "stand", "applaud"'
-          onClear={clearGuests}
-        >
-          <Input
-            placeholder='e.g., "everyone stand"'
-            value={extras?.guest_action ?? ""}
-            onChange={(e) => onChange({ guest_action: e.target.value })}
-            className="h-9 text-sm bg-background max-w-sm"
-            autoFocus={!extras?.guest_action}
-          />
-        </OptionalCard>
-      )}
-
-      {/* Expanded Notes field */}
-      {notesOpen && (
-        <OptionalCard icon={<StickyNote />} label="Notes" onClear={clearNotes}>
-          <Textarea
-            value={extras?.notes ?? ""}
-            onChange={(e) => onChange({ notes: e.target.value })}
-            placeholder="Anything else for this moment"
-            className="text-sm min-h-[52px] bg-background"
-            rows={2}
-            autoFocus={!extras?.notes}
-          />
-        </OptionalCard>
-      )}
+          </InlineRow>
+        )}
+      </div>
 
       {/* Local time input only for custom moments (no Schedule entry) */}
       {showTime && !scheduleOwnsTime && (
@@ -197,85 +213,132 @@ export function MomentUniformFields({
 
 // ── Sub-components ──────────────────────────────────────────────────────
 
-function ChipButton({
+/**
+ * Chip with two visual states:
+ *   - Empty: plain border, "+" icon, label. Optional "typical" hint.
+ *   - Filled: salmon dot + label + ":" + truncated value preview.
+ */
+function InlineChip({
   icon,
-  children,
-  onClick,
+  label,
+  value,
   typical,
+  onClick,
 }: {
   icon: React.ReactNode;
-  children: React.ReactNode;
-  onClick: () => void;
-  /** Soft planner-wisdom hint: this field is conventionally set for this moment. */
+  label: string;
+  value?: string;
   typical?: boolean;
+  onClick: () => void;
 }) {
+  const hasValue = !!(value && value.trim());
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors",
-        typical
-          ? "border-primary/30 bg-primary/5 text-foreground/80 hover:border-primary/60 hover:text-primary"
+        "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors max-w-full",
+        hasValue
+          ? "border-primary/40 bg-primary/5 text-foreground/80 hover:border-primary/70"
+          : typical
+          ? "border-primary/30 bg-primary/[0.04] text-foreground/70 hover:border-primary/60 hover:text-primary"
           : "border-border/80 bg-background text-foreground/70 hover:border-primary/40 hover:text-primary"
       )}
-      title={typical ? "Typical for this moment" : undefined}
+      title={hasValue ? value : typical ? "Typical for this moment" : undefined}
     >
-      <Plus className="h-3 w-3" />
+      {hasValue ? (
+        <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+      ) : (
+        <Plus className="h-3 w-3 shrink-0" />
+      )}
       <span
         className={cn(
-          "[&>svg]:h-3 [&>svg]:w-3",
-          typical
+          "[&>svg]:h-3 [&>svg]:w-3 shrink-0",
+          hasValue || typical
             ? "[&>svg]:text-primary/70"
             : "[&>svg]:text-muted-foreground/60"
         )}
       >
         {icon}
       </span>
-      {children}
-      {typical && (
-        <span className="text-[10px] text-primary/70 font-medium">typical</span>
-      )}
+      <span className="font-medium shrink-0">{label}</span>
+      {hasValue ? (
+        <>
+          <span className="text-muted-foreground/60 shrink-0">:</span>
+          <span className="text-muted-foreground/80 truncate min-w-0">
+            {value}
+          </span>
+        </>
+      ) : typical ? (
+        <span className="text-[10px] text-primary/70 font-medium shrink-0">
+          typical
+        </span>
+      ) : null}
     </button>
   );
 }
 
-function OptionalCard({
+/**
+ * Inline expanded row — header with label + Done/Clear actions, body below.
+ * No border, no background — reads as "tucked under the OPTIONAL group"
+ * rather than a stand-alone module.
+ */
+function InlineRow({
   icon,
   label,
   hint,
+  onDone,
   onClear,
+  canClear,
   children,
 }: {
   icon: React.ReactNode;
   label: string;
   hint?: string;
+  onDone: () => void;
   onClear: () => void;
+  /** Disable Clear visually when there's nothing to clear. */
+  canClear?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-md bg-muted/30 border border-border/40 px-3 py-2.5">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5 text-xs font-medium text-foreground/70">
-          <span className="[&>svg]:h-3.5 [&>svg]:w-3.5 [&>svg]:text-muted-foreground/70">
+    <div className="pl-1 py-1.5">
+      <div className="flex items-center justify-between mb-1.5 gap-2">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-foreground/80 min-w-0">
+          <span className="[&>svg]:h-3.5 [&>svg]:w-3.5 [&>svg]:text-primary/70 shrink-0">
             {icon}
           </span>
-          {label}
+          <span className="shrink-0">{label}</span>
           {hint && (
-            <span className="text-[10px] font-normal text-muted-foreground/60 ml-1">
+            <span className="text-[11px] font-normal text-muted-foreground/60 truncate">
               {hint}
             </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={onClear}
-          className="text-muted-foreground/50 hover:text-destructive transition-colors"
-          title="Clear and collapse"
-          aria-label={`Clear ${label}`}
-        >
-          <X className="h-3 w-3" />
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={onDone}
+            className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
+          >
+            Done
+          </button>
+          <span className="text-muted-foreground/30">·</span>
+          <button
+            type="button"
+            onClick={onClear}
+            disabled={!canClear}
+            className={cn(
+              "text-[11px] transition-colors",
+              canClear
+                ? "text-muted-foreground/70 hover:text-destructive"
+                : "text-muted-foreground/30 cursor-not-allowed"
+            )}
+            title="Clear and collapse"
+          >
+            Clear
+          </button>
+        </div>
       </div>
       {children}
     </div>

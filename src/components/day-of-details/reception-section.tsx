@@ -1327,7 +1327,9 @@ function SkipMusicToggle({
   );
 }
 
-// ── Shared primary-field layout (Variant A) ──────────────────────────────
+// ── Shared primary-field layout (Variant A+) ─────────────────────────────
+// Larger label + icon so primary fields visually outrank the optional chips
+// below. Icon size is forced via !important to override caller's h-4 w-4.
 function PrimaryField({
   icon,
   label,
@@ -1342,10 +1344,14 @@ function PrimaryField({
   return (
     <div className="space-y-2">
       <div className="flex items-baseline gap-2 flex-wrap">
-        <span className="flex items-center">{icon}</span>
-        <label className="text-sm font-medium text-foreground">{label}</label>
+        <span className="flex items-center self-center [&>svg]:!h-[18px] [&>svg]:!w-[18px] [&>svg]:!text-primary">
+          {icon}
+        </span>
+        <label className="text-[15px] font-semibold text-foreground leading-none">
+          {label}
+        </label>
         {hint && (
-          <span className="text-xs text-muted-foreground">— {hint}</span>
+          <span className="text-[13px] text-muted-foreground">— {hint}</span>
         )}
       </div>
       {children}
