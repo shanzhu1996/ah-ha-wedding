@@ -34,6 +34,18 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { VendorType } from "@/types/database";
+import {
+  speechesTotalMinutes,
+  mcIntroFor,
+  DAY_OF_ROLE_META,
+  type ScheduleData,
+  type GettingReadyData,
+  type CeremonyData,
+  type CocktailData,
+  type ReceptionData,
+  type PhotoShotListData,
+  type LogisticsData,
+} from "@/components/day-of-details/types";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -94,6 +106,16 @@ interface DelegationTask {
   contact: string | null;
 }
 
+export interface DayOfDetailsBundle {
+  schedule?: ScheduleData;
+  getting_ready?: GettingReadyData;
+  ceremony?: CeremonyData;
+  cocktail?: CocktailData;
+  reception?: ReceptionData;
+  photos?: PhotoShotListData;
+  logistics?: LogisticsData;
+}
+
 interface BookletGeneratorProps {
   vendors: Vendor[];
   wedding: Wedding;
@@ -101,6 +123,8 @@ interface BookletGeneratorProps {
   musicSelections: MusicSelection[];
   guests: Guest[];
   delegationTasks: DelegationTask[];
+  /** Day-of Details content used to enrich per-vendor addendums. */
+  dayOfDetails?: DayOfDetailsBundle;
 }
 
 // ── Vendor type config ─────────────────────────────────────────────────
@@ -157,7 +181,16 @@ export function BookletGenerator({
   musicSelections,
   guests,
   delegationTasks,
+  dayOfDetails,
 }: BookletGeneratorProps) {
+  const ceremonyDayOf = dayOfDetails?.ceremony;
+  const receptionDayOf = dayOfDetails?.reception;
+  const photosDayOf = dayOfDetails?.photos;
+  const gettingReadyDayOf = dayOfDetails?.getting_ready;
+  const cocktailDayOf = dayOfDetails?.cocktail;
+  const logisticsDayOf = dayOfDetails?.logistics;
+
+  const hasText = (s?: string | null) => !!s && s.trim().length > 0;
   const [previewOpen, setPreviewOpen] = useState(false);
   const [selectedVendors, setSelectedVendors] = useState<Vendor[]>([]);
   const printRef = useRef<HTMLDivElement>(null);
@@ -189,15 +222,62 @@ export function BookletGenerator({
 
   function renderAddendum(vendor: Vendor) {
     switch (vendor.type) {
-      case "photographer":
+      case "photographer": {
+        const includedSections: [string, { included: boolean; label: string; notes: string }[]][] = photosDayOf
+          ? [
+              ["Pre-ceremony", photosDayOf.pre_ceremony || []],
+              ["Ceremony & family", photosDayOf.ceremony_family || []],
+              ["Reception", photosDayOf.reception || []],
+            ]
+          : [];
+        const hasShotList = includedSections.some(([, list]) =>
+          list.some((s) => s.included)
+        );
         return (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <h4 className="font-semibold text-sm">Shot List &amp; Family Groupings</h4>
-            <p className="text-sm text-muted-foreground">
-              Include your shot list and family groupings here. We recommend
-              coordinating with the couple on must-have photos, family group
-              combinations, and any sentimental moments to capture.
-            </p>
+            {hasShotList ? (
+              includedSections.map(([label, list]) => {
+                const picked = list.filter((s) => s.included);
+                if (picked.length === 0) return null;
+                return (
+                  <div key={label}>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                      {label}
+                    </p>
+                    <ul className="text-sm space-y-0.5 list-disc list-inside">
+                      {picked.map((s, i) => (
+                        <li key={i}>
+                          {(s as { label?: string }).label || "(shot)"}
+                          {hasText(s.notes) && (
+                            <span className="text-muted-foreground text-xs"> · {s.notes}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Include your shot list and family groupings here.
+              </p>
+            )}
+            {gettingReadyDayOf?.first_look && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                  First Look
+                </p>
+                <p className="text-sm">
+                  {[
+                    gettingReadyDayOf.first_look_time,
+                    gettingReadyDayOf.first_look_location,
+                  ]
+                    .filter(hasText)
+                    .join(" · ") || "Planned"}
+                </p>
+              </div>
+            )}
             {vendor.notes && (
               <div className="mt-2">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -208,6 +288,7 @@ export function BookletGenerator({
             )}
           </div>
         );
+      }
 
       case "dj":
       case "band":
@@ -254,6 +335,169 @@ export function BookletGenerator({
               <p className="text-sm text-muted-foreground">
                 No music selections have been added yet.
               </p>
+            )}
+            {receptionDayOf && (
+              <div className="pt-2 border-t border-dashed">
+                <h4 className="font-semibold text-sm mb-2">Reception Program</h4>
+                <dl className="text-sm space-y-1">
+                  {hasText(receptionDayOf.grand_entrance_song) && (
+                    <div>
+                      <dt className="inline font-medium text-xs uppercase tracking-wide text-muted-foreground">
+                        Grand entrance:{" "}
+                      </dt>
+                      <dd className="inline">{receptionDayOf.grand_entrance_song}</dd>
+                    </div>
+                  )}
+                  {hasText(receptionDayOf.first_dance_song) && (
+                    <div>
+                      <dt className="inline font-medium text-xs uppercase tracking-wide text-muted-foreground">
+                        First dance:{" "}
+                      </dt>
+                      <dd className="inline">
+                        {receptionDayOf.first_dance_song}
+                        {hasText(receptionDayOf.first_dance_artist) &&
+                          ` · ${receptionDayOf.first_dance_artist}`}
+                      </dd>
+                    </div>
+                  )}
+                  {(receptionDayOf.parent_dances || [])
+                    .filter((d) => hasText(d.who) || hasText(d.song))
+                    .map((d) => (
+                      <div key={d.id}>
+                        <dt className="inline font-medium text-xs uppercase tracking-wide text-muted-foreground">
+                          Parent dance:{" "}
+                        </dt>
+                        <dd className="inline">
+                          {d.who || "(who)"}
+                          {hasText(d.song) && (
+                            <>
+                              {" — "}
+                              {d.song}
+                              {hasText(d.artist) && ` · ${d.artist}`}
+                            </>
+                          )}
+                        </dd>
+                      </div>
+                    ))}
+                  {hasText(receptionDayOf.cake_cutting_song) && (
+                    <div>
+                      <dt className="inline font-medium text-xs uppercase tracking-wide text-muted-foreground">
+                        Cake cutting:{" "}
+                      </dt>
+                      <dd className="inline">{receptionDayOf.cake_cutting_song}</dd>
+                    </div>
+                  )}
+                  {hasText(receptionDayOf.last_dance_song) && (
+                    <div>
+                      <dt className="inline font-medium text-xs uppercase tracking-wide text-muted-foreground">
+                        Last dance:{" "}
+                      </dt>
+                      <dd className="inline">
+                        {receptionDayOf.last_dance_song}
+                        {hasText(receptionDayOf.last_dance_artist) &&
+                          ` · ${receptionDayOf.last_dance_artist}`}
+                      </dd>
+                    </div>
+                  )}
+                  {receptionDayOf.exit_style && receptionDayOf.exit_style !== "none" && (
+                    <div>
+                      <dt className="inline font-medium text-xs uppercase tracking-wide text-muted-foreground">
+                        Exit:{" "}
+                      </dt>
+                      <dd className="inline">
+                        {receptionDayOf.exit_style.replace(/_/g, " ")}
+                        {hasText(receptionDayOf.exit_song) &&
+                          ` · ${receptionDayOf.exit_song}`}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+                {(receptionDayOf.speeches || []).length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                      Speeches ({speechesTotalMinutes(receptionDayOf.speeches)} min total) — MC script
+                    </p>
+                    <ol className="text-sm space-y-1">
+                      {receptionDayOf.speeches.map((s, i) => (
+                        <li key={s.id}>
+                          <span className="text-muted-foreground mr-1 tabular-nums">
+                            {i + 1}.
+                          </span>
+                          <span className="font-medium">
+                            {hasText(s.speaker) ? s.speaker : "(speaker)"}
+                          </span>
+                          {hasText(s.role) && (
+                            <span className="text-muted-foreground"> — {s.role}</span>
+                          )}
+                          <span className="text-muted-foreground ml-1">
+                            ~{s.estimated_minutes ?? 3} min
+                          </span>
+                          <div className="text-xs italic text-muted-foreground pl-5">
+                            &ldquo;{mcIntroFor(s)}&rdquo;
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+                {(receptionDayOf.custom_moments || []).length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                      Custom moments
+                    </p>
+                    <ul className="text-sm space-y-1">
+                      {(receptionDayOf.custom_moments || []).map((m) => (
+                        <li key={m.id}>
+                          {hasText(m.time) && (
+                            <span className="text-muted-foreground tabular-nums mr-2">
+                              {m.time}
+                            </span>
+                          )}
+                          <span className="font-medium">{m.title || "(untitled)"}</span>
+                          {m.mc_needed && hasText(m.mc_line) && (
+                            <div className="text-xs italic text-muted-foreground pl-4">
+                              &ldquo;{m.mc_line!.trim()}&rdquo;
+                            </div>
+                          )}
+                          {hasText(m.notes) && (
+                            <div className="text-xs text-muted-foreground pl-4">
+                              {m.notes}
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {/* Moment announcements the MC needs to make (built-in moments with mc_line) */}
+                {receptionDayOf.moment_extras &&
+                  Object.entries(receptionDayOf.moment_extras)
+                    .filter(
+                      ([, e]) => e && e.mc_needed && hasText(e.mc_line)
+                    ).length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                        MC announcements
+                      </p>
+                      <ul className="text-sm space-y-1">
+                        {Object.entries(receptionDayOf.moment_extras)
+                          .filter(
+                            ([, e]) => e && e.mc_needed && hasText(e.mc_line)
+                          )
+                          .map(([id, e]) => (
+                            <li key={id}>
+                              <span className="font-medium capitalize">
+                                {id.replace(/_/g, " ")}:
+                              </span>
+                              <span className="italic text-muted-foreground ml-1">
+                                &ldquo;{e!.mc_line!.trim()}&rdquo;
+                              </span>
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                  )}
+              </div>
             )}
             {vendor.notes && (
               <div className="mt-2">
@@ -325,6 +569,37 @@ export function BookletGenerator({
                 </ul>
               </div>
             )}
+            {(hasText(logisticsDayOf?.vendor_meals_timing) ||
+              hasText(receptionDayOf?.vendor_meals_note) ||
+              hasText(cocktailDayOf?.catering_notes)) && (
+              <div className="pt-2 border-t border-dashed space-y-2">
+                <h4 className="font-semibold text-sm">From Day-of Details</h4>
+                {hasText(cocktailDayOf?.catering_notes) && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Cocktail hour
+                    </p>
+                    <p className="text-sm">{cocktailDayOf!.catering_notes}</p>
+                  </div>
+                )}
+                {hasText(logisticsDayOf?.vendor_meals_timing) && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Vendor meals timing
+                    </p>
+                    <p className="text-sm">{logisticsDayOf!.vendor_meals_timing}</p>
+                  </div>
+                )}
+                {hasText(receptionDayOf?.vendor_meals_note) && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Reception notes
+                    </p>
+                    <p className="text-sm">{receptionDayOf!.vendor_meals_note}</p>
+                  </div>
+                )}
+              </div>
+            )}
             {vendor.notes && (
               <div className="mt-2">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -375,6 +650,37 @@ export function BookletGenerator({
                 <strong>Start time:</strong> {formatTime(vendor.arrival_time)}
               </p>
             )}
+            {gettingReadyDayOf && (
+              <div className="space-y-2 pt-2 border-t border-dashed">
+                {[gettingReadyDayOf.group_1, gettingReadyDayOf.group_2].map((g, i) => {
+                  if (!g || (!hasText(g.time) && !hasText(g.location) && !hasText(g.who))) {
+                    return null;
+                  }
+                  return (
+                    <div key={i}>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        {g.label || `Group ${i + 1}`}
+                      </p>
+                      <p className="text-sm">
+                        {[g.time, g.location, g.who]
+                          .filter(hasText)
+                          .join(" · ")}
+                      </p>
+                    </div>
+                  );
+                })}
+                {hasText(gettingReadyDayOf.hair_makeup_notes) && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Hair &amp; makeup notes
+                    </p>
+                    <p className="text-sm whitespace-pre-wrap">
+                      {gettingReadyDayOf.hair_makeup_notes}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
             {vendor.notes && (
               <div className="mt-2">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -382,6 +688,164 @@ export function BookletGenerator({
                 </p>
                 <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
               </div>
+            )}
+          </div>
+        );
+
+      case "officiant":
+        return (
+          <div className="space-y-3">
+            <h4 className="font-semibold text-sm">Ceremony Details</h4>
+            {ceremonyDayOf ? (
+              <div className="space-y-2 text-sm">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Vows
+                    </p>
+                    <p>{ceremonyDayOf.vows_style || "not yet decided"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Recessional
+                    </p>
+                    <p>
+                      {ceremonyDayOf.recessional_style?.replace(/_/g, " ") ||
+                        "not yet decided"}
+                    </p>
+                  </div>
+                </div>
+                {ceremonyDayOf.unity_ceremony &&
+                  ceremonyDayOf.unity_ceremony !== "none" && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        Unity ceremony
+                      </p>
+                      <p>
+                        {ceremonyDayOf.unity_ceremony.replace(/_/g, " ")}
+                        {hasText(ceremonyDayOf.unity_notes) &&
+                          ` · ${ceremonyDayOf.unity_notes}`}
+                      </p>
+                    </div>
+                  )}
+                {(ceremonyDayOf.readings || []).length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Readings
+                    </p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      {ceremonyDayOf.readings.map((r) => (
+                        <li key={r.id}>
+                          {r.title || "(untitled)"}
+                          {hasText(r.reader) && ` — ${r.reader}`}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {hasText(ceremonyDayOf.officiant_notes) && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Notes from the couple
+                    </p>
+                    <p className="whitespace-pre-wrap">
+                      {ceremonyDayOf.officiant_notes}
+                    </p>
+                  </div>
+                )}
+                {hasText(ceremonyDayOf.cultural_notes) && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Cultural / religious elements
+                    </p>
+                    <p className="whitespace-pre-wrap">
+                      {ceremonyDayOf.cultural_notes}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : vendor.notes ? (
+              <p className="text-sm whitespace-pre-wrap">{vendor.notes}</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Ceremony details pending.
+              </p>
+            )}
+          </div>
+        );
+
+      case "coordinator":
+      case "venue":
+        return (
+          <div className="space-y-3">
+            <h4 className="font-semibold text-sm">Logistics &amp; Roles</h4>
+            {logisticsDayOf ? (
+              <div className="space-y-2 text-sm">
+                {hasText(logisticsDayOf.rain_plan) && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Rain plan
+                    </p>
+                    <p className="whitespace-pre-wrap">{logisticsDayOf.rain_plan}</p>
+                  </div>
+                )}
+                {hasText(logisticsDayOf.transportation) && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Transportation
+                    </p>
+                    <p className="whitespace-pre-wrap">{logisticsDayOf.transportation}</p>
+                  </div>
+                )}
+                {(hasText(logisticsDayOf.emergency_contact_name) ||
+                  hasText(logisticsDayOf.emergency_contact_phone)) && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Emergency contact
+                    </p>
+                    <p>
+                      {logisticsDayOf.emergency_contact_name}
+                      {hasText(logisticsDayOf.emergency_contact_phone) &&
+                        ` · ${logisticsDayOf.emergency_contact_phone}`}
+                    </p>
+                  </div>
+                )}
+                {logisticsDayOf.roles &&
+                  DAY_OF_ROLE_META.some(({ key }) =>
+                    hasText(logisticsDayOf.roles?.[key])
+                  ) && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        Day-of roles
+                      </p>
+                      <ul className="list-disc list-inside">
+                        {DAY_OF_ROLE_META.map(({ key, label }) => {
+                          const name = logisticsDayOf.roles?.[key];
+                          if (!hasText(name)) return null;
+                          return (
+                            <li key={key}>
+                              <strong>{label}:</strong> {name}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                {hasText(logisticsDayOf.notes) && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Additional notes
+                    </p>
+                    <p className="whitespace-pre-wrap">{logisticsDayOf.notes}</p>
+                  </div>
+                )}
+              </div>
+            ) : vendor.notes ? (
+              <p className="text-sm whitespace-pre-wrap">{vendor.notes}</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Logistics details pending.
+              </p>
             )}
           </div>
         );

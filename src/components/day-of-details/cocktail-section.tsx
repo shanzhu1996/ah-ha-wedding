@@ -2,6 +2,7 @@
 
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { Wand2 } from "lucide-react";
 import type { CocktailData } from "./types";
 
 interface CocktailSectionProps {
@@ -38,8 +39,37 @@ export function CocktailSection({ data, onChange }: CocktailSectionProps) {
     onChange({ ...data, ...patch });
   }
 
+  function applyStandardPreset() {
+    // Non-destructive — only fills empty fields.
+    update({
+      location: data.location || "same_venue",
+      duration: data.duration || "60",
+      music_mood: data.music_mood || "acoustic",
+    });
+  }
+
+  const anyFieldSet = !!data.location || !!data.duration || !!data.music_mood;
+
   return (
     <div className="space-y-8">
+      {!anyFieldSet && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+            <Wand2 className="h-3 w-3" /> Quick fill:
+          </span>
+          <button
+            type="button"
+            onClick={applyStandardPreset}
+            className="text-xs px-2.5 py-1 rounded-md border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            Standard (same venue · 60min · acoustic)
+          </button>
+          <span className="text-[10px] text-muted-foreground/60">
+            Fills empty fields only.
+          </span>
+        </div>
+      )}
+
       {/* Location */}
       <div>
         <h4 className="text-sm font-medium mb-1">Location</h4>

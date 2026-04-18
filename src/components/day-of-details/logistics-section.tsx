@@ -2,7 +2,7 @@
 
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { LogisticsData } from "./types";
+import { DAY_OF_ROLE_META, type DayOfRoles, type LogisticsData } from "./types";
 
 interface LogisticsSectionProps {
   data: LogisticsData;
@@ -61,6 +61,45 @@ export function LogisticsSection({ data, onChange }: LogisticsSectionProps) {
             onChange={(e) => update({ emergency_contact_phone: e.target.value })}
             placeholder="Phone"
           />
+        </div>
+      </div>
+
+      {/* Day-of Roles */}
+      <div>
+        <h4 className="text-sm font-medium mb-1">Day-of Roles</h4>
+        <p className="text-xs text-muted-foreground mb-3">
+          Who runs what if something slips? One emergency contact isn&apos;t enough — these are the small, critical roles planners assign.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+          {DAY_OF_ROLE_META.map(({ key, label, hint }) => {
+            const roles: DayOfRoles =
+              data.roles || {
+                rings: "",
+                license: "",
+                tips: "",
+                toasts_cue: "",
+                gifts: "",
+                timeline: "",
+              };
+            return (
+              <div key={key}>
+                <label className="text-xs text-muted-foreground block mb-1">
+                  <span className="font-medium">{label}</span>
+                  <span className="text-muted-foreground/60"> · {hint}</span>
+                </label>
+                <Input
+                  value={roles[key] ?? ""}
+                  onChange={(e) =>
+                    update({
+                      roles: { ...roles, [key]: e.target.value } as DayOfRoles,
+                    })
+                  }
+                  placeholder="Name & phone (optional)"
+                  className="h-9 text-sm"
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
 

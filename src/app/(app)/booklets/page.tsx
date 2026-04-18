@@ -1,7 +1,12 @@
 import { redirect } from "next/navigation";
 import { getCurrentWedding } from "@/lib/supabase/queries";
 import { createClient } from "@/lib/supabase/server";
-import { BookletGenerator } from "@/components/booklets/booklet-generator";
+import { BookletGenerator, type DayOfDetailsBundle } from "@/components/booklets/booklet-generator";
+import {
+  SECTION_KEYS,
+  getDefaultSectionData,
+  type AllSectionData,
+} from "@/components/day-of-details/types";
 
 export default async function BookletsPage() {
   const wedding = await getCurrentWedding();
@@ -9,7 +14,7 @@ export default async function BookletsPage() {
 
   const supabase = await createClient();
 
-  const [vendorsRes, timelineRes, musicRes, guestsRes, delegationRes] =
+  const [vendorsRes, timelineRes, musicRes, guestsRes, delegationRes, dayOfRes] =
     await Promise.all([
       supabase
         .from("vendors")
@@ -35,7 +40,19 @@ export default async function BookletsPage() {
         .from("delegation_tasks")
         .select("*")
         .eq("wedding_id", wedding.id),
+      supabase
+        .from("wedding_day_details")
+        .select("section, data")
+        .eq("wedding_id", wedding.id),
     ]);
+
+  const dayOfMap = new Map((dayOfRes.data || []).map((r) => [r.section, r.data]));
+  const dayOfDetails: DayOfDetailsBundle = {};
+  for (const key of SECTION_KEYS) {
+    const value =
+      dayOfMap.get(key) ?? getDefaultSectionData(key);
+    (dayOfDetails as Record<string, unknown>)[key] = value as AllSectionData[typeof key];
+  }
 
   return (
     <div className="space-y-6">
@@ -61,6 +78,7 @@ export default async function BookletsPage() {
         musicSelections={musicRes.data || []}
         guests={guestsRes.data || []}
         delegationTasks={delegationRes.data || []}
+        dayOfDetails={dayOfDetails}
       />
     </div>
   );

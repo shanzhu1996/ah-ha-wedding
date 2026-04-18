@@ -1,14 +1,17 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { Loader2 } from "lucide-react";
+import Link from "next/link";
+import { Loader2, Printer, Info } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
   SECTION_KEYS,
   SECTION_META,
+  getSectionCompletion,
   type SectionKey,
   type AllSectionData,
+  type CompletionState,
 } from "./types";
 
 // Lazy-load sections to avoid one giant bundle
@@ -27,12 +30,34 @@ interface DayStepperProps {
   initialData: Record<string, unknown>;
 }
 
+// ── Completion dot ─────────────────────────────────────────────────────
+
+function CompletionDot({ state, active }: { state: CompletionState; active: boolean }) {
+  if (state === "none" || state === "empty") return null;
+  const color =
+    state === "done"
+      ? active
+        ? "bg-emerald-200"
+        : "bg-emerald-500"
+      : active
+        ? "bg-amber-200"
+        : "bg-amber-500";
+  return <span className={cn("inline-block h-1.5 w-1.5 rounded-full", color)} aria-hidden />;
+}
+
+function completionTitle(label: string, state: CompletionState): string {
+  if (state === "done") return `${label} — complete`;
+  if (state === "partial") return `${label} — in progress`;
+  return label;
+}
+
 // ── Component ──────────────────────────────────────────────────────────
 
 export function DayStepper({ weddingId, initialData }: DayStepperProps) {
   const [activeSection, setActiveSection] = useState<SectionKey>("schedule");
   const [data, setData] = useState<Record<string, unknown>>(initialData);
   const [saving, setSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pillBarRef = useRef<HTMLDivElement>(null);
 
@@ -54,6 +79,7 @@ export function DayStepper({ weddingId, initialData }: DayStepperProps) {
           { onConflict: "wedding_id,section" }
         );
         setSaving(false);
+        setLastSavedAt(new Date());
       }, 800);
     },
     [weddingId]
@@ -77,7 +103,7 @@ export function DayStepper({ weddingId, initialData }: DayStepperProps) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)]">
             Day-of Details
@@ -86,12 +112,34 @@ export function DayStepper({ weddingId, initialData }: DayStepperProps) {
             Plan every moment of your wedding day — from getting ready to the grand exit.
           </p>
         </div>
-        {saving && (
-          <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Saving...
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {saving ? (
+            <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Saving...
+            </span>
+          ) : lastSavedAt ? (
+            <span
+              className="text-xs text-muted-foreground/70 tabular-nums"
+              title={lastSavedAt.toLocaleString()}
+            >
+              Saved ·{" "}
+              {lastSavedAt.toLocaleTimeString([], {
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+            </span>
+          ) : null}
+          <Link
+            href="/day-of-details/print"
+            target="_blank"
+            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title="Open a printable day-of brief"
+          >
+            <Printer className="h-3.5 w-3.5" />
+            Print brief
+          </Link>
+        </div>
       </div>
 
       {/* Stepper pill bar */}
@@ -108,20 +156,26 @@ export function DayStepper({ weddingId, initialData }: DayStepperProps) {
           {SECTION_KEYS.map((key) => {
             const isActive = key === activeSection;
             const meta = SECTION_META[key];
+            const completion = getSectionCompletion(
+              key,
+              (data[key] ?? {}) as AllSectionData[typeof key]
+            );
             return (
               <button
                 key={key}
                 id={`pill-${key}`}
                 onClick={() => handleSectionClick(key)}
                 className={cn(
-                  "shrink-0 snap-start px-4 py-2 rounded-full text-sm font-medium transition-all duration-200",
+                  "shrink-0 snap-start px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 inline-flex items-center gap-1.5",
                   isActive
                     ? "bg-primary text-primary-foreground shadow-[0_2px_10px_rgba(196,168,130,0.25)]"
                     : "bg-primary/8 text-muted-foreground hover:bg-primary/15 hover:text-foreground"
                 )}
+                title={completionTitle(meta.label, completion)}
               >
                 <span className="hidden sm:inline">{meta.label}</span>
                 <span className="sm:hidden">{meta.shortLabel}</span>
+                <CompletionDot state={completion} active={isActive} />
               </button>
             );
           })}
@@ -133,6 +187,22 @@ export function DayStepper({ weddingId, initialData }: DayStepperProps) {
         </p>
       </div>
 
+      {/* Soft prerequisite hint — ceremony time powers the schedule */}
+      {activeSection !== "schedule" &&
+        !((data.schedule as any)?.ceremony_time || "").trim() && (
+          <button
+            type="button"
+            onClick={() => handleSectionClick("schedule")}
+            className="w-full flex items-center gap-2 text-left text-xs px-3 py-2 rounded-md border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors"
+          >
+            <Info className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              <span className="font-medium">Tip:</span> set a ceremony time in
+              Schedule — everything else builds around it.
+            </span>
+          </button>
+        )}
+
       {/* Active section content */}
       <div className="min-h-[400px]">
         {activeSection === "schedule" && (
@@ -140,6 +210,11 @@ export function DayStepper({ weddingId, initialData }: DayStepperProps) {
             data={(data.schedule || {}) as any}
             onChange={(d) => handleChange("schedule", d)}
             onNavigate={(section) => handleSectionClick(section)}
+            enrichment={{
+              reception: (data.reception || undefined) as any,
+              ceremony: (data.ceremony || undefined) as any,
+              getting_ready: (data.getting_ready || undefined) as any,
+            }}
           />
         )}
         {activeSection === "getting_ready" && (
@@ -164,6 +239,8 @@ export function DayStepper({ weddingId, initialData }: DayStepperProps) {
           <ReceptionSection
             data={(data.reception || {}) as any}
             onChange={(d) => handleChange("reception", d)}
+            scheduleData={(data.schedule || undefined) as any}
+            onNavigateToSchedule={() => handleSectionClick("schedule")}
           />
         )}
         {activeSection === "photos" && (

@@ -1,15 +1,28 @@
 "use client";
 
-import { useState } from "react";
-import { X, Plus, Sparkles, Clock, Pencil } from "lucide-react";
+import { useMemo, useState } from "react";
+import { X, Plus, Sparkles, Clock, Pencil, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import {
   type ScheduleData,
   type ScheduleEntry,
   generateSuggestedTimeline,
+  subtractMinutes,
   type SectionKey,
 } from "./types";
+import {
+  enrichScheduleEntry,
+  type ScheduleEnrichmentContext,
+} from "./schedule-enrichment";
 
 // ── Phase detection ────────────────────────────────────────────────────
 
@@ -140,19 +153,68 @@ function formatTimeInput(raw: string): string | null {
   return `${h}:${m.toString().padStart(2, "0")} ${period}`;
 }
 
+// ── Merge helper ───────────────────────────────────────────────────────
+
+interface MergeResult {
+  merged: ScheduleEntry[];
+  /** IDs of current entries that were preserved (user_touched). */
+  keptIds: Set<string>;
+  /** IDs of current entries that were dropped in favour of a fresh template. */
+  droppedIds: Set<string>;
+  /** IDs of fresh entries that are newly inserted (not colliding with a user entry). */
+  addedIds: Set<string>;
+}
+
+/**
+ * Merge a fresh template timeline with the user's current timeline.
+ *  - Entries flagged `user_touched=true` survive as-is (kept).
+ *  - Untouched current entries are dropped.
+ *  - Fresh template entries are added, but skipped if a kept user entry already
+ *    occupies the same exact time slot (avoids duplicates).
+ */
+function mergeTimeline(
+  current: ScheduleEntry[],
+  fresh: ScheduleEntry[]
+): MergeResult {
+  const kept = current.filter((e) => e.user_touched === true);
+  const dropped = current.filter((e) => e.user_touched !== true);
+  const occupied = new Set(kept.map((e) => (e.time || "").trim()).filter(Boolean));
+  const freshToInsert = fresh.filter((f) => !occupied.has((f.time || "").trim()));
+
+  const merged = [...kept, ...freshToInsert];
+  merged.sort((a, b) => {
+    const ta = parseTime(a.time);
+    const tb = parseTime(b.time);
+    if (ta === null && tb === null) return 0;
+    if (ta === null) return 1;
+    if (tb === null) return -1;
+    return ta - tb;
+  });
+
+  return {
+    merged,
+    keptIds: new Set(kept.map((e) => e.id)),
+    droppedIds: new Set(dropped.map((e) => e.id)),
+    addedIds: new Set(freshToInsert.map((e) => e.id)),
+  };
+}
+
 // ── Component ──────────────────────────────────────────────────────────
 
 interface ScheduleSectionProps {
   data: ScheduleData;
   onChange: (data: ScheduleData) => void;
   onNavigate?: (section: SectionKey) => void;
+  /** Data from other sections — used to show enriched subtitles under entries. */
+  enrichment?: ScheduleEnrichmentContext;
 }
 
-export function ScheduleSection({ data, onChange }: ScheduleSectionProps) {
+export function ScheduleSection({ data, onChange, enrichment }: ScheduleSectionProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingPhase, setEditingPhase] = useState<string | null>(null);
   const [editingCeremonyTime, setEditingCeremonyTime] = useState(false);
-  const [showRegenConfirm, setShowRegenConfirm] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [refreshSummary, setRefreshSummary] = useState<string | null>(null);
   const entries = data.entries || [];
   const hasEntries = entries.length > 0;
   const hasCeremonyTime = (data.ceremony_time || "").trim().length > 0;
@@ -173,14 +235,49 @@ export function ScheduleSection({ data, onChange }: ScheduleSectionProps) {
   }
 
   function handleGenerate() {
-    if (hasEntries) { setShowRegenConfirm(true); return; }
-    doGenerate();
-  }
-
-  function doGenerate() {
+    // First-time generation: fresh template, nothing to merge.
     const result = generateSuggestedTimeline(data.ceremony_time);
     if (result.length > 0) onChange({ ...data, entries: result });
-    setShowRegenConfirm(false);
+  }
+
+  /** Silent merge refresh — preserves user_touched entries. */
+  function doRefresh() {
+    const fresh = generateSuggestedTimeline(data.ceremony_time);
+    if (fresh.length === 0) return;
+    const { merged, keptIds, droppedIds, addedIds } = mergeTimeline(entries, fresh);
+    onChange({ ...data, entries: merged });
+    const parts: string[] = [];
+    if (keptIds.size) parts.push(`${keptIds.size} kept`);
+    if (droppedIds.size) parts.push(`${droppedIds.size} refreshed`);
+    if (addedIds.size) parts.push(`${addedIds.size} added`);
+    setRefreshSummary(parts.join(" · "));
+    // Clear the summary after 4 seconds.
+    setTimeout(() => setRefreshSummary(null), 4000);
+  }
+
+  /** Compute preview merge without applying it. */
+  const previewMerge = useMemo(() => {
+    if (!previewOpen) return null;
+    const fresh = generateSuggestedTimeline(data.ceremony_time);
+    if (fresh.length === 0) return null;
+    return mergeTimeline(entries, fresh);
+  }, [previewOpen, data.ceremony_time, entries]);
+
+  function acceptPreview() {
+    if (previewMerge) {
+      onChange({ ...data, entries: previewMerge.merged });
+      setRefreshSummary(
+        [
+          previewMerge.keptIds.size && `${previewMerge.keptIds.size} kept`,
+          previewMerge.droppedIds.size && `${previewMerge.droppedIds.size} refreshed`,
+          previewMerge.addedIds.size && `${previewMerge.addedIds.size} added`,
+        ]
+          .filter(Boolean)
+          .join(" · ") || null
+      );
+      setTimeout(() => setRefreshSummary(null), 4000);
+    }
+    setPreviewOpen(false);
   }
 
   function sortEntriesByTime(list: ScheduleEntry[]): ScheduleEntry[] {
@@ -195,14 +292,27 @@ export function ScheduleSection({ data, onChange }: ScheduleSectionProps) {
   }
 
   function updateEntry(id: string, field: keyof ScheduleEntry, value: string) {
-    const updated = entries.map((e) => e.id === id ? { ...e, [field]: value } : e);
+    const updated = entries.map((e) =>
+      e.id === id ? { ...e, [field]: value, user_touched: true } : e
+    );
+    onChange({ ...data, entries: updated });
+  }
+
+  function updateEntrySetupMinutes(id: string, minutes: number | undefined) {
+    const updated = entries.map((e) =>
+      e.id === id
+        ? { ...e, setup_minutes: minutes, user_touched: true }
+        : e
+    );
     onChange({ ...data, entries: updated });
   }
 
   function handleTimeBlur(id: string, rawValue: string) {
     const formatted = formatTimeInput(rawValue);
     if (formatted) {
-      let updated = entries.map((e) => e.id === id ? { ...e, time: formatted } : e);
+      let updated = entries.map((e) =>
+        e.id === id ? { ...e, time: formatted, user_touched: true } : e
+      );
       updated = sortEntriesByTime(updated);
       onChange({ ...data, entries: updated });
     }
@@ -231,7 +341,13 @@ export function ScheduleSection({ data, onChange }: ScheduleSectionProps) {
   }
 
   function insertAfter(index: number) {
-    const newEntry: ScheduleEntry = { id: crypto.randomUUID(), time: "", title: "", notes: "" };
+    const newEntry: ScheduleEntry = {
+      id: crypto.randomUUID(),
+      time: "",
+      title: "",
+      notes: "",
+      user_touched: true,
+    };
     const next = [...entries];
     next.splice(index + 1, 0, newEntry);
     onChange({ ...data, entries: next });
@@ -239,7 +355,13 @@ export function ScheduleSection({ data, onChange }: ScheduleSectionProps) {
   }
 
   function addAtEnd() {
-    const newEntry: ScheduleEntry = { id: crypto.randomUUID(), time: "", title: "", notes: "" };
+    const newEntry: ScheduleEntry = {
+      id: crypto.randomUUID(),
+      time: "",
+      title: "",
+      notes: "",
+      user_touched: true,
+    };
     onChange({ ...data, entries: [...entries, newEntry] });
     setEditingId(newEntry.id);
   }
@@ -269,22 +391,27 @@ export function ScheduleSection({ data, onChange }: ScheduleSectionProps) {
                 Change time
               </button>
               <button
-                onClick={handleGenerate}
+                onClick={doRefresh}
                 className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors flex items-center gap-1"
+                title="Merge fresh suggestions — your edits are preserved"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Refresh
+              </button>
+              <button
+                onClick={() => setPreviewOpen(true)}
+                className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors flex items-center gap-1"
+                title="See a side-by-side preview before applying"
               >
                 <Sparkles className="h-3 w-3" />
-                Regenerate
+                Preview…
               </button>
             </div>
           </div>
 
-          {showRegenConfirm && (
-            <div className="p-3 rounded-lg border border-destructive/20 bg-destructive/5 flex items-center justify-between gap-4 text-sm">
-              <span>This will replace your current timeline. Are you sure?</span>
-              <div className="flex gap-2 shrink-0">
-                <Button variant="ghost" size="sm" onClick={() => setShowRegenConfirm(false)}>Cancel</Button>
-                <Button variant="destructive" size="sm" onClick={doGenerate}>Replace</Button>
-              </div>
+          {refreshSummary && (
+            <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-1.5 inline-block">
+              {refreshSummary} · Your edits are preserved.
             </div>
           )}
         </div>
@@ -303,7 +430,7 @@ export function ScheduleSection({ data, onChange }: ScheduleSectionProps) {
               onBlur={(e) => handleCeremonyTimeBlur(e.target.value)}
               autoFocus={editingCeremonyTime}
             />
-            {hasCeremonyTime && (
+            {hasCeremonyTime && !hasEntries && (
               <Button
                 variant="outline"
                 size="sm"
@@ -314,7 +441,22 @@ export function ScheduleSection({ data, onChange }: ScheduleSectionProps) {
                 className="gap-1.5 text-xs"
               >
                 <Sparkles className="h-3 w-3" />
-                {hasEntries ? "Regenerate" : "Generate timeline"}
+                Generate timeline
+              </Button>
+            )}
+            {hasCeremonyTime && hasEntries && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (editingCeremonyTime) setEditingCeremonyTime(false);
+                  doRefresh();
+                }}
+                className="gap-1.5 text-xs"
+                title="Merge fresh suggestions — your edits are preserved"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Refresh
               </Button>
             )}
             {editingCeremonyTime && (
@@ -324,13 +466,9 @@ export function ScheduleSection({ data, onChange }: ScheduleSectionProps) {
             )}
           </div>
 
-          {showRegenConfirm && (
-            <div className="p-3 rounded-lg border border-destructive/20 bg-destructive/5 flex items-center justify-between gap-4 text-sm">
-              <span>This will replace your current timeline. Are you sure?</span>
-              <div className="flex gap-2 shrink-0">
-                <Button variant="ghost" size="sm" onClick={() => setShowRegenConfirm(false)}>Cancel</Button>
-                <Button variant="destructive" size="sm" onClick={doGenerate}>Replace</Button>
-              </div>
+          {refreshSummary && (
+            <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-1.5 inline-block">
+              {refreshSummary} · Your edits are preserved.
             </div>
           )}
         </div>
@@ -428,10 +566,59 @@ export function ScheduleSection({ data, onChange }: ScheduleSectionProps) {
                                   onChange={(e) => updateEntry(entry.id, "notes", e.target.value)}
                                   onClick={(e) => e.stopPropagation()}
                                 />
+                                <div
+                                  className="flex items-center gap-2 pt-0.5"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <label className="text-[11px] text-muted-foreground whitespace-nowrap">
+                                    Setup buffer
+                                  </label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    max={180}
+                                    step={5}
+                                    placeholder="0"
+                                    value={entry.setup_minutes ?? ""}
+                                    onChange={(e) => {
+                                      const n = parseInt(e.target.value, 10);
+                                      updateEntrySetupMinutes(
+                                        entry.id,
+                                        Number.isFinite(n) && n > 0 ? n : undefined
+                                      );
+                                    }}
+                                    className="h-7 w-16 text-xs tabular-nums"
+                                    title="Minutes the vendor needs to set up before the displayed time"
+                                  />
+                                  <span className="text-[11px] text-muted-foreground">min</span>
+                                </div>
                               </div>
                             ) : (
                               <>
                                 <span className="text-sm block">{entry.title || "New entry"}</span>
+                                {(() => {
+                                  const enriched = enrichment
+                                    ? enrichScheduleEntry(entry, enrichment)
+                                    : null;
+                                  const arrives =
+                                    entry.setup_minutes && entry.time
+                                      ? subtractMinutes(entry.time, entry.setup_minutes)
+                                      : null;
+                                  return (
+                                    <>
+                                      {enriched && (
+                                        <span className="text-xs text-primary/70 block mt-0.5 italic">
+                                          {enriched}
+                                        </span>
+                                      )}
+                                      {arrives && (
+                                        <span className="text-xs text-amber-700/80 block mt-0.5 tabular-nums">
+                                          arrives {arrives} · ready {entry.time}
+                                        </span>
+                                      )}
+                                    </>
+                                  );
+                                })()}
                                 {entry.notes && (
                                   <span className="text-xs text-muted-foreground/60 block mt-0.5">{entry.notes}</span>
                                 )}
@@ -520,6 +707,83 @@ export function ScheduleSection({ data, onChange }: ScheduleSectionProps) {
           </p>
         </div>
       )}
+
+      {/* Refresh preview dialog */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Refresh preview</DialogTitle>
+          </DialogHeader>
+          {previewMerge ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
+              <div>
+                <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
+                  Current timeline
+                </h4>
+                <ul className="space-y-1.5">
+                  {entries.map((e) => {
+                    const kept = previewMerge.keptIds.has(e.id);
+                    const dropped = previewMerge.droppedIds.has(e.id);
+                    return (
+                      <li
+                        key={e.id}
+                        className={cn(
+                          "text-xs rounded-md px-2 py-1.5 border",
+                          kept && "bg-emerald-50 border-emerald-200 text-emerald-900",
+                          dropped && "bg-muted/40 border-border/60 text-muted-foreground line-through"
+                        )}
+                      >
+                        <span className="font-medium tabular-nums mr-2">{e.time || "—"}</span>
+                        {e.title || "(empty)"}
+                        <span className="ml-2 text-[10px] uppercase tracking-wider opacity-60">
+                          {kept ? "kept" : "refreshed"}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+              <div>
+                <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
+                  After refresh
+                </h4>
+                <ul className="space-y-1.5">
+                  {previewMerge.merged.map((e) => {
+                    const added = previewMerge.addedIds.has(e.id);
+                    const kept = previewMerge.keptIds.has(e.id);
+                    return (
+                      <li
+                        key={e.id}
+                        className={cn(
+                          "text-xs rounded-md px-2 py-1.5 border",
+                          kept && "bg-emerald-50 border-emerald-200 text-emerald-900",
+                          added && "bg-amber-50 border-amber-200 text-amber-900"
+                        )}
+                      >
+                        <span className="font-medium tabular-nums mr-2">{e.time || "—"}</span>
+                        {e.title || "(empty)"}
+                        <span className="ml-2 text-[10px] uppercase tracking-wider opacity-60">
+                          {kept ? "kept" : added ? "added" : ""}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Set a ceremony time first to preview.</p>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPreviewOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={acceptPreview} disabled={!previewMerge}>
+              Accept
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

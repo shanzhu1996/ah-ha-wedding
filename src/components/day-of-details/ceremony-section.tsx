@@ -10,8 +10,25 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import { X, Plus } from "lucide-react";
+import { X, Plus, Wand2 } from "lucide-react";
 import type { CeremonyData, ProcessionalEntry, ReadingEntry } from "./types";
+
+// Quick-fill presets for empty fields only (non-destructive).
+const CEREMONY_PRESETS: Record<
+  string,
+  { vows_style: CeremonyData["vows_style"]; unity_ceremony: CeremonyData["unity_ceremony"]; recessional_style: CeremonyData["recessional_style"] }
+> = {
+  traditional: {
+    vows_style: "traditional",
+    unity_ceremony: "none",
+    recessional_style: "together",
+  },
+  modern: {
+    vows_style: "custom",
+    unity_ceremony: "none",
+    recessional_style: "together",
+  },
+};
 
 interface CeremonySectionProps {
   data: CeremonyData;
@@ -19,6 +36,20 @@ interface CeremonySectionProps {
 }
 
 export function CeremonySection({ data, onChange }: CeremonySectionProps) {
+  function applyPreset(preset: keyof typeof CEREMONY_PRESETS) {
+    const p = CEREMONY_PRESETS[preset];
+    // Only fill empty fields — never overwrite user choices.
+    onChange({
+      ...data,
+      vows_style: data.vows_style || p.vows_style,
+      unity_ceremony: data.unity_ceremony || p.unity_ceremony,
+      recessional_style: data.recessional_style || p.recessional_style,
+    });
+  }
+
+  const anyMainFieldSet =
+    !!data.vows_style || !!data.unity_ceremony || !!data.recessional_style;
+
   function updateProcessional(id: string, field: keyof ProcessionalEntry, value: string) {
     onChange({
       ...data,
@@ -59,6 +90,32 @@ export function CeremonySection({ data, onChange }: CeremonySectionProps) {
 
   return (
     <div className="space-y-8">
+      {/* Quick fill — non-destructive, fills empty fields only */}
+      {!anyMainFieldSet && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+            <Wand2 className="h-3 w-3" /> Quick fill:
+          </span>
+          <button
+            type="button"
+            onClick={() => applyPreset("traditional")}
+            className="text-xs px-2.5 py-1 rounded-md border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            Traditional
+          </button>
+          <button
+            type="button"
+            onClick={() => applyPreset("modern")}
+            className="text-xs px-2.5 py-1 rounded-md border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            Modern
+          </button>
+          <span className="text-[10px] text-muted-foreground/60">
+            Fills empty fields — never overwrites your choices.
+          </span>
+        </div>
+      )}
+
       {/* Processional Order */}
       <div>
         <h4 className="text-sm font-medium mb-1">Processional Order</h4>
