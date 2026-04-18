@@ -227,6 +227,8 @@ function InlineChip({
   onClick: () => void;
 }) {
   const hasValue = !!(value && value.trim());
+  // Color encodes on/off only. "typical" is advisory — rendered as a
+  // small neutral text hint so it never gets mistaken for a filled state.
   return (
     <button
       type="button"
@@ -235,8 +237,6 @@ function InlineChip({
         "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors max-w-full",
         hasValue
           ? "border-primary/40 bg-primary/5 text-foreground/80 hover:border-primary/70"
-          : typical
-          ? "border-primary/30 bg-primary/[0.04] text-foreground/70 hover:border-primary/60 hover:text-primary"
           : "border-border/80 bg-background text-foreground/70 hover:border-primary/40 hover:text-primary"
       )}
       title={hasValue ? value : typical ? "Typical for this moment" : undefined}
@@ -249,7 +249,7 @@ function InlineChip({
       <span
         className={cn(
           "[&>svg]:h-3 [&>svg]:w-3 shrink-0",
-          hasValue || typical
+          hasValue
             ? "[&>svg]:text-primary/70"
             : "[&>svg]:text-muted-foreground/60"
         )}
@@ -265,7 +265,7 @@ function InlineChip({
           </span>
         </>
       ) : typical ? (
-        <span className="text-[10px] text-primary/70 font-medium shrink-0">
+        <span className="text-[10px] text-muted-foreground/60 shrink-0">
           typical
         </span>
       ) : null}
