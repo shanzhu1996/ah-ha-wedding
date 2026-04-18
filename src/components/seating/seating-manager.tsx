@@ -23,6 +23,7 @@ import {
 } from "./table-visual";
 import { DietarySummary } from "./dietary-summary";
 import { GuestSearch } from "./guest-search";
+import { toast } from "sonner";
 import { triggerConfetti } from "@/components/ui/confetti";
 import { useSeatAssignment } from "./use-seat-assignment";
 import type { TableShape } from "./table-templates";
@@ -148,6 +149,49 @@ export function SeatingManager({
   } | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Undo / redo history ─────────────────────────────────────────────
+  // In-memory only. Each entry knows how to undo and redo itself.
+  // Stored in refs so we can read current values synchronously from
+  // keyboard handlers and mutation callbacks.
+  interface HistoryEntry {
+    label: string;
+    undo: () => Promise<unknown>;
+    redo: () => Promise<unknown>;
+  }
+  const HISTORY_LIMIT = 20;
+  const historyRef = useRef<HistoryEntry[]>([]);
+  const futureRef = useRef<HistoryEntry[]>([]);
+
+  function pushHistory(entry: HistoryEntry) {
+    historyRef.current = [
+      ...historyRef.current.slice(-(HISTORY_LIMIT - 1)),
+      entry,
+    ];
+    futureRef.current = [];
+  }
+
+  async function undoLast() {
+    const last = historyRef.current[historyRef.current.length - 1];
+    if (!last) return;
+    historyRef.current = historyRef.current.slice(0, -1);
+    await last.undo();
+    futureRef.current = [...futureRef.current, last];
+    toast(`Undone: ${last.label}`, {
+      action: { label: "Redo", onClick: () => redoLast() },
+    });
+  }
+
+  async function redoLast() {
+    const next = futureRef.current[futureRef.current.length - 1];
+    if (!next) return;
+    futureRef.current = futureRef.current.slice(0, -1);
+    await next.redo();
+    historyRef.current = [...historyRef.current, next];
+    toast(`Redone: ${next.label}`, {
+      action: { label: "Undo", onClick: () => undoLast() },
+    });
+  }
+
   // Apply optimistic overlays to guests
   const guests = useMemo(
     () => initialGuests.map((g) => applyOverlay(g)),
@@ -179,9 +223,30 @@ export function SeatingManager({
     };
   }, []);
 
-  // Dismiss selection / unseat with keyboard
+  // Dismiss selection / unseat with keyboard — and Cmd/Ctrl+Z undo/redo
   useEffect(() => {
+    function isEditable(target: EventTarget | null): boolean {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target.isContentEditable
+      );
+    }
     function onKey(e: KeyboardEvent) {
+      // Undo/redo — don't hijack when user is typing in inputs/textarea
+      if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z")) {
+        if (isEditable(e.target)) return;
+        e.preventDefault();
+        if (e.shiftKey) {
+          redoLast();
+        } else {
+          undoLast();
+        }
+        return;
+      }
       if (e.key === "Escape") {
         clearSelection();
         setSelectedTableId(null);
@@ -192,8 +257,9 @@ export function SeatingManager({
       ) {
         const g = initialGuests.find((x) => x.id === selectedGuestId);
         if (!g?.table_id) return;
+        if (isEditable(e.target)) return;
         e.preventDefault();
-        unassign(selectedGuestId);
+        unseatGuest(selectedGuestId);
         clearSelection();
       }
     }
@@ -405,7 +471,102 @@ export function SeatingManager({
   // ── Unseat a single guest ───────────────────────────────────────────
 
   async function unseatGuest(guestId: string) {
-    await unassign(guestId);
+    const g = initialGuests.find((x) => x.id === guestId);
+    const name = g ? `${g.first_name} ${g.last_name}` : "guest";
+    await recordedUnassign(guestId, `Unseated ${name}`);
+  }
+
+  // ── History-recording mutation wrappers ─────────────────────────────
+  // Every user-initiated guest-seat mutation goes through one of these.
+  // Raw assign/unassign/swap (from useSeatAssignment) are still used
+  // directly from the undo/redo closures so they don't re-record history.
+
+  async function recordedAssign(
+    guestId: string,
+    tableId: string,
+    seatNumber: number,
+    label = "Placed guest"
+  ) {
+    const prev = initialGuests.find((g) => g.id === guestId);
+    const prevTableId = prev?.table_id ?? null;
+    const prevSeatNumber = prev?.seat_number ?? null;
+    const result = await assign(guestId, tableId, seatNumber);
+    if (result.ok) {
+      pushHistory({
+        label,
+        undo: async () => {
+          if (prevTableId && prevSeatNumber) {
+            await assign(guestId, prevTableId, prevSeatNumber);
+          } else {
+            await unassign(guestId);
+          }
+        },
+        redo: async () => {
+          await assign(guestId, tableId, seatNumber);
+        },
+      });
+      toast(label, {
+        action: { label: "Undo", onClick: () => undoLast() },
+      });
+    }
+    return result;
+  }
+
+  async function recordedUnassign(guestId: string, label = "Unseated guest") {
+    const prev = initialGuests.find((g) => g.id === guestId);
+    const prevTableId = prev?.table_id ?? null;
+    const prevSeatNumber = prev?.seat_number ?? null;
+    const result = await unassign(guestId);
+    if (result.ok && prevTableId && prevSeatNumber) {
+      pushHistory({
+        label,
+        undo: async () => {
+          await assign(guestId, prevTableId, prevSeatNumber);
+        },
+        redo: async () => {
+          await unassign(guestId);
+        },
+      });
+      toast(label, {
+        action: { label: "Undo", onClick: () => undoLast() },
+      });
+    }
+    return result;
+  }
+
+  async function recordedSwap(
+    a: { id: string; table_id: string | null; seat_number: number | null },
+    b: { id: string; table_id: string | null; seat_number: number | null },
+    label = "Swapped seats"
+  ) {
+    const result = await swap(a, b);
+    if (result.ok) {
+      pushHistory({
+        label,
+        undo: async () => {
+          // Restore each guest to their pre-swap position directly.
+          // We can't reuse swap() here because the current DB state
+          // reflects the swapped positions already.
+          if (a.table_id && a.seat_number) {
+            await assign(a.id, a.table_id, a.seat_number);
+          } else {
+            await unassign(a.id);
+          }
+          if (b.table_id && b.seat_number) {
+            await assign(b.id, b.table_id, b.seat_number);
+          } else {
+            await unassign(b.id);
+          }
+        },
+        redo: async () => {
+          await swap(a, b);
+        },
+      });
+      toast(label, {
+        action: { label: "Undo", onClick: () => undoLast() },
+      });
+    }
+    return result;
   }
 
   // ── Fill empty seats (previously "Auto-assign") ─────────────────────
@@ -464,6 +625,9 @@ export function SeatingManager({
       }
     });
 
+    // Collect each placement so the whole batch is one undo-able operation.
+    const placed: { guestId: string; tableId: string; seatNumber: number }[] =
+      [];
     for (const g of queue) {
       for (const t of initialTables) {
         if (t.locked) continue;
@@ -475,8 +639,27 @@ export function SeatingManager({
         taken.add(openSeat);
         occupancy.set(t.id, taken);
         await assign(g.id, t.id, openSeat);
+        placed.push({ guestId: g.id, tableId: t.id, seatNumber: openSeat });
         break;
       }
+    }
+
+    if (placed.length > 0) {
+      const label = `Filled ${placed.length} seat${placed.length === 1 ? "" : "s"}`;
+      pushHistory({
+        label,
+        undo: async () => {
+          for (const p of placed) await unassign(p.guestId);
+        },
+        redo: async () => {
+          for (const p of placed) {
+            await assign(p.guestId, p.tableId, p.seatNumber);
+          }
+        },
+      });
+      toast(label, {
+        action: { label: "Undo", onClick: () => undoLast() },
+      });
     }
     router.refresh();
   }
@@ -507,13 +690,18 @@ export function SeatingManager({
     );
 
     if (!occupant) {
-      await assign(selected.id, tableId, seatNumber);
+      await recordedAssign(
+        selected.id,
+        tableId,
+        seatNumber,
+        `Placed ${selected.first_name} ${selected.last_name}`
+      );
       clearSelection();
       return;
     }
 
     if (selected.table_id && selected.seat_number) {
-      await swap(
+      await recordedSwap(
         {
           id: selected.id,
           table_id: selected.table_id,
@@ -523,11 +711,20 @@ export function SeatingManager({
           id: occupant.id,
           table_id: occupant.table_id,
           seat_number: occupant.seat_number,
-        }
+        },
+        `Swapped ${selected.first_name} and ${occupant.first_name}`
       );
     } else {
-      await unassign(occupant.id);
-      await assign(selected.id, tableId, seatNumber);
+      await recordedUnassign(
+        occupant.id,
+        `Unseated ${occupant.first_name} ${occupant.last_name}`
+      );
+      await recordedAssign(
+        selected.id,
+        tableId,
+        seatNumber,
+        `Placed ${selected.first_name} ${selected.last_name}`
+      );
     }
     clearSelection();
   }
@@ -544,9 +741,10 @@ export function SeatingManager({
     const a = guestMap.get(selectedGuestId);
     const b = guestMap.get(guestId);
     if (a && b) {
-      swap(
+      recordedSwap(
         { id: a.id, table_id: a.table_id, seat_number: a.seat_number },
-        { id: b.id, table_id: b.table_id, seat_number: b.seat_number }
+        { id: b.id, table_id: b.table_id, seat_number: b.seat_number },
+        `Swapped ${a.first_name} and ${b.first_name}`
       );
     }
     clearSelection();
@@ -574,12 +772,17 @@ export function SeatingManager({
         g.id !== dragged.id
     );
     if (!occupant) {
-      await assign(dragged.id, tableId, targetSeatNumber);
+      await recordedAssign(
+        dragged.id,
+        tableId,
+        targetSeatNumber,
+        `Moved ${dragged.first_name} ${dragged.last_name}`
+      );
       return;
     }
     // Occupied → swap (atomic via RPC if both seated, else bump-and-place)
     if (dragged.table_id && dragged.seat_number) {
-      await swap(
+      await recordedSwap(
         {
           id: dragged.id,
           table_id: dragged.table_id,
@@ -589,11 +792,20 @@ export function SeatingManager({
           id: occupant.id,
           table_id: occupant.table_id,
           seat_number: occupant.seat_number,
-        }
+        },
+        `Swapped ${dragged.first_name} and ${occupant.first_name}`
       );
     } else {
-      await unassign(occupant.id);
-      await assign(dragged.id, tableId, targetSeatNumber);
+      await recordedUnassign(
+        occupant.id,
+        `Unseated ${occupant.first_name} ${occupant.last_name}`
+      );
+      await recordedAssign(
+        dragged.id,
+        tableId,
+        targetSeatNumber,
+        `Placed ${dragged.first_name} ${dragged.last_name}`
+      );
     }
   }
 
