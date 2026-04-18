@@ -143,6 +143,13 @@ export function ReceptionSection({
       }),
     [allResolvedMoments, phaseFilter]
   );
+  /**
+   * Has any song been planned (in Music tab) for this phase? When true,
+   * the "No music for this moment" toggle is hidden — it's contradictory
+   * to show a silence opt-in when songs are already queued up.
+   */
+  const hasSongsFor = (phase: string) =>
+    songs.some((s) => s.phase === phase && !s.is_do_not_play);
   const momentOrder = useMemo(
     () => resolvedMoments.map((m) => m.id),
     [resolvedMoments]
@@ -566,12 +573,14 @@ export function ReceptionSection({
               label="Entrance song"
               hint="you walk in to this"
             />
-            <SkipMusicToggle
-              skip={extras?.skip_music ?? false}
-              onChange={(v) =>
-                updateExtras("grand_entrance", { skip_music: v })
-              }
-            />
+            {!hasSongsFor("grand_entrance") && (
+              <SkipMusicToggle
+                skip={extras?.skip_music ?? false}
+                onChange={(v) =>
+                  updateExtras("grand_entrance", { skip_music: v })
+                }
+              />
+            )}
           </div>
           <MomentUniformFields
             momentId="grand_entrance"
@@ -614,10 +623,12 @@ export function ReceptionSection({
               label="First dance song"
               hint="song + artist, managed in Music tab"
             />
-            <SkipMusicToggle
-              skip={extras?.skip_music ?? false}
-              onChange={(v) => updateExtras("first_dance", { skip_music: v })}
-            />
+            {!hasSongsFor("first_dance") && (
+              <SkipMusicToggle
+                skip={extras?.skip_music ?? false}
+                onChange={(v) => updateExtras("first_dance", { skip_music: v })}
+              />
+            )}
           </div>
           <PrimaryField
             icon={<StickyNote className="h-4 w-4 text-primary/80" />}
@@ -674,11 +685,13 @@ export function ReceptionSection({
               label="Dinner music"
               hint="background playlist, managed in Music tab"
             />
-            <SkipMusicToggle
-              skip={extras?.skip_music ?? false}
-              onChange={(v) => updateExtras("dinner", { skip_music: v })}
-              label="No music during dinner"
-            />
+            {!hasSongsFor("dinner") && (
+              <SkipMusicToggle
+                skip={extras?.skip_music ?? false}
+                onChange={(v) => updateExtras("dinner", { skip_music: v })}
+                label="No music during dinner"
+              />
+            )}
           </div>
 
           <PrimaryField
@@ -937,10 +950,12 @@ export function ReceptionSection({
               label="Cake cutting song"
               hint="plays as you slice"
             />
-            <SkipMusicToggle
-              skip={extras?.skip_music ?? false}
-              onChange={(v) => updateExtras("cake_cutting", { skip_music: v })}
-            />
+            {!hasSongsFor("cake_cutting") && (
+              <SkipMusicToggle
+                skip={extras?.skip_music ?? false}
+                onChange={(v) => updateExtras("cake_cutting", { skip_music: v })}
+              />
+            )}
           </div>
           <MomentUniformFields
             momentId="cake_cutting"
@@ -983,10 +998,12 @@ export function ReceptionSection({
               label="Last dance song"
               hint="the night's final song — last chance on the floor"
             />
-            <SkipMusicToggle
-              skip={extras?.skip_music ?? false}
-              onChange={(v) => updateExtras("last_dance", { skip_music: v })}
-            />
+            {!hasSongsFor("last_dance") && (
+              <SkipMusicToggle
+                skip={extras?.skip_music ?? false}
+                onChange={(v) => updateExtras("last_dance", { skip_music: v })}
+              />
+            )}
           </div>
           <MomentUniformFields
             momentId="last_dance"

@@ -88,7 +88,11 @@ function hasTextLocal(s: string | null | undefined): boolean {
   return !!s && s.trim().length > 0;
 }
 
-function renderReceptionMoment(m: ResolvedMoment, reception: ReceptionData) {
+function renderReceptionMoment(
+  m: ResolvedMoment,
+  reception: ReceptionData,
+  songs: MusicSong[]
+) {
   // Title line with time prefix
   const header = (
     <div>
@@ -104,34 +108,32 @@ function renderReceptionMoment(m: ResolvedMoment, reception: ReceptionData) {
   let primary: React.ReactNode = null;
   switch (m.id) {
     case "grand_entrance":
-      if (reception.grand_entrance) {
-        primary = (
-          <div className="pl-4 text-neutral-700">
-            {hasTextLocal(reception.grand_entrance_song)
-              ? reception.grand_entrance_song
-              : "Grand entrance (no song noted)"}
-          </div>
-        );
-      } else {
-        primary = <div className="pl-4 text-neutral-400 italic">(skipping)</div>;
-      }
+      primary = renderPhaseSongs(
+        "grand_entrance",
+        songs,
+        reception.grand_entrance_song ?? null
+      );
       break;
     case "first_dance": {
-      const bits = [reception.first_dance_song, reception.first_dance_artist]
+      const legacy = [reception.first_dance_song, reception.first_dance_artist]
         .filter(hasTextLocal)
         .join(" · ");
-      primary = bits ? (
-        <div className="pl-4 text-neutral-700">
-          {bits}
+      const songNode = renderPhaseSongs("first_dance", songs, legacy || null);
+      primary = songNode ? (
+        <>
+          {songNode}
           {hasTextLocal(reception.first_dance_notes) && (
-            <span className="text-xs text-neutral-500"> · {reception.first_dance_notes}</span>
+            <div className="pl-4 text-xs text-neutral-500 italic">
+              {reception.first_dance_notes}
+            </div>
           )}
-        </div>
+        </>
       ) : null;
       break;
     }
-    case "dinner":
-      primary = hasTextLocal(reception.vendor_meals_note) ? (
+    case "dinner": {
+      const dinnerSongs = renderPhaseSongs("dinner", songs, null);
+      const vendorMeals = hasTextLocal(reception.vendor_meals_note) ? (
         <div className="pl-4 text-neutral-700">
           <span className="font-semibold text-xs uppercase tracking-wider mr-1">
             Vendor meals:
@@ -139,7 +141,22 @@ function renderReceptionMoment(m: ResolvedMoment, reception: ReceptionData) {
           {reception.vendor_meals_note}
         </div>
       ) : null;
+      primary =
+        dinnerSongs || vendorMeals ? (
+          <>
+            {dinnerSongs && (
+              <div>
+                <p className="pl-4 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                  Dinner playlist
+                </p>
+                {dinnerSongs}
+              </div>
+            )}
+            {vendorMeals}
+          </>
+        ) : null;
       break;
+    }
     case "parent_dances": {
       const filled = (reception.parent_dances || []).filter(
         (d) => hasTextLocal(d.who) || hasTextLocal(d.song)
@@ -193,15 +210,17 @@ function renderReceptionMoment(m: ResolvedMoment, reception: ReceptionData) {
         ) : null;
       break;
     case "cake_cutting":
-      primary = hasTextLocal(reception.cake_cutting_song) ? (
-        <div className="pl-4 text-neutral-700">{reception.cake_cutting_song}</div>
-      ) : null;
+      primary = renderPhaseSongs(
+        "cake_cutting",
+        songs,
+        reception.cake_cutting_song ?? null
+      );
       break;
     case "last_dance": {
-      const bits = [reception.last_dance_song, reception.last_dance_artist]
+      const legacy = [reception.last_dance_song, reception.last_dance_artist]
         .filter(hasTextLocal)
         .join(" · ");
-      primary = bits ? <div className="pl-4 text-neutral-700">{bits}</div> : null;
+      primary = renderPhaseSongs("last_dance", songs, legacy || null);
       break;
     }
     case "exit":
@@ -261,15 +280,79 @@ function renderReceptionMoment(m: ResolvedMoment, reception: ReceptionData) {
   );
 }
 
+interface MusicSong {
+  phase: string;
+  song_title: string;
+  artist: string | null;
+  sort_order: number;
+  is_do_not_play: boolean;
+}
+
+function songsForPhase(phase: string, songs: MusicSong[]): MusicSong[] {
+  return songs
+    .filter((s) => s.phase === phase && !s.is_do_not_play)
+    .sort((a, b) => a.sort_order - b.sort_order);
+}
+
+/**
+ * Render the song(s) for a moment phase. Prefers Music tab (multi-song aware);
+ * falls back to the legacy single-field when no Music tab entry exists.
+ */
+function renderPhaseSongs(
+  phase: string,
+  songs: MusicSong[],
+  legacyFallback: string | null
+): React.ReactNode {
+  const phaseSongs = songsForPhase(phase, songs);
+  if (phaseSongs.length === 1) {
+    const s = phaseSongs[0];
+    return (
+      <div className="pl-4 text-neutral-700">
+        {s.song_title}
+        {s.artist?.trim() && (
+          <span className="text-neutral-600"> · {s.artist.trim()}</span>
+        )}
+      </div>
+    );
+  }
+  if (phaseSongs.length > 1) {
+    return (
+      <ol className="pl-4 space-y-0.5 text-neutral-700">
+        {phaseSongs.map((s, i) => (
+          <li key={i}>
+            <span className="text-neutral-400 mr-1 tabular-nums text-xs">
+              {i + 1}.
+            </span>
+            {s.song_title}
+            {s.artist?.trim() && (
+              <span className="text-neutral-600"> · {s.artist.trim()}</span>
+            )}
+          </li>
+        ))}
+      </ol>
+    );
+  }
+  return hasTextLocal(legacyFallback)
+    ? <div className="pl-4 text-neutral-700">{legacyFallback}</div>
+    : null;
+}
+
 export default async function DayOfPrintPage() {
   const wedding = await getCurrentWedding();
   if (!wedding) redirect("/onboarding");
 
   const supabase = await createClient();
-  const { data: savedSections } = await supabase
-    .from("wedding_day_details")
-    .select("section, data")
-    .eq("wedding_id", wedding.id);
+  const [{ data: savedSections }, { data: musicRows }] = await Promise.all([
+    supabase
+      .from("wedding_day_details")
+      .select("section, data")
+      .eq("wedding_id", wedding.id),
+    supabase
+      .from("music_selections")
+      .select("phase, song_title, artist, sort_order, is_do_not_play")
+      .eq("wedding_id", wedding.id),
+  ]);
+  const songs = (musicRows || []) as MusicSong[];
 
   const saved = new Map((savedSections || []).map((r) => [r.section, r.data]));
   const sections = Object.fromEntries(
@@ -588,7 +671,7 @@ export default async function DayOfPrintPage() {
           <h2 className="section-head">Reception</h2>
           <ol className="mt-2 space-y-3 text-sm">
             {resolveReceptionMoments(reception).map((m) =>
-              renderReceptionMoment(m, reception)
+              renderReceptionMoment(m, reception, songs)
             )}
           </ol>
           {hasText(reception.cultural_notes) && (
