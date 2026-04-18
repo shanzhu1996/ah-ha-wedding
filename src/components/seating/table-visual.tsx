@@ -41,6 +41,12 @@ interface Props {
    */
   virtualSeats?: Record<number, SeatAssignment>;
   selectedSeat?: number;
+  /**
+   * Seat number to briefly highlight with an animated ring (e.g. after a
+   * "find a guest" jump-to-seat action). Owner clears it after the pulse
+   * duration.
+   */
+  highlightSeat?: number;
   hoverHint?: boolean; // true when user has a guest selected and is looking for a target
   onSeatClick?: (seatNumber: number) => void;
   size?: "sm" | "md" | "lg";
@@ -203,6 +209,7 @@ export function TableVisual({
   assigned,
   virtualSeats,
   selectedSeat,
+  highlightSeat,
   hoverHint = false,
   onSeatClick,
   size = "md",
@@ -302,6 +309,25 @@ export function TableVisual({
                   className="fill-none stroke-primary"
                   strokeWidth={2}
                 />
+              )}
+              {highlightSeat === pos.seatNumber && (
+                <>
+                  {/* Animated pulse for jump-to-seat */}
+                  <circle
+                    cx={pos.cx}
+                    cy={pos.cy}
+                    r={selectedRingRadius + 4}
+                    className="fill-none stroke-primary opacity-80 animate-ping"
+                    strokeWidth={2}
+                  />
+                  <circle
+                    cx={pos.cx}
+                    cy={pos.cy}
+                    r={selectedRingRadius}
+                    className="fill-none stroke-primary"
+                    strokeWidth={2}
+                  />
+                </>
               )}
               {/* Hover ring — larger circle that appears on hover/focus */}
               <circle

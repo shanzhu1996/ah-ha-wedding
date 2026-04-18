@@ -52,6 +52,8 @@ interface Props {
   displayLabel?: string;
   /** Virtual seats (dimmed, non-interactive). Real seated wins at same seat number. */
   virtualSeats?: Record<number, SeatAssignment>;
+  /** Seat number to pulse briefly (e.g. after guest search jump-to-seat). */
+  highlightSeat?: number;
   isSelectable: boolean;
   selectedGuestId: string | null;
   onClose: () => void;
@@ -157,6 +159,7 @@ export function TableDetailPanel({
   locked,
   displayLabel,
   virtualSeats,
+  highlightSeat,
 }: Props) {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(name ?? "");
@@ -302,6 +305,7 @@ export function TableDetailPanel({
             assigned={assigned}
             virtualSeats={virtualSeats}
             selectedSeat={selectedSeat}
+            highlightSeat={highlightSeat}
             hoverHint={isSelectable}
             onSeatClick={onSeatClick}
             size="md"

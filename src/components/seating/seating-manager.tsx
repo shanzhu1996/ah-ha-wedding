@@ -22,6 +22,7 @@ import {
   type SeatAssignment,
 } from "./table-visual";
 import { DietarySummary } from "./dietary-summary";
+import { GuestSearch } from "./guest-search";
 import { triggerConfetti } from "@/components/ui/confetti";
 import { useSeatAssignment } from "./use-seat-assignment";
 import type { TableShape } from "./table-templates";
@@ -140,6 +141,12 @@ export function SeatingManager({
   const [addOpen, setAddOpen] = useState(false);
   const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  // Briefly pulse a seat (e.g. after guest-search jump) — {tableId, seat}.
+  const [highlightSeat, setHighlightSeat] = useState<{
+    tableId: string;
+    seatNumber: number;
+  } | null>(null);
+  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Apply optimistic overlays to guests
   const guests = useMemo(
@@ -150,6 +157,27 @@ export function SeatingManager({
   function clearSelection() {
     setSelectedGuestId(null);
   }
+
+  // Jump to a seated guest: open their table + pulse their seat for ~2s.
+  function jumpToSeated(
+    _guestId: string,
+    tableId: string,
+    seatNumber: number
+  ) {
+    setSelectedTableId(tableId);
+    setHighlightSeat({ tableId, seatNumber });
+    if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+    highlightTimeoutRef.current = setTimeout(() => {
+      setHighlightSeat(null);
+    }, 2200);
+  }
+
+  // Cleanup pending highlight timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+    };
+  }, []);
 
   // Dismiss selection / unseat with keyboard
   useEffect(() => {
@@ -614,6 +642,15 @@ export function SeatingManager({
           <Plus className="h-3.5 w-3.5" />
           Add table
         </Button>
+        {guests.length > 0 && (
+          <GuestSearch
+            guests={guests}
+            tables={initialTables}
+            sweetheartLabel={sweetheartLabel}
+            onJumpToSeated={jumpToSeated}
+            onSelectUnseated={setSelectedGuestId}
+          />
+        )}
         {initialTables.length > 0 && unseatedConfirmed > 0 && (
           <Button
             size="sm"
@@ -716,6 +753,7 @@ export function SeatingManager({
         toggleTableLock={toggleTableLock}
         sweetheartLabel={sweetheartLabel}
         sweetheartVirtualSeats={sweetheartVirtualSeats}
+        highlightSeat={highlightSeat}
         tagColor={tagColor}
       />
 
@@ -845,6 +883,8 @@ interface RoomViewLayoutProps {
   ) => Promise<void> | void;
   sweetheartLabel: string;
   sweetheartVirtualSeats: Record<number, SeatAssignment>;
+  /** Seat to pulse in the detail panel when this table is the selected one. */
+  highlightSeat: { tableId: string; seatNumber: number } | null;
   tagColor: (tag: string | null) => string;
 }
 
@@ -870,6 +910,7 @@ function RoomViewLayout({
   toggleTableLock,
   sweetheartLabel,
   sweetheartVirtualSeats,
+  highlightSeat,
   tagColor,
 }: RoomViewLayoutProps) {
   const detailRef = useRef<HTMLDivElement>(null);
@@ -952,6 +993,11 @@ function RoomViewLayout({
               capacity={t.capacity}
               assigned={assigned}
               virtualSeats={virtualSeats}
+              highlightSeat={
+                highlightSeat?.tableId === t.id
+                  ? highlightSeat.seatNumber
+                  : undefined
+              }
               size="md"
               rotation={(t.rotation as 0 | 90 | 180 | 270) ?? 0}
               fillState={
@@ -1006,6 +1052,11 @@ function RoomViewLayout({
         virtualSeats={
           selectedTable.shape === "sweetheart"
             ? sweetheartVirtualSeats
+            : undefined
+        }
+        highlightSeat={
+          highlightSeat?.tableId === selectedTable.id
+            ? highlightSeat.seatNumber
             : undefined
         }
         isSelectable={selectedGuestId !== null}
