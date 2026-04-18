@@ -213,7 +213,7 @@ export function MomentUniformFields({
  *   - Empty: plain border, "+" icon, label. Optional "typical" hint.
  *   - Filled: salmon dot + label + ":" + truncated value preview.
  */
-function InlineChip({
+export function InlineChip({
   icon,
   label,
   value,
@@ -278,7 +278,7 @@ function InlineChip({
  * No border, no background — reads as "tucked under the OPTIONAL group"
  * rather than a stand-alone module.
  */
-function InlineRow({
+export function InlineRow({
   icon,
   label,
   hint,
