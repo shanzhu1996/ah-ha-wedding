@@ -307,6 +307,34 @@ export const RECEPTION_TOSS_IDS = [
 
 export type TossMomentId = (typeof RECEPTION_TOSS_IDS)[number];
 
+// ── Phase grouping — splits the Reception tab visually into
+// "Reception" (the meal + opening moments) and "Dancing" (post-dinner
+// to send-off). Data stays in a single `reception` blob.
+export type ReceptionPhase = "reception" | "dancing";
+
+export const RECEPTION_PHASE_MOMENT_IDS: readonly string[] = [
+  "grand_entrance",
+  "first_dance",
+  "dinner",
+  "parent_dances",
+  "speeches",
+  "cake_cutting",
+];
+
+export const DANCING_PHASE_MOMENT_IDS: readonly string[] = [
+  "last_dance",
+  "exit",
+  "bouquet_toss",
+  "garter_toss",
+  "anniversary_dance",
+  "shoe_game",
+];
+
+/** Which phase a moment id belongs to. Custom moments default to "reception". */
+export function phaseForMoment(id: string): ReceptionPhase {
+  return DANCING_PHASE_MOMENT_IDS.includes(id) ? "dancing" : "reception";
+}
+
 export const RECEPTION_MOMENT_TITLES: Record<
   BuiltInReceptionMomentId | TossMomentId,
   string

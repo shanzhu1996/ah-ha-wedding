@@ -53,8 +53,13 @@ import type {
   CustomReceptionMoment,
   ScheduleData,
   TossMomentId,
+  ReceptionPhase,
 } from "./types";
-import { speechesTotalMinutes, RECEPTION_MOMENT_TITLES } from "./types";
+import {
+  speechesTotalMinutes,
+  RECEPTION_MOMENT_TITLES,
+  phaseForMoment,
+} from "./types";
 import { MomentCard, type MomentSummaryChip } from "./moment-card";
 import { MomentUniformFields } from "./moment-uniform-fields";
 import { MomentMusicBlock } from "./moment-music-block";
@@ -101,27 +106,36 @@ interface ReceptionSectionProps {
   /** Full song list (wedding_songs). Music tab is the source of truth;
    *  Day-of displays read-only references via MusicLink. */
   songs?: WeddingSong[];
+  /** Which phase this instance is rendering — "reception" (entrance →
+   *  cake cutting) or "dancing" (last dance → exit). Custom moments show
+   *  in "reception" only. Defaults to "reception" for backward compat. */
+  phaseFilter?: ReceptionPhase;
 }
 
 // ── Summary helpers ─────────────────────────────────────────────────────
 
-function buildReceptionSummary(data: ReceptionData): string[] {
+function buildReceptionSummary(
+  data: ReceptionData,
+  phase: ReceptionPhase
+): string[] {
   const chips: string[] = [];
-  if (data.first_dance_song?.trim()) chips.push(`first dance: ${data.first_dance_song.trim()}`);
-  const filledParentDances = (data.parent_dances || []).filter(
-    (d) => d.who?.trim() || d.song?.trim()
-  );
-  if (filledParentDances.length > 0) {
-    chips.push(
-      `${filledParentDances.length} parent dance${filledParentDances.length > 1 ? "s" : ""}`
+  if (phase === "reception") {
+    const filledParentDances = (data.parent_dances || []).filter(
+      (d) => d.who?.trim() || d.song?.trim()
     );
-  }
-  if ((data.speeches || []).length > 0) {
-    const n = data.speeches.length;
-    chips.push(`${n} speech${n > 1 ? "es" : ""} · ~${speechesTotalMinutes(data.speeches)} min`);
-  }
-  if (data.exit_style && data.exit_style !== "none") {
-    chips.push(`${data.exit_style.replace(/_/g, " ")} exit`);
+    if (filledParentDances.length > 0) {
+      chips.push(
+        `${filledParentDances.length} parent dance${filledParentDances.length > 1 ? "s" : ""}`
+      );
+    }
+    if ((data.speeches || []).length > 0) {
+      const n = data.speeches.length;
+      chips.push(`${n} speech${n > 1 ? "es" : ""} · ~${speechesTotalMinutes(data.speeches)} min`);
+    }
+  } else if (phase === "dancing") {
+    if (data.exit_style && data.exit_style !== "none") {
+      chips.push(`${data.exit_style.replace(/_/g, " ")} exit`);
+    }
   }
   return chips;
 }
@@ -134,6 +148,7 @@ export function ReceptionSection({
   scheduleData,
   onNavigateToSchedule,
   songs = [],
+  phaseFilter = "reception",
 }: ReceptionSectionProps) {
   const set = (patch: Partial<ReceptionData>) => onChange({ ...data, ...patch });
 
@@ -142,10 +157,19 @@ export function ReceptionSection({
   const dataRef = useRef(data);
   dataRef.current = data;
 
-  const summary = buildReceptionSummary(data);
-  const resolvedMoments = useMemo(
+  const summary = buildReceptionSummary(data, phaseFilter);
+  const allResolvedMoments = useMemo(
     () => resolveReceptionMoments(data, scheduleData),
     [data, scheduleData]
+  );
+  // Filter by phase — custom moments default to "reception" phase for now.
+  const resolvedMoments = useMemo(
+    () =>
+      allResolvedMoments.filter((m) => {
+        if (m.isCustom) return phaseFilter === "reception";
+        return phaseForMoment(m.id) === phaseFilter;
+      }),
+    [allResolvedMoments, phaseFilter]
   );
   const momentOrder = useMemo(
     () => resolvedMoments.map((m) => m.id),
@@ -323,7 +347,7 @@ export function ReceptionSection({
       {summary.length > 0 && (
         <div className="rounded-lg border border-primary/15 bg-primary/5 px-4 py-3">
           <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-primary/70 mb-1.5">
-            Reception so far
+            {phaseFilter === "dancing" ? "Dancing so far" : "Reception so far"}
           </p>
           <div className="flex flex-wrap gap-x-2 gap-y-1 text-sm text-foreground/80">
             {summary.map((chip, i) => (
@@ -351,18 +375,20 @@ export function ReceptionSection({
         </SortableContext>
       </DndContext>
 
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={addCustomMoment}
-        className="gap-1.5 text-xs"
-      >
-        <Plus className="h-3 w-3" />
-        Add a moment
-      </Button>
+      {phaseFilter === "reception" && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={addCustomMoment}
+          className="gap-1.5 text-xs"
+        >
+          <Plus className="h-3 w-3" />
+          Add a moment
+        </Button>
+      )}
 
-      {/* Hidden moments — surface-level restore */}
-      {(data.hidden_moments || []).length > 0 && (
+      {/* Hidden moments — surface-level restore (filtered to current phase) */}
+      {(data.hidden_moments || []).filter((id) => phaseForMoment(id) === phaseFilter).length > 0 && (
         <div className="pt-3 border-t border-border/40">
           <div className="flex items-baseline gap-3 mb-2">
             <h4 className="text-xs font-semibold tracking-[0.12em] uppercase text-foreground/80">
@@ -373,33 +399,37 @@ export function ReceptionSection({
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {(data.hidden_moments || []).map((id) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => restoreBuiltInMoment(id)}
-                className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border border-border/70 bg-background text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
-              >
-                <Plus className="h-3 w-3" />
-                {stockTitleFor(id)}
-              </button>
-            ))}
+            {(data.hidden_moments || [])
+              .filter((id) => phaseForMoment(id) === phaseFilter)
+              .map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => restoreBuiltInMoment(id)}
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border border-border/70 bg-background text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                >
+                  <Plus className="h-3 w-3" />
+                  {stockTitleFor(id)}
+                </button>
+              ))}
           </div>
         </div>
       )}
 
-      {/* Seating link */}
-      <div className="pt-2">
-        <Link
-          href="/seating"
-          className="inline-flex items-center gap-2 text-sm text-primary/70 hover:text-primary transition-colors"
-        >
-          Arrange your tables → Open Seating
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
-      </div>
+      {/* Seating link — only in Reception phase */}
+      {phaseFilter === "reception" && (
+        <div className="pt-2">
+          <Link
+            href="/seating"
+            className="inline-flex items-center gap-2 text-sm text-primary/70 hover:text-primary transition-colors"
+          >
+            Arrange your tables → Open Seating
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      )}
 
-      {/* Reception notes block */}
+      {/* Notes block — phase-specific contents */}
       <div className="pt-2">
         <button
           type="button"
@@ -412,54 +442,57 @@ export function ReceptionSection({
           ) : (
             <ChevronRight className="h-4 w-4" />
           )}
-          Reception notes
+          {phaseFilter === "dancing" ? "Dancing extras" : "Reception notes"}
           {!notesOpen && (
             <span className="text-xs text-muted-foreground/60 font-normal ml-1">
-              extras toggles, cultural traditions
+              {phaseFilter === "dancing"
+                ? "bouquet toss, garter toss, anniversary dance, shoe game"
+                : "cultural traditions"}
             </span>
           )}
         </button>
 
         {notesOpen && (
           <div className="mt-4 space-y-6 border-l-2 border-border/40 pl-5">
-            {/* Reception extras toggles */}
-            <div>
-              <h4 className="text-sm font-medium mb-1">Reception extras</h4>
-              <p className="text-xs text-muted-foreground mb-3">
-                Turn these on to add them as moments in the timeline above.
-              </p>
-              <div className="flex flex-wrap gap-4">
-                {([
-                  ["bouquet_toss", "Bouquet toss"],
-                  ["garter_toss", "Garter toss"],
-                  ["anniversary_dance", "Anniversary dance"],
-                  ["shoe_game", "Shoe game"],
-                ] as const).map(([key, label]) => (
-                  <label key={key} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={data[key]}
-                      onCheckedChange={(v) => set({ [key]: !!v } as Partial<ReceptionData>)}
-                    />
-                    {label}
-                  </label>
-                ))}
+            {phaseFilter === "dancing" && (
+              <div>
+                <h4 className="text-sm font-medium mb-1">Dancing extras</h4>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Turn these on to add them as moments in the timeline above.
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  {([
+                    ["bouquet_toss", "Bouquet toss"],
+                    ["garter_toss", "Garter toss"],
+                    ["anniversary_dance", "Anniversary dance"],
+                    ["shoe_game", "Shoe game"],
+                  ] as const).map(([key, label]) => (
+                    <label key={key} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={data[key]}
+                        onCheckedChange={(v) => set({ [key]: !!v } as Partial<ReceptionData>)}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Cultural */}
-            <div>
-              <h4 className="text-sm font-medium mb-1">Cultural or religious traditions</h4>
-              <p className="text-xs text-muted-foreground mb-3">
-                Hora, money dance, or any reception traditions you want to include.
-              </p>
-              <Textarea
-                placeholder="Describe any cultural or religious reception elements..."
-                value={data.cultural_notes}
-                onChange={(e) => set({ cultural_notes: e.target.value })}
-                className="text-sm min-h-[80px]"
-              />
-            </div>
-
+            {phaseFilter === "reception" && (
+              <div>
+                <h4 className="text-sm font-medium mb-1">Cultural or religious traditions</h4>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Hora, money dance, or any reception traditions you want to include.
+                </p>
+                <Textarea
+                  placeholder="Describe any cultural or religious reception elements..."
+                  value={data.cultural_notes}
+                  onChange={(e) => set({ cultural_notes: e.target.value })}
+                  className="text-sm min-h-[80px]"
+                />
+              </div>
+            )}
           </div>
         )}
       </div>

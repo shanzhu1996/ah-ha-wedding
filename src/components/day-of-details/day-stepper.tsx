@@ -14,6 +14,33 @@ import {
   type CompletionState,
 } from "./types";
 
+// ── Pill bar ─────────────────────────────────────────────────────────
+// Pills are the UI navigation unit. Most map 1:1 to a SectionKey, but
+// "dancing" is a virtual pill that shares `reception` data — it renders
+// ReceptionSection with phaseFilter="dancing".
+type PillKey = SectionKey | "dancing";
+
+const PILL_KEYS: readonly PillKey[] = [
+  "schedule",
+  "getting_ready",
+  "ceremony",
+  "cocktail",
+  "reception",
+  "dancing",
+  "photos",
+  "logistics",
+];
+
+const PILL_META: Record<PillKey, { label: string; shortLabel: string }> = {
+  ...SECTION_META,
+  dancing: { label: "Dancing", shortLabel: "Dancing" },
+};
+
+/** The underlying section (for storage + completion) for a given pill. */
+function sectionKeyForPill(pill: PillKey): SectionKey {
+  return pill === "dancing" ? "reception" : pill;
+}
+
 // Lazy-load sections to avoid one giant bundle
 import { ScheduleSection } from "./schedule-section";
 import { GettingReadySection } from "./getting-ready-section";
@@ -63,7 +90,8 @@ function completionTitle(label: string, state: CompletionState): string {
 // ── Component ──────────────────────────────────────────────────────────
 
 export function DayStepper({ weddingId, initialData, songs }: DayStepperProps) {
-  const [activeSection, setActiveSection] = useState<SectionKey>("schedule");
+  const [activePill, setActivePill] = useState<PillKey>("schedule");
+  const activeSection = sectionKeyForPill(activePill);
   const [data, setData] = useState<Record<string, unknown>>(initialData);
   const [saving, setSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
@@ -100,14 +128,19 @@ export function DayStepper({ weddingId, initialData, songs }: DayStepperProps) {
   }
 
   // Scroll active pill into view on mobile
-  function handleSectionClick(key: SectionKey) {
-    setActiveSection(key);
-    // Scroll the pill into view in the pill bar
+  function handlePillClick(key: PillKey) {
+    setActivePill(key);
     const pill = document.getElementById(`pill-${key}`);
     pill?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }
 
-  const activeIndex = SECTION_KEYS.indexOf(activeSection);
+  // Convenience for sibling calls — e.g., ScheduleSection navigating to a
+  // section. All callers only need to know SectionKeys, not virtual pills.
+  function handleSectionClick(key: SectionKey) {
+    handlePillClick(key);
+  }
+
+  const activeIndex = PILL_KEYS.indexOf(activePill);
 
   return (
     <div className="space-y-6">
@@ -162,18 +195,19 @@ export function DayStepper({ weddingId, initialData, songs }: DayStepperProps) {
           ref={pillBarRef}
           className="flex gap-1.5 overflow-x-auto scrollbar-hide px-1 py-1 -mx-1 snap-x"
         >
-          {SECTION_KEYS.map((key) => {
-            const isActive = key === activeSection;
-            const meta = SECTION_META[key];
+          {PILL_KEYS.map((pill) => {
+            const isActive = pill === activePill;
+            const meta = PILL_META[pill];
+            const sKey = sectionKeyForPill(pill);
             const completion = getSectionCompletion(
-              key,
-              (data[key] ?? {}) as AllSectionData[typeof key]
+              sKey,
+              (data[sKey] ?? {}) as AllSectionData[typeof sKey]
             );
             return (
               <button
-                key={key}
-                id={`pill-${key}`}
-                onClick={() => handleSectionClick(key)}
+                key={pill}
+                id={`pill-${pill}`}
+                onClick={() => handlePillClick(pill)}
                 className={cn(
                   "shrink-0 snap-start px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 inline-flex items-center gap-1.5",
                   isActive
@@ -192,7 +226,7 @@ export function DayStepper({ weddingId, initialData, songs }: DayStepperProps) {
 
         {/* Mobile: section indicator */}
         <p className="text-xs text-muted-foreground/70 mt-2 sm:hidden">
-          {SECTION_META[activeSection].label} · {activeIndex + 1} of {SECTION_KEYS.length}
+          {PILL_META[activePill].label} · {activeIndex + 1} of {PILL_KEYS.length}
         </p>
       </div>
 
@@ -244,13 +278,15 @@ export function DayStepper({ weddingId, initialData, songs }: DayStepperProps) {
             onChange={(d) => handleChange("cocktail", d)}
           />
         )}
-        {activeSection === "reception" && (
+        {(activePill === "reception" || activePill === "dancing") && (
           <ReceptionSection
+            key={activePill}
             data={(data.reception || {}) as any}
             onChange={(d) => handleChange("reception", d)}
             scheduleData={(data.schedule || undefined) as any}
             onNavigateToSchedule={() => handleSectionClick("schedule")}
             songs={songs}
+            phaseFilter={activePill === "dancing" ? "dancing" : "reception"}
           />
         )}
         {activeSection === "photos" && (
