@@ -5,7 +5,7 @@ import { Trash2, Pencil, Check, X, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { TableVisual, type SeatAssignment } from "./table-visual";
+import { TableVisual, dietaryKindFor, type SeatAssignment } from "./table-visual";
 import type { TableShape } from "./table-templates";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -26,6 +26,7 @@ interface Props {
   name: string | null;
   shape: TableShape;
   capacity: number;
+  rotation?: 0 | 90 | 180 | 270;
   seated: SeatedGuest[]; // all guests assigned to this table
   isSelectable: boolean; // user has a guest selected — clicks will assign/swap
   selectedGuestId: string | null; // a guest selected in sidebar OR on another table
@@ -62,6 +63,7 @@ export function TableCard({
   name,
   shape,
   capacity,
+  rotation = 0,
   seated,
   isSelectable,
   selectedGuestId,
@@ -83,7 +85,7 @@ export function TableCard({
       assigned[g.seat_number] = {
         guestId: g.id,
         initials: initialsOf(g),
-        hasDietary: hasDietary(g),
+        dietaryKind: dietaryKindFor(g),
         fullName: `${g.first_name} ${g.last_name}`,
       };
     }
@@ -195,6 +197,14 @@ export function TableCard({
           hoverHint={isSelectable}
           onSeatClick={onSeatClick}
           size="md"
+          rotation={rotation}
+          fillState={
+            seated.length === 0
+              ? "empty"
+              : seated.length >= capacity
+                ? "full"
+                : "partial"
+          }
         />
       </div>
 

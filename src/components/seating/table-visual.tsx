@@ -6,12 +6,28 @@ import type { TableShape } from "./table-templates";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
+export type DietaryKind = "vegan" | "vegetarian" | "other" | null;
+
 export interface SeatAssignment {
   guestId: string;
   initials: string;
-  hasDietary: boolean;
+  /** null = no dietary. Used to render a small icon on the seat dot. */
+  dietaryKind: DietaryKind;
   fullName: string;
 }
+
+/** Derive the dietary kind from a guest's meal_choice and dietary_restrictions fields. */
+export function dietaryKindFor(g: {
+  meal_choice: string | null;
+  dietary_restrictions: string | null;
+}): DietaryKind {
+  if (g.meal_choice === "vegan") return "vegan";
+  if (g.meal_choice === "vegetarian") return "vegetarian";
+  if (g.dietary_restrictions && g.dietary_restrictions.trim()) return "other";
+  return null;
+}
+
+export type TableFillState = "empty" | "partial" | "full";
 
 interface Props {
   shape: TableShape;
@@ -21,6 +37,10 @@ interface Props {
   hoverHint?: boolean; // true when user has a guest selected and is looking for a target
   onSeatClick?: (seatNumber: number) => void;
   size?: "sm" | "md" | "lg";
+  rotation?: 0 | 90 | 180 | 270;
+  fillState?: TableFillState;
+  /** Show a locked padlock overlay — used when tables.locked is true */
+  locked?: boolean;
 }
 
 interface SeatPosition {
@@ -37,8 +57,13 @@ interface SeatPosition {
  */
 function computeSeatPositions(
   shape: TableShape,
-  capacity: number
-): { positions: SeatPosition[]; body: React.ReactNode; viewBox: string } {
+  capacity: number,
+  bodyClassName: string = "fill-muted/30 stroke-border"
+): {
+  positions: SeatPosition[];
+  body: React.ReactNode;
+  viewBox: string;
+} {
   const viewBox = "0 0 200 200";
 
   if (shape === "sweetheart") {
@@ -49,7 +74,7 @@ function computeSeatPositions(
         cy={100}
         rx={52}
         ry={32}
-        className="fill-muted/30 stroke-border"
+        className={bodyClassName}
         strokeWidth={1.5}
       />
     );
@@ -82,7 +107,7 @@ function computeSeatPositions(
           cx={100}
           cy={100}
           r={r}
-          className="fill-muted/30 stroke-border"
+          className={bodyClassName}
           strokeWidth={1.5}
         />
       ) : (
@@ -92,7 +117,7 @@ function computeSeatPositions(
           width={116}
           height={116}
           rx={8}
-          className="fill-muted/30 stroke-border"
+          className={bodyClassName}
           strokeWidth={1.5}
         />
       );
@@ -149,7 +174,7 @@ function computeSeatPositions(
       width={tableWidth}
       height={tableHeight}
       rx={6}
-      className="fill-muted/30 stroke-border"
+      className={bodyClassName}
       strokeWidth={1.5}
     />
   );
@@ -173,13 +198,34 @@ export function TableVisual({
   hoverHint = false,
   onSeatClick,
   size = "md",
+  rotation = 0,
+  fillState = "empty",
+  locked = false,
 }: Props) {
+  // Fill state drives the table body color
+  const bodyClassName = useMemo(() => {
+    switch (fillState) {
+      case "full":
+        return "fill-primary/15 stroke-primary/40";
+      case "partial":
+        return "fill-amber-50 stroke-amber-200";
+      case "empty":
+      default:
+        return "fill-muted/30 stroke-border";
+    }
+  }, [fillState]);
+
   const { positions, body, viewBox } = useMemo(
-    () => computeSeatPositions(shape, capacity),
-    [shape, capacity]
+    () => computeSeatPositions(shape, capacity, bodyClassName),
+    [shape, capacity, bodyClassName]
   );
 
   const px = SIZE_PX[size];
+  const isLg = size === "lg";
+  // At lg size, seats grow so initials + number both fit
+  const seatRadius = isLg ? 13 : 10;
+  const hoverRingRadius = seatRadius + 4;
+  const selectedRingRadius = seatRadius + 4;
 
   return (
     <svg
@@ -190,107 +236,238 @@ export function TableVisual({
       role="img"
       aria-label={`${shape} table with ${capacity} seats`}
     >
-      {body}
-      {positions.map((pos) => {
-        const guest = assigned[pos.seatNumber];
-        const isSelected = selectedSeat === pos.seatNumber;
-        const ariaLabel = guest
-          ? `Seat ${pos.seatNumber}, ${guest.fullName}`
-          : `Seat ${pos.seatNumber}, empty`;
+      {/* Everything inside rotates around the center (100,100) */}
+      <g transform={`rotate(${rotation} 100 100)`}>
+        {body}
+        {/* Sweetheart heart — drawn inside the table body for romance */}
+        {shape === "sweetheart" && (
+          <path
+            d="M100 108 c-4 -4 -10 -6 -10 -12 a5 5 0 0 1 10 -3 a5 5 0 0 1 10 3 c0 6 -6 8 -10 12 z"
+            className="fill-primary/60 pointer-events-none"
+          />
+        )}
+        {positions.map((pos) => {
+          const guest = assigned[pos.seatNumber];
+          const isSelected = selectedSeat === pos.seatNumber;
+          const ariaLabel = guest
+            ? `Seat ${pos.seatNumber}, ${guest.fullName}`
+            : `Seat ${pos.seatNumber}, empty`;
 
-        return (
-          <g
-            key={pos.seatNumber}
-            role="button"
-            tabIndex={onSeatClick ? 0 : -1}
-            aria-label={ariaLabel}
-            aria-pressed={isSelected}
-            className={cn(
-              "outline-none transition-[transform,opacity] origin-center group/seat",
-              onSeatClick && "cursor-pointer",
-              hoverHint && !guest && "animate-pulse"
-            )}
-            onClick={
-              onSeatClick ? () => onSeatClick(pos.seatNumber) : undefined
-            }
-            onKeyDown={
-              onSeatClick
-                ? (e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      onSeatClick(pos.seatNumber);
+          return (
+            <g
+              key={pos.seatNumber}
+              role="button"
+              tabIndex={onSeatClick ? 0 : -1}
+              aria-label={ariaLabel}
+              aria-pressed={isSelected}
+              className={cn(
+                "outline-none transition-[transform,opacity] origin-center group/seat",
+                onSeatClick && "cursor-pointer",
+                hoverHint && !guest && "animate-pulse"
+              )}
+              onClick={
+                onSeatClick ? () => onSeatClick(pos.seatNumber) : undefined
+              }
+              onKeyDown={
+                onSeatClick
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSeatClick(pos.seatNumber);
+                      }
                     }
-                  }
-                : undefined
-            }
-          >
-            {isSelected && (
+                  : undefined
+              }
+            >
+              {isSelected && (
+                <circle
+                  cx={pos.cx}
+                  cy={pos.cy}
+                  r={selectedRingRadius}
+                  className="fill-none stroke-primary"
+                  strokeWidth={2}
+                />
+              )}
+              {/* Hover ring — larger circle that appears on hover/focus */}
               <circle
                 cx={pos.cx}
                 cy={pos.cy}
-                r={14}
-                className="fill-none stroke-primary"
+                r={hoverRingRadius}
+                className={cn(
+                  "fill-none stroke-primary/40 opacity-0 transition-opacity",
+                  onSeatClick &&
+                    "group-hover/seat:opacity-100 group-focus-visible/seat:opacity-100"
+                )}
                 strokeWidth={2}
               />
-            )}
-            {/* Hover ring — larger circle that appears on hover/focus */}
-            <circle
-              cx={pos.cx}
-              cy={pos.cy}
-              r={14}
-              className={cn(
-                "fill-none stroke-primary/40 opacity-0 transition-opacity",
-                onSeatClick &&
-                  "group-hover/seat:opacity-100 group-focus-visible/seat:opacity-100"
-              )}
-              strokeWidth={2}
-            />
-            <circle
-              cx={pos.cx}
-              cy={pos.cy}
-              r={10}
-              className={cn(
-                guest
-                  ? "fill-primary/90 stroke-primary"
-                  : "fill-background stroke-muted-foreground/40",
-                isSelected && "stroke-primary"
-              )}
-              strokeWidth={1.5}
-            />
-            {guest ? (
-              <text
-                x={pos.cx}
-                y={pos.cy}
-                textAnchor="middle"
-                dominantBaseline="central"
-                className="fill-primary-foreground font-semibold pointer-events-none"
-                style={{ fontSize: "7px" }}
-              >
-                {guest.initials}
-              </text>
-            ) : (
-              <text
-                x={pos.cx}
-                y={pos.cy}
-                textAnchor="middle"
-                dominantBaseline="central"
-                className="fill-muted-foreground/60 pointer-events-none"
-                style={{ fontSize: "7px" }}
-              >
-                {pos.seatNumber}
-              </text>
-            )}
-            {guest?.hasDietary && (
               <circle
-                cx={pos.cx + 8}
-                cy={pos.cy - 8}
-                r={3}
-                className="fill-amber-500 pointer-events-none"
+                cx={pos.cx}
+                cy={pos.cy}
+                r={seatRadius}
+                className={cn(
+                  guest
+                    ? "fill-primary/90 stroke-primary"
+                    : "fill-background stroke-muted-foreground/40",
+                  isSelected && "stroke-primary"
+                )}
+                strokeWidth={1.5}
               />
-            )}
-          </g>
-        );
-      })}
+              {/*
+                Always show the seat number.
+                Text is counter-rotated so it remains upright at any table rotation.
+                On lg size, also show initials below the number for the detail panel.
+              */}
+              <g
+                transform={`rotate(${-rotation} ${pos.cx} ${pos.cy})`}
+                className="pointer-events-none"
+              >
+                {isLg && guest ? (
+                  <>
+                    <text
+                      x={pos.cx}
+                      y={pos.cy - 2}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      className="fill-primary-foreground/80"
+                      style={{ fontSize: "6px" }}
+                    >
+                      {pos.seatNumber}
+                    </text>
+                    <text
+                      x={pos.cx}
+                      y={pos.cy + 5}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      className="fill-primary-foreground font-semibold"
+                      style={{ fontSize: "7px" }}
+                    >
+                      {guest.initials}
+                    </text>
+                  </>
+                ) : (
+                  <text
+                    x={pos.cx}
+                    y={pos.cy}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    className={cn(
+                      "font-semibold",
+                      guest
+                        ? "fill-primary-foreground"
+                        : "fill-muted-foreground/70"
+                    )}
+                    style={{ fontSize: isLg ? "9px" : "7px" }}
+                  >
+                    {pos.seatNumber}
+                  </text>
+                )}
+              </g>
+              {guest?.dietaryKind && (
+                <DietaryGlyph
+                  kind={guest.dietaryKind}
+                  cx={pos.cx + seatRadius - 2}
+                  cy={pos.cy - seatRadius + 2}
+                />
+              )}
+            </g>
+          );
+        })}
+      </g>
+      {/* Padlock overlay — static, does not rotate with the table */}
+      {locked && (
+        <g className="pointer-events-none">
+          <circle
+            cx={176}
+            cy={24}
+            r={14}
+            className="fill-background stroke-muted-foreground/40"
+            strokeWidth={1}
+          />
+          {/* Simple padlock glyph */}
+          <path
+            d="M172 22 v-3 a4 4 0 0 1 8 0 v3 h-8 z"
+            className="fill-none stroke-muted-foreground"
+            strokeWidth={1.5}
+          />
+          <rect
+            x={170}
+            y={22}
+            width={12}
+            height={8}
+            rx={1.5}
+            className="fill-muted-foreground"
+          />
+        </g>
+      )}
     </svg>
+  );
+}
+
+// ── DietaryGlyph — small SVG indicator per dietary kind ───────────────
+
+function DietaryGlyph({
+  kind,
+  cx,
+  cy,
+}: {
+  kind: DietaryKind;
+  cx: number;
+  cy: number;
+}) {
+  if (!kind) return null;
+  if (kind === "vegan") {
+    return (
+      <g className="pointer-events-none">
+        <circle cx={cx} cy={cy} r={4} className="fill-background" />
+        <path
+          d={`M${cx - 2} ${cy + 1} q2 -5 4 -4 q0 4 -4 4 z`}
+          className="fill-emerald-600"
+        />
+      </g>
+    );
+  }
+  if (kind === "vegetarian") {
+    return (
+      <g className="pointer-events-none">
+        <circle cx={cx} cy={cy} r={4} className="fill-background" />
+        <line
+          x1={cx}
+          y1={cy - 2.5}
+          x2={cx}
+          y2={cy + 2.5}
+          className="stroke-amber-600"
+          strokeWidth={0.8}
+          strokeLinecap="round"
+        />
+        <line
+          x1={cx}
+          y1={cy - 1.5}
+          x2={cx - 1.5}
+          y2={cy - 0.5}
+          className="stroke-amber-600"
+          strokeWidth={0.8}
+          strokeLinecap="round"
+        />
+        <line
+          x1={cx}
+          y1={cy - 1.5}
+          x2={cx + 1.5}
+          y2={cy - 0.5}
+          className="stroke-amber-600"
+          strokeWidth={0.8}
+          strokeLinecap="round"
+        />
+      </g>
+    );
+  }
+  // "other" → four-pointed sparkle
+  return (
+    <g className="pointer-events-none">
+      <circle cx={cx} cy={cy} r={4} className="fill-background" />
+      <path
+        d={`M${cx} ${cy - 2.5} L${cx + 0.7} ${cy - 0.7} L${cx + 2.5} ${cy} L${cx + 0.7} ${cy + 0.7} L${cx} ${cy + 2.5} L${cx - 0.7} ${cy + 0.7} L${cx - 2.5} ${cy} L${cx - 0.7} ${cy - 0.7} Z`}
+        className="fill-amber-500"
+      />
+    </g>
   );
 }

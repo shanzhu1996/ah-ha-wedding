@@ -25,23 +25,17 @@ interface Guest {
 
 interface Props {
   guests: Guest[]; // already filtered to unassigned
-  selectedGuestIds: string[];
+  selectedGuestId: string | null;
   onSelectGuest: (guestId: string | null) => void;
-  onSelectGroup: (guestIds: string[], groupName: string) => void;
-  tagColor: (tag: string | null) => string;
 }
 
 // ── Component ──────────────────────────────────────────────────────────
 
 export function UnassignedSidebar({
   guests,
-  selectedGuestIds,
+  selectedGuestId,
   onSelectGuest,
-  onSelectGroup,
-  tagColor,
 }: Props) {
-  const selectedSet = new Set(selectedGuestIds);
-  const isMultiSelection = selectedGuestIds.length > 1;
   const [search, setSearch] = useState("");
   const [filterRsvp, setFilterRsvp] = useState<string>("all");
   const [filterDietary, setFilterDietary] = useState<boolean>(false);
@@ -88,17 +82,14 @@ export function UnassignedSidebar({
     });
   }, [guests, search, filterRsvp, filterDietary]);
 
-  // Group by relationship_tag
-  const grouped = useMemo(() => {
-    const groups = new Map<string, Guest[]>();
-    for (const g of filtered) {
-      const tag = g.relationship_tag?.trim() || "Ungrouped";
-      const list = groups.get(tag) ?? [];
-      list.push(g);
-      groups.set(tag, list);
-    }
-    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [filtered]);
+  // Flat list, alphabetical by last name (tag grouping removed — see roadmap)
+  const sortedGuests = useMemo(
+    () =>
+      [...filtered].sort((a, b) =>
+        (a.last_name || "").localeCompare(b.last_name || "")
+      ),
+    [filtered]
+  );
 
   const rsvpLabel = filterRsvp === "all" ? "All" : filterRsvp.replace("_", " ");
 
@@ -108,7 +99,7 @@ export function UnassignedSidebar({
         <h2 className="text-xs font-semibold tracking-[0.12em] uppercase text-foreground/80">
           Unassigned · {filtered.length}
         </h2>
-        {selectedGuestIds.length > 0 && (
+        {selectedGuestId && (
           <button
             type="button"
             onClick={() => onSelectGuest(null)}
@@ -179,81 +170,64 @@ export function UnassignedSidebar({
       </div>
 
       {/* Guest groups */}
-      {grouped.length === 0 ? (
+      {sortedGuests.length === 0 ? (
         <p className="text-xs text-muted-foreground italic py-2">
           {guests.length === 0
             ? "Every guest is seated."
             : "No guests match your filters."}
         </p>
       ) : (
-        <div className="space-y-3">
-          {grouped.map(([tag, list]) => {
-            const allSelected =
-              list.length > 0 && list.every((g) => selectedSet.has(g.id));
+        <ul className="space-y-0.5">
+          {sortedGuests.map((g) => {
+            const isSelected = selectedGuestId === g.id;
+            const dietShort =
+              g.meal_choice === "vegan"
+                ? "vegan"
+                : g.meal_choice === "vegetarian"
+                  ? "veg"
+                  : g.dietary_restrictions?.trim()
+                    ? g.dietary_restrictions.trim().length > 10
+                      ? g.dietary_restrictions.trim().slice(0, 10) + "…"
+                      : g.dietary_restrictions.trim()
+                    : null;
             return (
-            <div key={tag}>
-              <button
-                type="button"
-                onClick={() => onSelectGroup(list.map((g) => g.id), tag)}
-                className={cn(
-                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium mb-1.5 transition-all hover:ring-2 ring-primary/30",
-                  tag === "Ungrouped"
-                    ? "bg-muted text-muted-foreground"
-                    : tagColor(tag),
-                  allSelected && "ring-2 ring-primary"
-                )}
-                title={`Select all in ${tag}`}
-              >
-                {tag} <span className="opacity-60">({list.length})</span>
-              </button>
-              <ul className="space-y-0.5">
-                {list.map((g) => {
-                  const isSelected = selectedSet.has(g.id);
-                  const hasDietary =
-                    (g.dietary_restrictions &&
-                      g.dietary_restrictions.trim()) ||
-                    g.meal_choice === "vegan" ||
-                    g.meal_choice === "vegetarian";
-                  return (
-                    <li key={g.id}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onSelectGuest(isSelected ? null : g.id)
-                        }
-                        className={cn(
-                          "w-full text-left px-2 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5",
-                          isSelected
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-muted/60"
-                        )}
-                      >
-                        <span className="truncate flex-1">
-                          {g.first_name} {g.last_name}
-                        </span>
-                        {hasDietary && (
-                          <span
-                            className={cn(
-                              "h-1.5 w-1.5 rounded-full",
-                              isSelected ? "bg-white/80" : "bg-amber-500"
-                            )}
-                            title="Dietary"
-                          />
-                        )}
-                        {g.rsvp_status === "confirmed" && !isSelected && (
-                          <span className="text-[9px] font-medium text-emerald-700">
-                            ✓
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          );
+              <li key={g.id}>
+                <button
+                  type="button"
+                  onClick={() => onSelectGuest(isSelected ? null : g.id)}
+                  className={cn(
+                    "w-full text-left px-2 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5",
+                    isSelected
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted/60"
+                  )}
+                >
+                  <span className="truncate flex-1">
+                    {g.first_name} {g.last_name}
+                  </span>
+                  {dietShort && (
+                    <span
+                      className={cn(
+                        "inline-block px-1.5 py-0.5 rounded text-[9px] font-medium shrink-0",
+                        isSelected
+                          ? "bg-white/20 text-primary-foreground"
+                          : "bg-amber-100 text-amber-800"
+                      )}
+                      title={g.dietary_restrictions || g.meal_choice || ""}
+                    >
+                      {dietShort}
+                    </span>
+                  )}
+                  {g.rsvp_status === "confirmed" && !isSelected && (
+                    <span className="text-[9px] font-medium text-emerald-700">
+                      ✓
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
           })}
-        </div>
+        </ul>
       )}
     </div>
   );

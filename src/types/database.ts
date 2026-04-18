@@ -147,6 +147,7 @@ export interface Database {
           shape: TableShape;
           position_x: number | null;
           position_y: number | null;
+          rotation: number;
           created_at: string;
         };
         Insert: Omit<Database["public"]["Tables"]["tables"]["Row"], "id" | "created_at">;

@@ -714,15 +714,6 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
 
             {showContactSection && (
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Relationship Group</Label>
-                  <Input
-                    value={relationshipTag}
-                    onChange={(e) => setRelationshipTag(e.target.value)}
-                    placeholder="e.g., Family, College friends, Work"
-                  />
-                  <p className="text-xs text-muted-foreground">Helps organize seating later</p>
-                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Email</Label>

@@ -1,14 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Wand2 } from "lucide-react";
+import { Plus, Wand2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { AddTableDialog } from "./add-table-dialog";
 import { UnassignedSidebar } from "./unassigned-sidebar";
 import { TableCard } from "./table-card";
+import { RoomCanvas } from "./room-canvas";
+import { TableDetailPanel } from "./table-detail-panel";
+import {
+  TableVisual,
+  dietaryKindFor,
+  type SeatAssignment,
+} from "./table-visual";
+import { DietarySummary } from "./dietary-summary";
+import { ViewToggle, type SeatingView } from "./view-toggle";
 import { useSeatAssignment } from "./use-seat-assignment";
 import type { TableShape } from "./table-templates";
 
@@ -23,6 +32,7 @@ interface Table {
   shape: string;
   position_x: number | null;
   position_y: number | null;
+  rotation: number;
   created_at: string;
 }
 
@@ -45,7 +55,7 @@ interface Props {
   weddingId: string;
 }
 
-// ── Tag color palette (carried over from old seating-manager) ──────────
+// ── Tag color palette ──────────────────────────────────────────────────
 
 const TAG_COLORS: Record<string, string> = {};
 const PALETTE = [
@@ -69,6 +79,20 @@ function tagColor(tag: string | null): string {
   return TAG_COLORS[tag];
 }
 
+// ── Shape helpers for room view ────────────────────────────────────────
+
+function tableBoundsForShape(shape: TableShape, capacity: number) {
+  // Approximate bounding box of the TableVisual SVG + seat perimeter
+  // Round seat radius ~ 82 from computeSeatPositions → total ~200 with margin
+  if (shape === "sweetheart") return { width: 200, height: 120 };
+  if (shape === "rectangle") return { width: 240, height: 140 };
+  return { width: 200, height: 200 }; // round / square
+}
+
+// ── LocalStorage key for view preference ───────────────────────────────
+
+const VIEW_STORAGE_KEY = "ahha:seating-view";
+
 // ── Component ──────────────────────────────────────────────────────────
 
 export function SeatingManager({
@@ -81,10 +105,28 @@ export function SeatingManager({
   const { assign, unassign, swap, applyOverlay } = useSeatAssignment();
 
   const [addOpen, setAddOpen] = useState(false);
-  const [selectedGuestIds, setSelectedGuestIds] = useState<string[]>([]);
-  const [selectionLabel, setSelectionLabel] = useState<string | null>(null);
-  const selectedGuestId =
-    selectedGuestIds.length === 1 ? selectedGuestIds[0] : null;
+  const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const [view, setView] = useState<SeatingView>("room");
+
+  // Load view preference from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_STORAGE_KEY);
+      if (saved === "room" || saved === "grid") setView(saved);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleViewChange = useCallback((next: SeatingView) => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // Apply optimistic overlays to guests
   const guests = useMemo(
@@ -93,76 +135,105 @@ export function SeatingManager({
   );
 
   function clearSelection() {
-    setSelectedGuestIds([]);
-    setSelectionLabel(null);
-  }
-
-  // Unseat a single guest
-  async function unseatGuest(guestId: string) {
-    await unassign(guestId);
+    setSelectedGuestId(null);
   }
 
   // Dismiss selection / unseat with keyboard
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") clearSelection();
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedGuestIds.length > 0) {
-        // Only unseat seated guests; don't nuke unassigned ones
-        const seatedIds = selectedGuestIds.filter((id) => {
-          const g = initialGuests.find((x) => x.id === id);
-          return g?.table_id;
-        });
-        if (seatedIds.length === 0) return;
+      if (e.key === "Escape") {
+        clearSelection();
+        setSelectedTableId(null);
+      }
+      if (
+        (e.key === "Delete" || e.key === "Backspace") &&
+        selectedGuestId
+      ) {
+        const g = initialGuests.find((x) => x.id === selectedGuestId);
+        if (!g?.table_id) return;
         e.preventDefault();
-        seatedIds.forEach((id) => unassign(id));
+        unassign(selectedGuestId);
         clearSelection();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGuestIds, initialGuests]);
+  }, [selectedGuestId, initialGuests]);
 
   // ── Derived data ────────────────────────────────────────────────────
 
   const unassigned = guests.filter((g) => !g.table_id);
   const confirmed = guests.filter((g) => g.rsvp_status === "confirmed");
+  const seatedConfirmed = confirmed.filter((g) => g.table_id).length;
   const unseatedConfirmed = confirmed.filter((g) => !g.table_id).length;
-  const totalCapacity = initialTables.reduce((s, t) => s + t.capacity, 0);
+  const pendingRsvp = guests.filter(
+    (g) => g.rsvp_status === "pending" || g.rsvp_status === "no_response"
+  ).length;
   const recommendedTables = Math.ceil(confirmed.length / 10);
 
-  // Build a guest map for swap lookups
+  // Tables full/partial counts
+  const tableFills = useMemo(() => {
+    return initialTables.map((t) => {
+      const seated = guests.filter((g) => g.table_id === t.id).length;
+      return { id: t.id, seated, capacity: t.capacity };
+    });
+  }, [initialTables, guests]);
+  const tablesFull = tableFills.filter(
+    (t) => t.capacity > 0 && t.seated >= t.capacity
+  ).length;
+
+  // Guest map for lookup
   const guestMap = useMemo(() => {
     const m = new Map<string, Guest>();
     guests.forEach((g) => m.set(g.id, g));
     return m;
   }, [guests]);
 
-  // Tagline
-  const taglineParts: string[] = [];
+  // Build tagline — richer, honest counts. Each part hides when count is 0.
+  interface TaglinePart {
+    text: string;
+    emphasize?: boolean;
+  }
+  const taglineParts: TaglinePart[] = [];
+
+  // Primary counts
+  if (confirmed.length > 0) {
+    taglineParts.push({
+      text: `${seatedConfirmed} of ${confirmed.length} seated`,
+    });
+  }
   if (unseatedConfirmed > 0) {
-    taglineParts.push(`${unseatedConfirmed} to seat`);
-  } else if (confirmed.length > 0 && initialTables.length > 0) {
-    taglineParts.push(`all ${confirmed.length} seated`);
+    taglineParts.push({
+      text: `${unseatedConfirmed} unseated confirmed`,
+      emphasize: true, // the actionable number
+    });
+  }
+  if (pendingRsvp > 0) {
+    taglineParts.push({
+      text: `${pendingRsvp} RSVP${pendingRsvp === 1 ? "" : "s"} pending`,
+    });
   }
   if (initialTables.length > 0) {
-    taglineParts.push(
-      `${initialTables.length} ${
-        initialTables.length === 1 ? "table" : "tables"
-      }`
-    );
+    taglineParts.push({
+      text:
+        tablesFull > 0
+          ? `${tablesFull} of ${initialTables.length} ${initialTables.length === 1 ? "table" : "tables"} full`
+          : `${initialTables.length} ${initialTables.length === 1 ? "table" : "tables"}`,
+    });
   }
+  // Fallback: when there are no tables yet and we have confirmed guests, recommend count
   if (
     initialTables.length === 0 &&
     confirmed.length > 0 &&
     recommendedTables > 0
   ) {
-    taglineParts.push(
-      `need ~${recommendedTables} round 10${recommendedTables === 1 ? "" : "s"}`
-    );
+    taglineParts.push({
+      text: `need ~${recommendedTables} round 10${recommendedTables === 1 ? "" : "s"}`,
+    });
   }
 
-  // ── Mutations ───────────────────────────────────────────────────────
+  // ── Table mutations ─────────────────────────────────────────────────
 
   async function createTable(input: {
     shape: TableShape;
@@ -183,12 +254,12 @@ export function SeatingManager({
 
   async function deleteTable(tableId: string) {
     if (!confirm("Delete this table? Guests will be unseated.")) return;
-    // Clear both table_id AND seat_number first (no FK cascade in schema)
     await supabase
       .from("guests")
       .update({ table_id: null, seat_number: null })
       .eq("table_id", tableId);
     await supabase.from("tables").delete().eq("id", tableId);
+    if (selectedTableId === tableId) setSelectedTableId(null);
     router.refresh();
   }
 
@@ -197,28 +268,57 @@ export function SeatingManager({
     router.refresh();
   }
 
+  async function rotateTable(tableId: string, rotation: 0 | 90 | 180 | 270) {
+    await supabase.from("tables").update({ rotation }).eq("id", tableId);
+    router.refresh();
+  }
+
+  // Debounced position save (canvas drag)
+  const saveTimeoutRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const moveTable = useCallback(
+    (tableId: string, x: number, y: number) => {
+      const existing = saveTimeoutRef.current[tableId];
+      if (existing) clearTimeout(existing);
+      saveTimeoutRef.current[tableId] = setTimeout(async () => {
+        await supabase
+          .from("tables")
+          .update({ position_x: x, position_y: y })
+          .eq("id", tableId);
+        router.refresh();
+      }, 250);
+    },
+    [supabase, router]
+  );
+
+  // ── Unseat a single guest ───────────────────────────────────────────
+
+  async function unseatGuest(guestId: string) {
+    await unassign(guestId);
+  }
+
+  // ── Auto-assign (unchanged) ─────────────────────────────────────────
+
   async function autoAssign() {
     if (!confirm("Auto-assign all unassigned confirmed guests?")) return;
     if (initialTables.length === 0) return;
 
-    // Group unassigned confirmed guests by relationship_tag
+    // Group by last_name so family members end up adjacent. Falls back cleanly
+    // when many guests share "" last names — they land together, one group.
     const unassignedConfirmed = unassigned.filter(
       (g) => g.rsvp_status === "confirmed"
     );
-    const byTag = new Map<string, Guest[]>();
+    const byLastName = new Map<string, Guest[]>();
     for (const g of unassignedConfirmed) {
-      const tag = g.relationship_tag?.trim() || "_ungrouped";
-      const list = byTag.get(tag) ?? [];
+      const key = (g.last_name || "").trim().toLowerCase() || "_unnamed";
+      const list = byLastName.get(key) ?? [];
       list.push(g);
-      byTag.set(tag, list);
+      byLastName.set(key, list);
     }
-    // Alphabetical queue so same tag stays adjacent
     const queue: Guest[] = [];
-    Array.from(byTag.entries())
+    Array.from(byLastName.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .forEach(([, list]) => queue.push(...list));
 
-    // Current occupancy per table
     const occupancy = new Map<string, Set<number>>();
     initialTables.forEach((t) => occupancy.set(t.id, new Set()));
     guests.forEach((g) => {
@@ -227,12 +327,10 @@ export function SeatingManager({
       }
     });
 
-    // Assign each guest to first table with an open seat
     for (const g of queue) {
       for (const t of initialTables) {
         const taken = occupancy.get(t.id) ?? new Set();
         if (taken.size >= t.capacity) continue;
-        // Find next open seat (1-based)
         let openSeat = 1;
         while (taken.has(openSeat)) openSeat++;
         if (openSeat > t.capacity) continue;
@@ -248,46 +346,16 @@ export function SeatingManager({
   // ── Click-to-assign / swap logic ────────────────────────────────────
 
   async function handleSeatClick(tableId: string, seatNumber: number) {
-    // No selection — if seat has a guest, select them
-    if (selectedGuestIds.length === 0) {
+    if (!selectedGuestId) {
+      // No selection — if seat has a guest, select them
       const occupant = guests.find(
         (g) => g.table_id === tableId && g.seat_number === seatNumber
       );
-      if (occupant) setSelectedGuestIds([occupant.id]);
+      if (occupant) setSelectedGuestId(occupant.id);
       return;
     }
 
-    // ── Group selection: fill consecutive empty seats from the clicked seat ──
-    if (selectedGuestIds.length > 1) {
-      const table = initialTables.find((t) => t.id === tableId);
-      if (!table) return;
-      const taken = new Set(
-        guests
-          .filter(
-            (g) =>
-              g.table_id === tableId &&
-              g.seat_number &&
-              !selectedGuestIds.includes(g.id)
-          )
-          .map((g) => g.seat_number as number)
-      );
-      // Walk seat numbers starting at clicked seat, wrap around
-      const openSeats: number[] = [];
-      for (let i = 0; i < table.capacity; i++) {
-        const s = ((seatNumber - 1 + i) % table.capacity) + 1;
-        if (!taken.has(s)) openSeats.push(s);
-        if (openSeats.length >= selectedGuestIds.length) break;
-      }
-      // Assign as many as fit
-      for (let i = 0; i < Math.min(openSeats.length, selectedGuestIds.length); i++) {
-        await assign(selectedGuestIds[i], tableId, openSeats[i]);
-      }
-      clearSelection();
-      return;
-    }
-
-    // ── Single selection ──
-    const selected = guestMap.get(selectedGuestIds[0]);
+    const selected = guestMap.get(selectedGuestId);
     if (!selected) {
       clearSelection();
       return;
@@ -306,14 +374,20 @@ export function SeatingManager({
       return;
     }
 
-    // Occupied seat → swap (uses RPC)
     if (selected.table_id && selected.seat_number) {
       await swap(
-        { id: selected.id, table_id: selected.table_id, seat_number: selected.seat_number },
-        { id: occupant.id, table_id: occupant.table_id, seat_number: occupant.seat_number }
+        {
+          id: selected.id,
+          table_id: selected.table_id,
+          seat_number: selected.seat_number,
+        },
+        {
+          id: occupant.id,
+          table_id: occupant.table_id,
+          seat_number: occupant.seat_number,
+        }
       );
     } else {
-      // Selected is unassigned; bump occupant to unseated, then place selected
       await unassign(occupant.id);
       await assign(selected.id, tableId, seatNumber);
     }
@@ -321,59 +395,83 @@ export function SeatingManager({
   }
 
   function handleGuestPillClick(guestId: string) {
-    if (selectedGuestIds.length === 0) {
-      setSelectedGuestIds([guestId]);
-      setSelectionLabel(null);
+    if (selectedGuestId === null) {
+      setSelectedGuestId(guestId);
       return;
     }
-    if (selectedGuestIds.length === 1 && selectedGuestIds[0] === guestId) {
+    if (selectedGuestId === guestId) {
       clearSelection();
       return;
     }
-    // Single selection + different guest pill clicked → swap them
-    if (selectedGuestIds.length === 1) {
-      const a = guestMap.get(selectedGuestIds[0]);
-      const b = guestMap.get(guestId);
-      if (a && b) {
-        swap(
-          { id: a.id, table_id: a.table_id, seat_number: a.seat_number },
-          { id: b.id, table_id: b.table_id, seat_number: b.seat_number }
-        );
-      }
-      clearSelection();
-      return;
+    const a = guestMap.get(selectedGuestId);
+    const b = guestMap.get(guestId);
+    if (a && b) {
+      swap(
+        { id: a.id, table_id: a.table_id, seat_number: a.seat_number },
+        { id: b.id, table_id: b.table_id, seat_number: b.seat_number }
+      );
     }
-    // Group selection active + pill clicked → just replace with single guest
-    setSelectedGuestIds([guestId]);
-    setSelectionLabel(null);
+    clearSelection();
   }
 
-  function handleSidebarSelectGuest(guestId: string | null) {
-    if (guestId === null) {
-      clearSelection();
-      return;
-    }
-    setSelectedGuestIds([guestId]);
-    setSelectionLabel(null);
-  }
-
-  function handleSidebarSelectGroup(guestIds: string[], groupName: string) {
-    // If same group already selected, toggle off
+  // Drag-to-seat in detail panel: drop on empty → move; drop on occupied → swap
+  async function handleGuestDragToSeat(
+    draggedGuestId: string,
+    tableId: string,
+    targetSeatNumber: number
+  ) {
+    const dragged = guestMap.get(draggedGuestId);
+    if (!dragged) return;
+    // Dropped onto its own seat → no-op
     if (
-      selectedGuestIds.length === guestIds.length &&
-      guestIds.every((id) => selectedGuestIds.includes(id))
+      dragged.table_id === tableId &&
+      dragged.seat_number === targetSeatNumber
     ) {
-      clearSelection();
       return;
     }
-    setSelectedGuestIds(guestIds);
-    setSelectionLabel(groupName);
+    const occupant = guests.find(
+      (g) =>
+        g.table_id === tableId &&
+        g.seat_number === targetSeatNumber &&
+        g.id !== dragged.id
+    );
+    if (!occupant) {
+      await assign(dragged.id, tableId, targetSeatNumber);
+      return;
+    }
+    // Occupied → swap (atomic via RPC if both seated, else bump-and-place)
+    if (dragged.table_id && dragged.seat_number) {
+      await swap(
+        {
+          id: dragged.id,
+          table_id: dragged.table_id,
+          seat_number: dragged.seat_number,
+        },
+        {
+          id: occupant.id,
+          table_id: occupant.table_id,
+          seat_number: occupant.seat_number,
+        }
+      );
+    } else {
+      await unassign(occupant.id);
+      await assign(dragged.id, tableId, targetSeatNumber);
+    }
   }
+
+  // ── Selected table for detail panel ─────────────────────────────────
+
+  const selectedTable = selectedTableId
+    ? initialTables.find((t) => t.id === selectedTableId)
+    : null;
+  const seatedAtSelected = selectedTable
+    ? guests.filter((g) => g.table_id === selectedTable.id)
+    : [];
 
   // ── Render ──────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Editorial header */}
       <div>
         <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
@@ -387,13 +485,9 @@ export function SeatingManager({
                   <span className="text-muted-foreground/50"> · </span>
                 )}
                 <span
-                  className={cn(
-                    i === 0 &&
-                      unseatedConfirmed > 0 &&
-                      "font-medium text-foreground/80"
-                  )}
+                  className={cn(part.emphasize && "font-medium text-foreground/80")}
                 >
-                  {part}
+                  {part.text}
                 </span>
               </span>
             ))}
@@ -401,8 +495,13 @@ export function SeatingManager({
         )}
       </div>
 
+      {/* Dietary rollup — click to see per-table breakdown */}
+      <DietarySummary guests={guests} tables={initialTables} />
+
       {/* Toolbar */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <ViewToggle value={view} onChange={handleViewChange} />
+        <div className="mx-1 h-5 w-px bg-border" />
         <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5">
           <Plus className="h-3.5 w-3.5" />
           Add table
@@ -418,37 +517,27 @@ export function SeatingManager({
             Auto-assign
           </Button>
         )}
-        {selectedGuestIds.length > 0 && (
-          <div className="text-xs ml-2 px-2 py-1 rounded-md bg-primary/10 text-primary font-medium inline-flex items-center gap-2">
-            <span>
-              {selectedGuestIds.length === 1 ? (
-                <>Click a seat to place</>
-              ) : (
+        {selectedGuestId && (
+          <div className="text-xs ml-1 px-2 py-1 rounded-md bg-primary/10 text-primary font-medium inline-flex items-center gap-2">
+            <span>Click a seat to place</span>
+            {(() => {
+              const g = initialGuests.find((x) => x.id === selectedGuestId);
+              return g?.table_id ? (
                 <>
-                  {selectedGuestIds.length} guests selected
-                  {selectionLabel && ` from ${selectionLabel}`} · click a seat to start filling
+                  <span className="text-primary/40">·</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedGuestId) unassign(selectedGuestId);
+                      clearSelection();
+                    }}
+                    className="underline hover:text-foreground"
+                  >
+                    unseat
+                  </button>
                 </>
-              )}
-            </span>
-            {/* Unseat button only shown when ALL selected guests are currently seated */}
-            {selectedGuestIds.every((id) => {
-              const g = initialGuests.find((x) => x.id === id);
-              return g?.table_id;
-            }) && (
-              <>
-                <span className="text-primary/40">·</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    selectedGuestIds.forEach((id) => unassign(id));
-                    clearSelection();
-                  }}
-                  className="underline hover:text-foreground"
-                >
-                  unseat
-                </button>
-              </>
-            )}
+              ) : null;
+            })()}
             <span className="text-primary/40">·</span>
             <button
               type="button"
@@ -461,76 +550,369 @@ export function SeatingManager({
         )}
       </div>
 
-      {/* Persistent help hint when nothing selected yet and tables exist */}
+      {/* Contextual help — varies by state */}
+      {initialTables.length === 0 && selectedGuestId === null && (
+        <p className="text-xs text-muted-foreground leading-relaxed -mt-3 max-w-xl">
+          Start by adding your sweetheart table or head table.
+          Everyone else gathers around.
+        </p>
+      )}
       {initialTables.length > 0 &&
-        selectedGuestIds.length === 0 &&
-        guests.length > 0 && (
-          <p className="text-xs text-muted-foreground -mt-4 leading-relaxed">
-            <strong className="font-medium text-foreground/70">Click any name</strong>{" "}
-            — unassigned on the right, or seated on a table — then click a seat to place or
-            swap. Hover a seated name to unseat (×) or press Delete.
+        selectedGuestId === null &&
+        seatedConfirmed === 0 && (
+          <p className="text-xs text-muted-foreground leading-relaxed -mt-3">
+            {view === "room" ? (
+              <>
+                <strong className="font-medium text-foreground/70">
+                  Drag tables
+                </strong>{" "}
+                to arrange them. Click a table to see its seats.
+                Click a name, then a seat — to place or swap.
+              </>
+            ) : (
+              <>
+                <strong className="font-medium text-foreground/70">
+                  Click any name
+                </strong>{" "}
+                — unassigned on the right, or seated on a table — then click a
+                seat. Hover a seated name to unseat (×) or press Delete.
+              </>
+            )}
           </p>
         )}
+      {initialTables.length > 0 &&
+        selectedGuestId === null &&
+        seatedConfirmed > 0 &&
+        unseatedConfirmed > 0 && (
+          <p className="text-xs text-muted-foreground leading-relaxed -mt-3">
+            Click a name, then a seat to place or swap.
+          </p>
+        )}
+      {confirmed.length > 0 &&
+        unseatedConfirmed === 0 &&
+        initialTables.length > 0 && (
+          <div className="inline-flex items-center gap-2 -mt-3 px-3 py-1.5 rounded-md bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+            <Check className="h-3.5 w-3.5" />
+            <span className="font-medium">All confirmed guests seated</span>
+          </div>
+        )}
 
-      {/* Main layout: tables grid + unassigned sidebar */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
-        {/* Tables area */}
-        <div>
-          {initialTables.length === 0 ? (
-            <div className="text-center py-12 border border-dashed border-border/60 rounded-lg">
-              <p className="text-sm text-muted-foreground mb-4">
-                No tables yet. Pick a shape to get started.
-              </p>
-              <Button onClick={() => setAddOpen(true)} className="gap-1.5">
-                <Plus className="h-4 w-4" />
-                Add your first table
-              </Button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {initialTables.map((t) => {
-                const seated = guests.filter((g) => g.table_id === t.id);
-                return (
-                  <TableCard
-                    key={t.id}
-                    id={t.id}
-                    number={t.number}
-                    name={t.name}
-                    shape={t.shape as TableShape}
-                    capacity={t.capacity}
-                    seated={seated}
-                    isSelectable={selectedGuestId !== null}
-                    selectedGuestId={selectedGuestId}
-                    onSeatClick={(seat) => handleSeatClick(t.id, seat)}
-                    onGuestPillClick={handleGuestPillClick}
-                    onGuestUnassign={unseatGuest}
-                    onDelete={() => deleteTable(t.id)}
-                    onRename={(name) => renameTable(t.id, name)}
-                    tagColor={tagColor}
-                  />
-                );
-              })}
-            </div>
-          )}
+      {/* Main layout depending on view */}
+      {view === "room" ? (
+        <RoomViewLayout
+          initialTables={initialTables}
+          guests={guests}
+          unassigned={unassigned}
+          selectedTableId={selectedTableId}
+          setSelectedTableId={setSelectedTableId}
+          moveTable={moveTable}
+          selectedGuestId={selectedGuestId}
+          setSelectedGuestId={setSelectedGuestId}
+          selectedTable={selectedTable}
+          seatedAtSelected={seatedAtSelected}
+          handleSeatClick={handleSeatClick}
+          handleGuestPillClick={handleGuestPillClick}
+          handleGuestDragToSeat={handleGuestDragToSeat}
+          unseatGuest={unseatGuest}
+          deleteTable={deleteTable}
+          renameTable={renameTable}
+          rotateTable={rotateTable}
+          tagColor={tagColor}
+        />
+      ) : (
+        /* ── Grid view (preserved) ── */
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
+          <div>
+            {initialTables.length === 0 ? (
+              <div className="text-center py-12 border border-dashed border-border/60 rounded-lg">
+                <p className="text-sm text-muted-foreground mb-4">
+                  No tables yet. Pick a shape to get started.
+                </p>
+                <Button onClick={() => setAddOpen(true)} className="gap-1.5">
+                  <Plus className="h-4 w-4" />
+                  Add your first table
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {initialTables.map((t) => {
+                  const seated = guests.filter((g) => g.table_id === t.id);
+                  return (
+                    <TableCard
+                      key={t.id}
+                      id={t.id}
+                      number={t.number}
+                      name={t.name}
+                      shape={t.shape as TableShape}
+                      capacity={t.capacity}
+                      rotation={(t.rotation as 0 | 90 | 180 | 270) ?? 0}
+                      seated={seated}
+                      isSelectable={selectedGuestId !== null}
+                      selectedGuestId={selectedGuestId}
+                      onSeatClick={(seat) => handleSeatClick(t.id, seat)}
+                      onGuestPillClick={handleGuestPillClick}
+                      onGuestUnassign={unseatGuest}
+                      onDelete={() => deleteTable(t.id)}
+                      onRename={(name) => renameTable(t.id, name)}
+                      tagColor={tagColor}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+            <UnassignedSidebar
+              guests={unassigned}
+              selectedGuestId={selectedGuestId}
+              onSelectGuest={setSelectedGuestId}
+            />
+          </aside>
         </div>
-
-        {/* Unassigned sidebar */}
-        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-          <UnassignedSidebar
-            guests={unassigned}
-            selectedGuestIds={selectedGuestIds}
-            onSelectGuest={handleSidebarSelectGuest}
-            onSelectGroup={handleSidebarSelectGroup}
-            tagColor={tagColor}
-          />
-        </aside>
-      </div>
+      )}
 
       <AddTableDialog
         open={addOpen}
         onOpenChange={setAddOpen}
         onCreate={createTable}
       />
+    </div>
+  );
+}
+
+// ── Room view layout ───────────────────────────────────────────────────
+// Extracted for clarity: handles side-by-side (xl+) vs stacked (<xl)
+// when the detail panel is open; hides sidebar during detail view.
+
+interface RoomViewLayoutProps {
+  initialTables: Table[];
+  guests: Guest[];
+  unassigned: Guest[];
+  selectedTableId: string | null;
+  setSelectedTableId: (id: string | null) => void;
+  moveTable: (id: string, x: number, y: number) => void;
+  selectedGuestId: string | null;
+  setSelectedGuestId: (id: string | null) => void;
+  selectedTable: Table | null | undefined;
+  seatedAtSelected: Guest[];
+  handleSeatClick: (tableId: string, seatNumber: number) => void;
+  handleGuestPillClick: (guestId: string) => void;
+  handleGuestDragToSeat: (
+    draggedGuestId: string,
+    tableId: string,
+    targetSeatNumber: number
+  ) => void;
+  unseatGuest: (guestId: string) => void;
+  deleteTable: (tableId: string) => void;
+  renameTable: (tableId: string, name: string | null) => Promise<void> | void;
+  rotateTable: (
+    tableId: string,
+    rotation: 0 | 90 | 180 | 270
+  ) => Promise<void> | void;
+  tagColor: (tag: string | null) => string;
+}
+
+function RoomViewLayout({
+  initialTables,
+  guests,
+  unassigned,
+  selectedTableId,
+  setSelectedTableId,
+  moveTable,
+  selectedGuestId,
+  setSelectedGuestId,
+  selectedTable,
+  seatedAtSelected,
+  handleSeatClick,
+  handleGuestPillClick,
+  handleGuestDragToSeat,
+  unseatGuest,
+  deleteTable,
+  renameTable,
+  rotateTable,
+  tagColor,
+}: RoomViewLayoutProps) {
+  const detailRef = useRef<HTMLDivElement>(null);
+  const [isWide, setIsWide] = useState(false);
+
+  // Watch for wide-viewport to flip between side-by-side and stacked
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 1100px)");
+    const handler = () => setIsWide(mql.matches);
+    handler();
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
+
+  // Auto-scroll to detail panel on narrow screens when table is selected
+  useEffect(() => {
+    if (!selectedTable) return;
+    if (isWide) return; // no scroll needed — side-by-side
+    // Short delay so the panel has time to render
+    const t = setTimeout(() => {
+      detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+    return () => clearTimeout(t);
+  }, [selectedTable?.id, isWide]);
+
+  const detailOpen = Boolean(selectedTable);
+  const showSidebar = !detailOpen;
+
+  // Canvas size: shorter by default, even shorter when side-by-side with panel
+  const canvasHeight = detailOpen && isWide ? 560 : 420;
+
+  const canvas = (
+    <RoomCanvas
+      tables={initialTables.map((t) => {
+        const bounds = tableBoundsForShape(
+          t.shape as TableShape,
+          t.capacity
+        );
+        return {
+          id: t.id,
+          x: t.position_x ?? 0,
+          y: t.position_y ?? 0,
+          width: bounds.width,
+          height: bounds.height,
+        };
+      })}
+      selectedTableId={selectedTableId}
+      onSelectTable={setSelectedTableId}
+      onMoveTable={moveTable}
+      renderTable={(tableId) => {
+        const t = initialTables.find((x) => x.id === tableId);
+        if (!t) return null;
+        const seated = guests.filter((g) => g.table_id === t.id);
+        const assigned: Record<number, SeatAssignment> = {};
+        for (const g of seated) {
+          if (g.seat_number) {
+            assigned[g.seat_number] = {
+              guestId: g.id,
+              initials:
+                (g.first_name?.[0] ?? "") + (g.last_name?.[0] ?? ""),
+              dietaryKind: dietaryKindFor(g),
+              fullName: `${g.first_name} ${g.last_name}`,
+            };
+          }
+        }
+        return (
+          <div
+            className={cn(
+              "flex flex-col items-center gap-1 p-2 rounded-md",
+              selectedTableId === t.id &&
+                "ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary/5"
+            )}
+          >
+            <TableVisual
+              shape={t.shape as TableShape}
+              capacity={t.capacity}
+              assigned={assigned}
+              size="md"
+              rotation={(t.rotation as 0 | 90 | 180 | 270) ?? 0}
+              fillState={
+                seated.length === 0
+                  ? "empty"
+                  : seated.length >= t.capacity
+                    ? "full"
+                    : "partial"
+              }
+            />
+            <div className="text-center">
+              <div className="text-xs font-medium text-foreground">
+                Table {t.number}
+              </div>
+              {t.shape === "sweetheart" ? (
+                <div className="text-[10px] italic text-muted-foreground">
+                  The couple
+                </div>
+              ) : (
+                t.name && (
+                  <div className="text-[10px] text-muted-foreground">
+                    {t.name}
+                  </div>
+                )
+              )}
+              <div className="text-[10px] text-muted-foreground/60 tabular-nums">
+                {seated.length} / {t.capacity}
+              </div>
+            </div>
+          </div>
+        );
+      }}
+      height={canvasHeight}
+      compactFooter={detailOpen}
+    />
+  );
+
+  const detailPanel = selectedTable ? (
+    <div ref={detailRef}>
+      <TableDetailPanel
+        id={selectedTable.id}
+        number={selectedTable.number}
+        name={selectedTable.name}
+        shape={selectedTable.shape as TableShape}
+        capacity={selectedTable.capacity}
+        rotation={(selectedTable.rotation as 0 | 90 | 180 | 270) ?? 0}
+        seated={seatedAtSelected}
+        isSelectable={selectedGuestId !== null}
+        selectedGuestId={selectedGuestId}
+        onClose={() => setSelectedTableId(null)}
+        onSeatClick={(seat) =>
+          handleSeatClick(selectedTable.id, seat)
+        }
+        onGuestPillClick={handleGuestPillClick}
+        onGuestUnassign={unseatGuest}
+        onDelete={() => deleteTable(selectedTable.id)}
+        onRename={(n) => renameTable(selectedTable.id, n)}
+        onRotate={(r) => rotateTable(selectedTable.id, r)}
+        onGuestDragToSeat={(draggedGuestId, targetSeat) =>
+          handleGuestDragToSeat(draggedGuestId, selectedTable.id, targetSeat)
+        }
+        tagColor={tagColor}
+      />
+    </div>
+  ) : null;
+
+  const sidebar = (
+    <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+      <UnassignedSidebar
+        guests={unassigned}
+        selectedGuestId={selectedGuestId}
+        onSelectGuest={setSelectedGuestId}
+      />
+    </aside>
+  );
+
+  // ── Layouts ──
+  //  (a) No panel open: canvas left, sidebar right (3-col grid condensed to 2-col)
+  //  (b) Panel open, wide: canvas left, panel right. Sidebar hidden.
+  //  (c) Panel open, narrow: canvas on top, panel below. Sidebar hidden.
+
+  if (!detailOpen) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4">
+        {canvas}
+        {sidebar}
+      </div>
+    );
+  }
+
+  if (isWide) {
+    // Side-by-side — sidebar is hidden while detail is open
+    return (
+      <div className="grid grid-cols-[1fr_400px] gap-4 items-start">
+        {canvas}
+        {detailPanel}
+      </div>
+    );
+  }
+
+  // Stacked fallback with auto-scroll
+  return (
+    <div className="space-y-4">
+      {canvas}
+      {detailPanel}
     </div>
   );
 }
