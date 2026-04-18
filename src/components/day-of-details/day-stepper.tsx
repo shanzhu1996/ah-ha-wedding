@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { Loader2, Printer, Info } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -89,14 +89,39 @@ function completionTitle(label: string, state: CompletionState): string {
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export function DayStepper({ weddingId, initialData, songs }: DayStepperProps) {
+export function DayStepper({ weddingId, initialData, songs: initialSongs }: DayStepperProps) {
   const [activePill, setActivePill] = useState<PillKey>("schedule");
   const activeSection = sectionKeyForPill(activePill);
   const [data, setData] = useState<Record<string, unknown>>(initialData);
+  const [songs, setSongs] = useState<WeddingSong[]>(initialSongs);
   const [saving, setSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pillBarRef = useRef<HTMLDivElement>(null);
+
+  // Refetch songs on mount and whenever the tab regains focus. The Music
+  // tab is a separate page, so when the couple adds songs there and comes
+  // back, we need to pick up the new list. (The server snapshot passed
+  // as `initialSongs` goes stale.)
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+    async function refetch() {
+      const { data } = await supabase
+        .from("music_selections")
+        .select("phase, song_title, artist, sort_order, is_do_not_play")
+        .eq("wedding_id", weddingId);
+      if (!cancelled && data) setSongs(data as WeddingSong[]);
+    }
+    refetch();
+    window.addEventListener("focus", refetch);
+    document.addEventListener("visibilitychange", refetch);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", refetch);
+      document.removeEventListener("visibilitychange", refetch);
+    };
+  }, [weddingId]);
 
   // Auto-save with debounce
   const saveSection = useCallback(

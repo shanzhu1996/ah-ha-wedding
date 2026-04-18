@@ -27,7 +27,7 @@ export default async function DayOfDetailsPage() {
   // Fetch songs for read-only MusicLink display on moment pills.
   // Music tab remains the source of truth for song data.
   const { data: songs } = await supabase
-    .from("wedding_songs")
+    .from("music_selections")
     .select("phase, song_title, artist, sort_order, is_do_not_play")
     .eq("wedding_id", wedding.id);
 
