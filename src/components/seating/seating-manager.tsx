@@ -571,7 +571,89 @@ export function SeatingManager({
 
   // ── Fill empty seats (previously "Auto-assign") ─────────────────────
 
+  interface FillPlanItem {
+    guestId: string;
+    tableId: string;
+    seatNumber: number;
+    guestName: string;
+    initials: string;
+  }
   const [fillPreviewOpen, setFillPreviewOpen] = useState(false);
+  const [previewPlan, setPreviewPlan] = useState<FillPlanItem[] | null>(null);
+
+  // Group preview plan by tableId → seat map for rendering ghosts
+  const previewByTable = useMemo(() => {
+    const map: Record<string, Record<number, SeatAssignment>> = {};
+    if (!previewPlan) return map;
+    for (const p of previewPlan) {
+      if (!map[p.tableId]) map[p.tableId] = {};
+      map[p.tableId][p.seatNumber] = {
+        guestId: p.guestId,
+        initials: p.initials,
+        dietaryKind: null,
+        fullName: p.guestName,
+      };
+    }
+    return map;
+  }, [previewPlan]);
+
+  function computeFillPlan(): FillPlanItem[] {
+    const unassignedConfirmed = unassigned.filter(
+      (g) => g.rsvp_status === "confirmed"
+    );
+    const byLastName = new Map<string, Guest[]>();
+    for (const g of unassignedConfirmed) {
+      const key = (g.last_name || "").trim().toLowerCase() || "_unnamed";
+      const list = byLastName.get(key) ?? [];
+      list.push(g);
+      byLastName.set(key, list);
+    }
+    const queue: Guest[] = [];
+    Array.from(byLastName.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([, list]) => queue.push(...list));
+
+    const occupancy = new Map<string, Set<number>>();
+    initialTables.forEach((t) => occupancy.set(t.id, new Set()));
+    guests.forEach((g) => {
+      if (g.table_id && g.seat_number) {
+        occupancy.get(g.table_id)?.add(g.seat_number);
+      }
+    });
+
+    const plan: FillPlanItem[] = [];
+    for (const g of queue) {
+      for (const t of initialTables) {
+        if (t.locked) continue;
+        const taken = occupancy.get(t.id) ?? new Set();
+        if (taken.size >= t.capacity) continue;
+        let openSeat = 1;
+        while (taken.has(openSeat)) openSeat++;
+        if (openSeat > t.capacity) continue;
+        taken.add(openSeat);
+        occupancy.set(t.id, taken);
+        plan.push({
+          guestId: g.id,
+          tableId: t.id,
+          seatNumber: openSeat,
+          guestName: `${g.first_name} ${g.last_name}`,
+          initials:
+            (g.first_name?.[0] ?? "") + (g.last_name?.[0] ?? ""),
+        });
+        break;
+      }
+    }
+    return plan;
+  }
+
+  function openFillPreview() {
+    setPreviewPlan(computeFillPlan());
+    setFillPreviewOpen(true);
+  }
+  function cancelFillPreview() {
+    setPreviewPlan(null);
+    setFillPreviewOpen(false);
+  }
 
   // Compute the preview stats whenever the dialog opens
   const fillPreview = useMemo(() => {
@@ -599,68 +681,32 @@ export function SeatingManager({
   }, [fillPreviewOpen, unassigned, initialTables, guests]);
 
   async function fillEmptySeats() {
-    if (initialTables.length === 0) return;
+    // Use the pre-computed preview plan so the UI and DB writes match
+    // exactly what the couple saw as ghosts on the canvas.
+    const plan = previewPlan;
+    setPreviewPlan(null);
+    setFillPreviewOpen(false);
+    if (!plan || plan.length === 0) return;
 
-    // Group by last_name so family members end up adjacent.
-    const unassignedConfirmed = unassigned.filter(
-      (g) => g.rsvp_status === "confirmed"
-    );
-    const byLastName = new Map<string, Guest[]>();
-    for (const g of unassignedConfirmed) {
-      const key = (g.last_name || "").trim().toLowerCase() || "_unnamed";
-      const list = byLastName.get(key) ?? [];
-      list.push(g);
-      byLastName.set(key, list);
+    for (const p of plan) {
+      await assign(p.guestId, p.tableId, p.seatNumber);
     }
-    const queue: Guest[] = [];
-    Array.from(byLastName.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .forEach(([, list]) => queue.push(...list));
 
-    const occupancy = new Map<string, Set<number>>();
-    initialTables.forEach((t) => occupancy.set(t.id, new Set()));
-    guests.forEach((g) => {
-      if (g.table_id && g.seat_number) {
-        occupancy.get(g.table_id)?.add(g.seat_number);
-      }
+    const label = `Filled ${plan.length} seat${plan.length === 1 ? "" : "s"}`;
+    pushHistory({
+      label,
+      undo: async () => {
+        for (const p of plan) await unassign(p.guestId);
+      },
+      redo: async () => {
+        for (const p of plan) {
+          await assign(p.guestId, p.tableId, p.seatNumber);
+        }
+      },
     });
-
-    // Collect each placement so the whole batch is one undo-able operation.
-    const placed: { guestId: string; tableId: string; seatNumber: number }[] =
-      [];
-    for (const g of queue) {
-      for (const t of initialTables) {
-        if (t.locked) continue;
-        const taken = occupancy.get(t.id) ?? new Set();
-        if (taken.size >= t.capacity) continue;
-        let openSeat = 1;
-        while (taken.has(openSeat)) openSeat++;
-        if (openSeat > t.capacity) continue;
-        taken.add(openSeat);
-        occupancy.set(t.id, taken);
-        await assign(g.id, t.id, openSeat);
-        placed.push({ guestId: g.id, tableId: t.id, seatNumber: openSeat });
-        break;
-      }
-    }
-
-    if (placed.length > 0) {
-      const label = `Filled ${placed.length} seat${placed.length === 1 ? "" : "s"}`;
-      pushHistory({
-        label,
-        undo: async () => {
-          for (const p of placed) await unassign(p.guestId);
-        },
-        redo: async () => {
-          for (const p of placed) {
-            await assign(p.guestId, p.tableId, p.seatNumber);
-          }
-        },
-      });
-      toast(label, {
-        action: { label: "Undo", onClick: () => undoLast() },
-      });
-    }
+    toast(label, {
+      action: { label: "Undo", onClick: () => undoLast() },
+    });
     router.refresh();
   }
 
@@ -867,7 +913,7 @@ export function SeatingManager({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setFillPreviewOpen(true)}
+            onClick={openFillPreview}
             className="gap-1.5"
           >
             <Wand2 className="h-3.5 w-3.5" />
@@ -966,6 +1012,7 @@ export function SeatingManager({
         sweetheartLabel={sweetheartLabel}
         sweetheartVirtualSeats={sweetheartVirtualSeats}
         highlightSeat={highlightSeat}
+        previewByTable={previewByTable}
         tagColor={tagColor}
       />
 
@@ -976,7 +1023,10 @@ export function SeatingManager({
       />
 
       {/* Fill empty seats — preview dialog */}
-      <Dialog open={fillPreviewOpen} onOpenChange={setFillPreviewOpen}>
+      <Dialog
+        open={fillPreviewOpen}
+        onOpenChange={(open) => (open ? setFillPreviewOpen(true) : cancelFillPreview())}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Fill empty seats</DialogTitle>
@@ -1030,14 +1080,13 @@ export function SeatingManager({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setFillPreviewOpen(false)}
+                onClick={cancelFillPreview}
               >
                 Cancel
               </Button>
               <Button
                 size="sm"
                 onClick={async () => {
-                  setFillPreviewOpen(false);
                   await fillEmptySeats();
                 }}
                 disabled={
@@ -1097,6 +1146,8 @@ interface RoomViewLayoutProps {
   sweetheartVirtualSeats: Record<number, SeatAssignment>;
   /** Seat to pulse in the detail panel when this table is the selected one. */
   highlightSeat: { tableId: string; seatNumber: number } | null;
+  /** Per-table ghost seat assignments shown while the Fill-empty preview is open. */
+  previewByTable: Record<string, Record<number, SeatAssignment>>;
   tagColor: (tag: string | null) => string;
 }
 
@@ -1123,6 +1174,7 @@ function RoomViewLayout({
   sweetheartLabel,
   sweetheartVirtualSeats,
   highlightSeat,
+  previewByTable,
   tagColor,
 }: RoomViewLayoutProps) {
   const detailRef = useRef<HTMLDivElement>(null);
@@ -1192,6 +1244,7 @@ function RoomViewLayout({
         // non-interactive). Real assignments still win on the same seat.
         const virtualSeats =
           t.shape === "sweetheart" ? sweetheartVirtualSeats : undefined;
+        const previewSeats = previewByTable[t.id];
         return (
           <div
             className={cn(
@@ -1205,6 +1258,7 @@ function RoomViewLayout({
               capacity={t.capacity}
               assigned={assigned}
               virtualSeats={virtualSeats}
+              previewSeats={previewSeats}
               highlightSeat={
                 highlightSeat?.tableId === t.id
                   ? highlightSeat.seatNumber
@@ -1266,6 +1320,7 @@ function RoomViewLayout({
             ? sweetheartVirtualSeats
             : undefined
         }
+        previewSeats={previewByTable[selectedTable.id]}
         highlightSeat={
           highlightSeat?.tableId === selectedTable.id
             ? highlightSeat.seatNumber

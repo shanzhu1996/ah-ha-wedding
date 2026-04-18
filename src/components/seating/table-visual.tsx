@@ -40,6 +40,12 @@ interface Props {
    * Real `assigned` entries always win over virtual ones at the same seat.
    */
   virtualSeats?: Record<number, SeatAssignment>;
+  /**
+   * Ghost seat assignments shown during a "Fill empty seats" preview.
+   * Rendered dimmed with amber tint + pulse, non-interactive. Real
+   * assignments and virtual seats still win over preview entries.
+   */
+  previewSeats?: Record<number, SeatAssignment>;
   selectedSeat?: number;
   /**
    * Seat number to briefly highlight with an animated ring (e.g. after a
@@ -208,6 +214,7 @@ export function TableVisual({
   capacity,
   assigned,
   virtualSeats,
+  previewSeats,
   selectedSeat,
   highlightSeat,
   hoverHint = false,
@@ -264,12 +271,17 @@ export function TableVisual({
         {positions.map((pos) => {
           const realGuest = assigned[pos.seatNumber];
           const virtual = !realGuest ? virtualSeats?.[pos.seatNumber] : null;
-          const guest = realGuest ?? virtual ?? null;
+          const preview = !realGuest && !virtual
+            ? previewSeats?.[pos.seatNumber]
+            : null;
+          const guest = realGuest ?? virtual ?? preview ?? null;
           const isVirtual = !realGuest && !!virtual;
+          const isPreview = !realGuest && !virtual && !!preview;
+          const isReadOnly = isVirtual || isPreview;
           const isSelected = selectedSeat === pos.seatNumber;
           const ariaLabel = guest
             ? `Seat ${pos.seatNumber}, ${guest.fullName}${
-                isVirtual ? " (host)" : ""
+                isVirtual ? " (host)" : isPreview ? " (preview)" : ""
               }`
             : `Seat ${pos.seatNumber}, empty`;
 
@@ -277,21 +289,22 @@ export function TableVisual({
             <g
               key={pos.seatNumber}
               role="button"
-              tabIndex={onSeatClick && !isVirtual ? 0 : -1}
+              tabIndex={onSeatClick && !isReadOnly ? 0 : -1}
               aria-label={ariaLabel}
               aria-pressed={isSelected}
               className={cn(
                 "outline-none transition-[transform,opacity] origin-center group/seat",
-                onSeatClick && !isVirtual && "cursor-pointer",
+                onSeatClick && !isReadOnly && "cursor-pointer",
+                isPreview && "animate-pulse",
                 hoverHint && !guest && "animate-pulse"
               )}
               onClick={
-                onSeatClick && !isVirtual
+                onSeatClick && !isReadOnly
                   ? () => onSeatClick(pos.seatNumber)
                   : undefined
               }
               onKeyDown={
-                onSeatClick && !isVirtual
+                onSeatClick && !isReadOnly
                   ? (e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
@@ -337,7 +350,7 @@ export function TableVisual({
                 className={cn(
                   "fill-none stroke-primary/40 opacity-0 transition-opacity",
                   onSeatClick &&
-                    !isVirtual &&
+                    !isReadOnly &&
                     "group-hover/seat:opacity-100 group-focus-visible/seat:opacity-100"
                 )}
                 strokeWidth={2}
@@ -348,9 +361,11 @@ export function TableVisual({
                 r={seatRadius}
                 className={cn(
                   guest
-                    ? isVirtual
-                      ? "fill-primary/30 stroke-primary/40"
-                      : "fill-primary/90 stroke-primary"
+                    ? isPreview
+                      ? "fill-amber-200 stroke-amber-500"
+                      : isVirtual
+                        ? "fill-primary/30 stroke-primary/40"
+                        : "fill-primary/90 stroke-primary"
                     : "fill-background stroke-muted-foreground/40",
                   isSelected && "stroke-primary"
                 )}
