@@ -112,33 +112,6 @@ interface ReceptionSectionProps {
   phaseFilter?: ReceptionPhase;
 }
 
-// ── Summary helpers ─────────────────────────────────────────────────────
-
-function buildReceptionSummary(
-  data: ReceptionData,
-  phase: ReceptionPhase
-): string[] {
-  const chips: string[] = [];
-  if (phase === "reception") {
-    const filledParentDances = (data.parent_dances || []).filter(
-      (d) => d.who?.trim() || d.song?.trim()
-    );
-    if (filledParentDances.length > 0) {
-      chips.push(
-        `${filledParentDances.length} parent dance${filledParentDances.length > 1 ? "s" : ""}`
-      );
-    }
-    if ((data.speeches || []).length > 0) {
-      const n = data.speeches.length;
-      chips.push(`${n} speech${n > 1 ? "es" : ""} · ~${speechesTotalMinutes(data.speeches)} min`);
-    }
-  } else if (phase === "dancing") {
-    if (data.exit_style && data.exit_style !== "none") {
-      chips.push(`${data.exit_style.replace(/_/g, " ")} exit`);
-    }
-  }
-  return chips;
-}
 
 // ── Component ──────────────────────────────────────────────────────────
 
@@ -157,7 +130,6 @@ export function ReceptionSection({
   const dataRef = useRef(data);
   dataRef.current = data;
 
-  const summary = buildReceptionSummary(data, phaseFilter);
   const allResolvedMoments = useMemo(
     () => resolveReceptionMoments(data, scheduleData),
     [data, scheduleData]
@@ -343,25 +315,6 @@ export function ReceptionSection({
 
   return (
     <div className="space-y-6">
-      {/* Hero summary */}
-      {summary.length > 0 && (
-        <div className="rounded-lg border border-primary/15 bg-primary/5 px-4 py-3">
-          <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-primary/70 mb-1.5">
-            {phaseFilter === "dancing" ? "Dancing so far" : "Reception so far"}
-          </p>
-          <div className="flex flex-wrap gap-x-2 gap-y-1 text-sm text-foreground/80">
-            {summary.map((chip, i) => (
-              <span key={i} className="inline-flex items-center">
-                {chip}
-                {i < summary.length - 1 && (
-                  <span className="ml-2 text-primary/30">·</span>
-                )}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Timeline */}
       <DndContext
         sensors={sensors}

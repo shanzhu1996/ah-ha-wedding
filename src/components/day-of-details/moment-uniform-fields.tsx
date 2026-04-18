@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Mic, Users2, StickyNote, Clock, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import type { MomentExtras, ReceptionData } from "./types";
 import { defaultMcLineForMoment, TYPICAL_MC_MOMENTS } from "./types";
@@ -53,21 +52,26 @@ export function MomentUniformFields({
   const [notesOpen, setNotesOpen] = useState(false);
 
   const mcTypical = TYPICAL_MC_MOMENTS.has(momentId);
+  // MC is on iff there's a line. mc_needed is kept in sync for back-compat
+  // (old data may have mc_needed=true without a line; treat as "on").
   const mcFilledValue =
     extras?.mc_line?.trim() ||
     (extras?.mc_needed ? "MC announces this moment" : "");
   const guestsFilledValue = extras?.guest_action?.trim() || "";
   const notesFilledValue = extras?.notes?.trim() || "";
 
-  function handleMcToggle(checked: boolean) {
-    if (checked && !extras?.mc_line?.trim()) {
+  // Clicking the MC chip is the "enable MC" action. If the line is empty,
+  // pre-fill the suggested script so the textarea opens with content.
+  function openMc() {
+    if (!extras?.mc_line?.trim()) {
       onChange({
         mc_needed: true,
         mc_line: defaultMcLineForMoment(momentId, receptionData),
       });
-    } else {
-      onChange({ mc_needed: checked });
+    } else if (!extras?.mc_needed) {
+      onChange({ mc_needed: true });
     }
+    setMcOpen(true);
   }
 
   function clearMc() {
@@ -99,7 +103,7 @@ export function MomentUniformFields({
               label="MC announcement"
               value={mcFilledValue}
               typical={mcTypical}
-              onClick={() => setMcOpen(true)}
+              onClick={openMc}
             />
           )}
           {!guestsOpen && (
@@ -125,30 +129,21 @@ export function MomentUniformFields({
           <InlineRow
             icon={<Mic />}
             label="MC announcement"
+            hint="what the MC says for this moment"
             onDone={() => setMcOpen(false)}
             onClear={clearMc}
             canClear={!!(extras?.mc_needed || extras?.mc_line?.trim())}
           >
-            <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
-              <Checkbox
-                checked={extras?.mc_needed ?? false}
-                onCheckedChange={(v) => handleMcToggle(!!v)}
-              />
-              <span
-                className={cn(!extras?.mc_needed && "text-muted-foreground")}
-              >
-                MC announces this moment
-              </span>
-            </label>
-            {extras?.mc_needed && (
-              <Textarea
-                value={extras?.mc_line ?? ""}
-                onChange={(e) => onChange({ mc_line: e.target.value })}
-                placeholder="What the MC says (we've suggested one — edit freely)"
-                className="text-sm min-h-[52px] bg-background mt-2"
-                rows={2}
-              />
-            )}
+            <Textarea
+              autoFocus={!extras?.mc_line}
+              value={extras?.mc_line ?? ""}
+              onChange={(e) =>
+                onChange({ mc_line: e.target.value, mc_needed: true })
+              }
+              placeholder="Edit the suggested script, or write your own"
+              className="text-sm min-h-[52px] bg-background"
+              rows={2}
+            />
           </InlineRow>
         )}
         {guestsOpen && (
