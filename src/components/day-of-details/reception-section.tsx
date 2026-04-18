@@ -25,6 +25,7 @@ import {
   Mic,
   LogOut,
   ShieldCheck,
+  StickyNote,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -57,6 +58,8 @@ import { speechesTotalMinutes, RECEPTION_MOMENT_TITLES } from "./types";
 import { MomentCard, type MomentSummaryChip } from "./moment-card";
 import { MomentUniformFields } from "./moment-uniform-fields";
 import { MomentMusicBlock } from "./moment-music-block";
+import { MusicLink, summarizeSongs } from "./music-link";
+import type { WeddingSong } from "./day-stepper";
 import {
   resolveReceptionMoments,
   findScheduleEntryForMoment,
@@ -95,6 +98,9 @@ interface ReceptionSectionProps {
   scheduleData?: ScheduleData;
   /** Callback when the user clicks "Set in Schedule" — jumps to Schedule tab. */
   onNavigateToSchedule?: () => void;
+  /** Full song list (wedding_songs). Music tab is the source of truth;
+   *  Day-of displays read-only references via MusicLink. */
+  songs?: WeddingSong[];
 }
 
 // ── Summary helpers ─────────────────────────────────────────────────────
@@ -127,6 +133,7 @@ export function ReceptionSection({
   onChange,
   scheduleData,
   onNavigateToSchedule,
+  songs = [],
 }: ReceptionSectionProps) {
   const set = (patch: Partial<ReceptionData>) => onChange({ ...data, ...patch });
 
@@ -547,7 +554,7 @@ export function ReceptionSection({
 
   function renderGrandEntrance(title: string, extras: MomentExtras | undefined) {
     const summary = chips([
-      data.grand_entrance_song?.trim(),
+      summarizeSongs("grand_entrance", songs, "single"),
       ...extrasChips(extras),
     ]);
     return (
@@ -565,30 +572,21 @@ export function ReceptionSection({
       >
         <div className="space-y-5">
           <Description momentId="grand_entrance" />
-          <PrimaryField
-            icon={<Music className="h-4 w-4 text-primary/80" />}
-            label="Entrance song"
-            hint="you walk in to this"
-          >
-            <MomentMusicBlock
+          <div className="space-y-2">
+            <MusicLink
+              phase="grand_entrance"
+              songs={songs}
+              expected="single"
+              label="Entrance song"
+              hint="you walk in to this"
+            />
+            <SkipMusicToggle
               skip={extras?.skip_music ?? false}
-              onSkipChange={(v) =>
+              onChange={(v) =>
                 updateExtras("grand_entrance", { skip_music: v })
               }
-            >
-              <Input
-                placeholder={`e.g., "Marry You" by Bruno Mars`}
-                value={data.grand_entrance_song}
-                onChange={(e) => {
-                  set({
-                    grand_entrance_song: e.target.value,
-                    grand_entrance: true,
-                  });
-                }}
-                className="h-10 text-sm"
-              />
-            </MomentMusicBlock>
-          </PrimaryField>
+            />
+          </div>
           <MomentUniformFields
             momentId="grand_entrance"
             extras={extras}
@@ -604,9 +602,7 @@ export function ReceptionSection({
 
   function renderFirstDance(title: string, extras: MomentExtras | undefined) {
     const summary = chips([
-      data.first_dance_song?.trim() && data.first_dance_artist?.trim()
-        ? `${data.first_dance_song.trim()} · ${data.first_dance_artist.trim()}`
-        : data.first_dance_song?.trim() || null,
+      summarizeSongs("first_dance", songs, "single"),
       ...extrasChips(extras),
     ]);
     return (
@@ -624,46 +620,30 @@ export function ReceptionSection({
       >
         <div className="space-y-5">
           <Description momentId="first_dance" />
-          <PrimaryField
-            icon={<Music className="h-4 w-4 text-primary/80" />}
-            label="First dance song"
-            hint="song, artist, and any choreo notes"
-          >
-            <MomentMusicBlock
+          <div className="space-y-2">
+            <MusicLink
+              phase="first_dance"
+              songs={songs}
+              expected="single"
+              label="First dance song"
+              hint="song + artist, managed in Music tab"
+            />
+            <SkipMusicToggle
               skip={extras?.skip_music ?? false}
-              onSkipChange={(v) =>
-                updateExtras("first_dance", { skip_music: v })
-              }
-            >
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Song title"
-                    value={data.first_dance_song}
-                    onChange={(e) =>
-                      set({ first_dance_song: e.target.value })
-                    }
-                    className="h-10 text-sm flex-1"
-                  />
-                  <Input
-                    placeholder="Artist"
-                    value={data.first_dance_artist}
-                    onChange={(e) =>
-                      set({ first_dance_artist: e.target.value })
-                    }
-                    className="h-10 text-sm flex-1"
-                  />
-                </div>
-                <Textarea
-                  placeholder="Notes (e.g., choreographed? surprise mashup?)"
-                  value={data.first_dance_notes}
-                  onChange={(e) =>
-                    set({ first_dance_notes: e.target.value })
-                  }
-                  className="text-sm min-h-[52px]"
-                />
-              </div>
-            </MomentMusicBlock>
+              onChange={(v) => updateExtras("first_dance", { skip_music: v })}
+            />
+          </div>
+          <PrimaryField
+            icon={<StickyNote className="h-4 w-4 text-primary/80" />}
+            label="Choreo notes"
+            hint="optional — e.g., choreographed, surprise mashup"
+          >
+            <Textarea
+              placeholder="Anything the couple wants remembered about this dance"
+              value={data.first_dance_notes}
+              onChange={(e) => set({ first_dance_notes: e.target.value })}
+              className="text-sm min-h-[52px]"
+            />
           </PrimaryField>
           <MomentUniformFields
             momentId="first_dance"
@@ -680,8 +660,8 @@ export function ReceptionSection({
 
   function renderDinner(title: string, extras: MomentExtras | undefined) {
     const summary = chips([
+      summarizeSongs("dinner", songs, "playlist"),
       data.vendor_meals_note?.trim() ? "vendor meals noted" : null,
-      extras?.music_mood?.trim() ? `music: ${extras.music_mood.trim()}` : null,
       ...extrasChips(extras),
     ]);
     return (
@@ -700,26 +680,20 @@ export function ReceptionSection({
         <div className="space-y-5">
           <Description momentId="dinner" />
 
-          <PrimaryField
-            icon={<Music className="h-4 w-4 text-primary/80" />}
-            label="Dinner music"
-            hint="what the DJ plays"
-          >
-            <MomentMusicBlock
+          <div className="space-y-2">
+            <MusicLink
+              phase="dinner"
+              songs={songs}
+              expected="playlist"
+              label="Dinner music"
+              hint="background playlist, managed in Music tab"
+            />
+            <SkipMusicToggle
               skip={extras?.skip_music ?? false}
-              onSkipChange={(v) => updateExtras("dinner", { skip_music: v })}
+              onChange={(v) => updateExtras("dinner", { skip_music: v })}
               label="No music during dinner"
-            >
-              <Input
-                placeholder='e.g., "low-volume jazz playlist", "acoustic cover set"'
-                value={extras?.music_mood ?? ""}
-                onChange={(e) =>
-                  updateExtras("dinner", { music_mood: e.target.value })
-                }
-                className="h-10 text-sm"
-              />
-            </MomentMusicBlock>
-          </PrimaryField>
+            />
+          </div>
 
           <PrimaryField
             icon={<UtensilsCrossed className="h-4 w-4 text-primary/80" />}
@@ -951,7 +925,7 @@ export function ReceptionSection({
 
   function renderCakeCutting(title: string, extras: MomentExtras | undefined) {
     const summary = chips([
-      data.cake_cutting_song?.trim(),
+      summarizeSongs("cake_cutting", songs, "single"),
       ...extrasChips(extras),
     ]);
     return (
@@ -969,30 +943,19 @@ export function ReceptionSection({
       >
         <div className="space-y-5">
           <Description momentId="cake_cutting" />
-          <PrimaryField
-            icon={<Music className="h-4 w-4 text-primary/80" />}
-            label="Cake cutting song"
-            hint="plays as you slice"
-          >
-            <MomentMusicBlock
+          <div className="space-y-2">
+            <MusicLink
+              phase="cake_cutting"
+              songs={songs}
+              expected="single"
+              label="Cake cutting song"
+              hint="plays as you slice"
+            />
+            <SkipMusicToggle
               skip={extras?.skip_music ?? false}
-              onSkipChange={(v) =>
-                updateExtras("cake_cutting", { skip_music: v })
-              }
-            >
-              <Input
-                placeholder='e.g., "Sugar, Sugar" by The Archies'
-                value={data.cake_cutting_song}
-                onChange={(e) =>
-                  set({
-                    cake_cutting_song: e.target.value,
-                    cake_cutting: true,
-                  })
-                }
-                className="h-10 text-sm"
-              />
-            </MomentMusicBlock>
-          </PrimaryField>
+              onChange={(v) => updateExtras("cake_cutting", { skip_music: v })}
+            />
+          </div>
           <MomentUniformFields
             momentId="cake_cutting"
             extras={extras}
@@ -1008,9 +971,7 @@ export function ReceptionSection({
 
   function renderLastDance(title: string, extras: MomentExtras | undefined) {
     const summary = chips([
-      data.last_dance_song?.trim() && data.last_dance_artist?.trim()
-        ? `${data.last_dance_song.trim()} · ${data.last_dance_artist.trim()}`
-        : data.last_dance_song?.trim() || null,
+      summarizeSongs("last_dance", songs, "single"),
       ...extrasChips(extras),
     ]);
     return (
@@ -1028,37 +989,19 @@ export function ReceptionSection({
       >
         <div className="space-y-5">
           <Description momentId="last_dance" />
-          <PrimaryField
-            icon={<Music className="h-4 w-4 text-primary/80" />}
-            label="Last dance song"
-            hint="the night's final song — last chance on the floor"
-          >
-            <MomentMusicBlock
+          <div className="space-y-2">
+            <MusicLink
+              phase="last_dance"
+              songs={songs}
+              expected="single"
+              label="Last dance song"
+              hint="the night's final song — last chance on the floor"
+            />
+            <SkipMusicToggle
               skip={extras?.skip_music ?? false}
-              onSkipChange={(v) =>
-                updateExtras("last_dance", { skip_music: v })
-              }
-            >
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Song title"
-                  value={data.last_dance_song}
-                  onChange={(e) =>
-                    set({ last_dance_song: e.target.value })
-                  }
-                  className="h-10 text-sm flex-1"
-                />
-                <Input
-                  placeholder="Artist"
-                  value={data.last_dance_artist}
-                  onChange={(e) =>
-                    set({ last_dance_artist: e.target.value })
-                  }
-                  className="h-10 text-sm flex-1"
-                />
-              </div>
-            </MomentMusicBlock>
-          </PrimaryField>
+              onChange={(v) => updateExtras("last_dance", { skip_music: v })}
+            />
+          </div>
           <MomentUniformFields
             momentId="last_dance"
             extras={extras}
@@ -1324,6 +1267,31 @@ export function ReceptionSection({
       </MomentCard>
     );
   }
+}
+
+// ── "Skip music for this moment" toggle — kept for edge cases where
+//    couples want explicit silence (so the DJ knows it's intentional).
+function SkipMusicToggle({
+  skip,
+  onChange,
+  label = "No music for this moment",
+}: {
+  skip: boolean;
+  onChange: (v: boolean) => void;
+  label?: string;
+}) {
+  return (
+    <label className="inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+      <Checkbox
+        checked={skip}
+        onCheckedChange={(v) => onChange(!!v)}
+      />
+      {label}
+      <span className="text-muted-foreground/50">
+        · silence is intentional, vendors will know
+      </span>
+    </label>
+  );
 }
 
 // ── Shared primary-field layout (Variant A) ──────────────────────────────

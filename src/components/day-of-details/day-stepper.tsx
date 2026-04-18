@@ -25,9 +25,18 @@ import { LogisticsSection } from "./logistics-section";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
+export interface WeddingSong {
+  phase: string;
+  song_title: string;
+  artist: string | null;
+  sort_order: number;
+  is_do_not_play: boolean;
+}
+
 interface DayStepperProps {
   weddingId: string;
   initialData: Record<string, unknown>;
+  songs: WeddingSong[];
 }
 
 // ── Completion dot ─────────────────────────────────────────────────────
@@ -53,7 +62,7 @@ function completionTitle(label: string, state: CompletionState): string {
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export function DayStepper({ weddingId, initialData }: DayStepperProps) {
+export function DayStepper({ weddingId, initialData, songs }: DayStepperProps) {
   const [activeSection, setActiveSection] = useState<SectionKey>("schedule");
   const [data, setData] = useState<Record<string, unknown>>(initialData);
   const [saving, setSaving] = useState(false);
@@ -241,6 +250,7 @@ export function DayStepper({ weddingId, initialData }: DayStepperProps) {
             onChange={(d) => handleChange("reception", d)}
             scheduleData={(data.schedule || undefined) as any}
             onNavigateToSchedule={() => handleSectionClick("schedule")}
+            songs={songs}
           />
         )}
         {activeSection === "photos" && (

@@ -24,5 +24,18 @@ export default async function DayOfDetailsPage() {
     initialData[key] = savedMap.get(key) || getDefaultSectionData(key);
   }
 
-  return <DayStepper weddingId={wedding.id} initialData={initialData} />;
+  // Fetch songs for read-only MusicLink display on moment pills.
+  // Music tab remains the source of truth for song data.
+  const { data: songs } = await supabase
+    .from("wedding_songs")
+    .select("phase, song_title, artist, sort_order, is_do_not_play")
+    .eq("wedding_id", wedding.id);
+
+  return (
+    <DayStepper
+      weddingId={wedding.id}
+      initialData={initialData}
+      songs={songs || []}
+    />
+  );
 }

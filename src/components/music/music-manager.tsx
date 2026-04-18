@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -99,6 +99,25 @@ const ALL_PHASES = PHASE_GROUPS.flatMap((g) => g.phases);
 export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerProps) {
   const router = useRouter();
   const [expandedPhase, setExpandedPhase] = useState<string | null>(null);
+  const phaseRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Deep-link support: open /music#<phase> to auto-expand + scroll that phase.
+  // Used by the Day-of Details MusicLink component.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!hash) return;
+    const known = [...ALL_PHASES.map((p) => p.value), "do_not_play"];
+    if (!known.includes(hash)) return;
+    setExpandedPhase(hash);
+    // Wait a frame for the expansion render, then scroll into view.
+    requestAnimationFrame(() => {
+      phaseRefs.current[hash]?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+  }, []);
   const [showDialog, setShowDialog] = useState(false);
   const [addingToPhase, setAddingToPhase] = useState<string>("first_dance");
   const [saving, setSaving] = useState(false);
@@ -231,7 +250,12 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
     const count = songs.length;
 
     return (
-      <div key={phase.value}>
+      <div
+        key={phase.value}
+        ref={(el) => {
+          phaseRefs.current[phase.value] = el;
+        }}
+      >
         {/* Phase header — clickable */}
         <button
           onClick={() => setExpandedPhase(isExpanded ? null : phase.value)}
@@ -326,7 +350,11 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
       ))}
 
       {/* Do Not Play */}
-      <div>
+      <div
+        ref={(el) => {
+          phaseRefs.current["do_not_play"] = el;
+        }}
+      >
         <div className="flex items-center gap-3 mb-2 pb-1 border-b border-border/50">
           <span className="text-xs font-semibold tracking-[0.12em] uppercase text-foreground/80">
             Do Not Play
