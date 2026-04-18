@@ -14,7 +14,6 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { AddTableDialog } from "./add-table-dialog";
 import { UnassignedSidebar } from "./unassigned-sidebar";
-import { TableCard } from "./table-card";
 import { RoomCanvas } from "./room-canvas";
 import { TableDetailPanel } from "./table-detail-panel";
 import {
@@ -24,7 +23,6 @@ import {
 } from "./table-visual";
 import { DietarySummary } from "./dietary-summary";
 import { triggerConfetti } from "@/components/ui/confetti";
-import { ViewToggle, type SeatingView } from "./view-toggle";
 import { useSeatAssignment } from "./use-seat-assignment";
 import type { TableShape } from "./table-templates";
 
@@ -62,6 +60,9 @@ interface Props {
   tables: Table[];
   guests: Guest[];
   weddingId: string;
+  /** Newlywed names — shown on sweetheart tables as virtual seats and labels */
+  partner1Name?: string | null;
+  partner2Name?: string | null;
 }
 
 // ── Tag color palette ──────────────────────────────────────────────────
@@ -98,17 +99,40 @@ function tableBoundsForShape(shape: TableShape, capacity: number) {
   return { width: 200, height: 200 }; // round / square
 }
 
-// ── LocalStorage key for view preference ───────────────────────────────
-
-const VIEW_STORAGE_KEY = "ahha:seating-view";
-
 // ── Component ──────────────────────────────────────────────────────────
 
 export function SeatingManager({
   tables: initialTables,
   guests: initialGuests,
   weddingId,
+  partner1Name,
+  partner2Name,
 }: Props) {
+  // Friendly label for a sweetheart table, and virtual seat assignments for
+  // seats 1/2 so the couple's names show up as defaults.
+  const sweetheartLabel =
+    partner1Name && partner2Name
+      ? `${partner1Name} & ${partner2Name}`
+      : "Sweetheart";
+  const firstInitial = (name: string | null | undefined) =>
+    name?.trim()?.[0]?.toUpperCase() ?? "";
+  const sweetheartVirtualSeats: Record<number, SeatAssignment> = {};
+  if (partner1Name?.trim()) {
+    sweetheartVirtualSeats[1] = {
+      guestId: "__partner1__",
+      initials: firstInitial(partner1Name),
+      dietaryKind: null,
+      fullName: partner1Name,
+    };
+  }
+  if (partner2Name?.trim()) {
+    sweetheartVirtualSeats[2] = {
+      guestId: "__partner2__",
+      initials: firstInitial(partner2Name),
+      dietaryKind: null,
+      fullName: partner2Name,
+    };
+  }
   const router = useRouter();
   const supabase = createClient();
   const { assign, unassign, swap, applyOverlay } = useSeatAssignment();
@@ -116,26 +140,6 @@ export function SeatingManager({
   const [addOpen, setAddOpen] = useState(false);
   const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
-  const [view, setView] = useState<SeatingView>("room");
-
-  // Load view preference from localStorage
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(VIEW_STORAGE_KEY);
-      if (saved === "room" || saved === "grid") setView(saved);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const handleViewChange = useCallback((next: SeatingView) => {
-    setView(next);
-    try {
-      localStorage.setItem(VIEW_STORAGE_KEY, next);
-    } catch {
-      /* ignore */
-    }
-  }, []);
 
   // Apply optimistic overlays to guests
   const guests = useMemo(
@@ -263,14 +267,43 @@ export function SeatingManager({
     capacity: number;
     name: string | null;
   }) {
+    // Sweethearts sit outside the 1..N sequence (they display as
+    // "Sweetheart" / "Partner & Partner" instead of "Table N"). Give them
+    // number 0 so they never collide with regular numbering.
     const nextNumber =
-      initialTables.reduce((max, t) => Math.max(max, t.number), 0) + 1;
+      input.shape === "sweetheart"
+        ? 0
+        : initialTables
+            .filter((t) => t.shape !== "sweetheart")
+            .reduce((max, t) => Math.max(max, t.number), 0) + 1;
+
+    // Place the new table next to the existing cluster so it's immediately
+    // visible on the canvas instead of landing at (0,0) off-screen.
+    let position_x = 0;
+    let position_y = 0;
+    const placed = initialTables.filter(
+      (t) => (t.position_x ?? 0) !== 0 || (t.position_y ?? 0) !== 0
+    );
+    if (placed.length > 0) {
+      // Drop the new table to the right of the rightmost existing one
+      const rightmost = placed.reduce(
+        (acc, t) => ((t.position_x ?? 0) > acc ? (t.position_x ?? 0) : acc),
+        -Infinity
+      );
+      const avgY =
+        placed.reduce((s, t) => s + (t.position_y ?? 0), 0) / placed.length;
+      position_x = rightmost + 260;
+      position_y = Math.round(avgY);
+    }
+
     await supabase.from("tables").insert({
       wedding_id: weddingId,
       number: nextNumber,
       name: input.name,
       capacity: input.capacity,
       shape: input.shape,
+      position_x,
+      position_y,
     });
     router.refresh();
   }
@@ -282,6 +315,24 @@ export function SeatingManager({
       .update({ table_id: null, seat_number: null })
       .eq("table_id", tableId);
     await supabase.from("tables").delete().eq("id", tableId);
+
+    // Renumber remaining NON-SWEETHEART tables so numbering stays 1..N.
+    // Sweethearts live outside the sequence and keep number=0.
+    // Iterating in ascending order of current number means each reassignment
+    // targets a number that's either already correct or about to be freed.
+    const remaining = initialTables
+      .filter((t) => t.id !== tableId && t.shape !== "sweetheart")
+      .sort((a, b) => a.number - b.number);
+    for (let i = 0; i < remaining.length; i++) {
+      const want = i + 1;
+      if (remaining[i].number !== want) {
+        await supabase
+          .from("tables")
+          .update({ number: want })
+          .eq("id", remaining[i].id);
+      }
+    }
+
     if (selectedTableId === tableId) setSelectedTableId(null);
     router.refresh();
   }
@@ -559,8 +610,6 @@ export function SeatingManager({
 
       {/* Toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
-        <ViewToggle value={view} onChange={handleViewChange} />
-        <div className="mx-1 h-5 w-px bg-border" />
         <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5">
           <Plus className="h-3.5 w-3.5" />
           Add table
@@ -620,23 +669,11 @@ export function SeatingManager({
         selectedGuestId === null &&
         seatedConfirmed === 0 && (
           <p className="text-xs text-muted-foreground leading-relaxed -mt-3">
-            {view === "room" ? (
-              <>
-                <strong className="font-medium text-foreground/70">
-                  Drag tables
-                </strong>{" "}
-                to arrange them. Click a table to see its seats.
-                Click a name, then a seat — to place or swap.
-              </>
-            ) : (
-              <>
-                <strong className="font-medium text-foreground/70">
-                  Click any name
-                </strong>{" "}
-                — unassigned on the right, or seated on a table — then click a
-                seat. Hover a seated name to unseat (×) or press Delete.
-              </>
-            )}
+            <strong className="font-medium text-foreground/70">
+              Drag tables
+            </strong>{" "}
+            to arrange them. Click a table to see its seats. Click a name,
+            then a seat — to place or swap.
           </p>
         )}
       {initialTables.length > 0 &&
@@ -656,82 +693,31 @@ export function SeatingManager({
           </div>
         )}
 
-      {/* Main layout depending on view */}
-      {view === "room" ? (
-        <RoomViewLayout
-          initialTables={initialTables}
-          guests={guests}
-          unassigned={unassigned}
-          selectedTableId={selectedTableId}
-          setSelectedTableId={setSelectedTableId}
-          moveTable={moveTable}
-          selectedGuestId={selectedGuestId}
-          setSelectedGuestId={setSelectedGuestId}
-          selectedTable={selectedTable}
-          seatedAtSelected={seatedAtSelected}
-          handleSeatClick={handleSeatClick}
-          handleGuestPillClick={handleGuestPillClick}
-          handleGuestDragToSeat={handleGuestDragToSeat}
-          unseatGuest={unseatGuest}
-          deleteTable={deleteTable}
-          renameTable={renameTable}
-          rotateTable={rotateTable}
-          updateTableNotes={updateTableNotes}
-          toggleTableLock={toggleTableLock}
-          tagColor={tagColor}
-        />
-      ) : (
-        /* ── Grid view (preserved) ── */
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
-          <div>
-            {initialTables.length === 0 ? (
-              <div className="text-center py-12 border border-dashed border-border/60 rounded-lg">
-                <p className="text-sm text-muted-foreground mb-4">
-                  No tables yet. Pick a shape to get started.
-                </p>
-                <Button onClick={() => setAddOpen(true)} className="gap-1.5">
-                  <Plus className="h-4 w-4" />
-                  Add your first table
-                </Button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {initialTables.map((t) => {
-                  const seated = guests.filter((g) => g.table_id === t.id);
-                  return (
-                    <TableCard
-                      key={t.id}
-                      id={t.id}
-                      number={t.number}
-                      name={t.name}
-                      shape={t.shape as TableShape}
-                      capacity={t.capacity}
-                      rotation={(t.rotation as 0 | 90 | 180 | 270) ?? 0}
-                      seated={seated}
-                      isSelectable={selectedGuestId !== null}
-                      selectedGuestId={selectedGuestId}
-                      onSeatClick={(seat) => handleSeatClick(t.id, seat)}
-                      onGuestPillClick={handleGuestPillClick}
-                      onGuestUnassign={unseatGuest}
-                      onDelete={() => deleteTable(t.id)}
-                      onRename={(name) => renameTable(t.id, name)}
-                      tagColor={tagColor}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-            <UnassignedSidebar
-              guests={unassigned}
-              selectedGuestId={selectedGuestId}
-              onSelectGuest={setSelectedGuestId}
-            />
-          </aside>
-        </div>
-      )}
+      {/* Main layout — Room view is the only view */}
+      <RoomViewLayout
+        initialTables={initialTables}
+        guests={guests}
+        unassigned={unassigned}
+        selectedTableId={selectedTableId}
+        setSelectedTableId={setSelectedTableId}
+        moveTable={moveTable}
+        selectedGuestId={selectedGuestId}
+        setSelectedGuestId={setSelectedGuestId}
+        selectedTable={selectedTable}
+        seatedAtSelected={seatedAtSelected}
+        handleSeatClick={handleSeatClick}
+        handleGuestPillClick={handleGuestPillClick}
+        handleGuestDragToSeat={handleGuestDragToSeat}
+        unseatGuest={unseatGuest}
+        deleteTable={deleteTable}
+        renameTable={renameTable}
+        rotateTable={rotateTable}
+        updateTableNotes={updateTableNotes}
+        toggleTableLock={toggleTableLock}
+        sweetheartLabel={sweetheartLabel}
+        sweetheartVirtualSeats={sweetheartVirtualSeats}
+        tagColor={tagColor}
+      />
 
       <AddTableDialog
         open={addOpen}
@@ -857,6 +843,8 @@ interface RoomViewLayoutProps {
     tableId: string,
     locked: boolean
   ) => Promise<void> | void;
+  sweetheartLabel: string;
+  sweetheartVirtualSeats: Record<number, SeatAssignment>;
   tagColor: (tag: string | null) => string;
 }
 
@@ -880,6 +868,8 @@ function RoomViewLayout({
   rotateTable,
   updateTableNotes,
   toggleTableLock,
+  sweetheartLabel,
+  sweetheartVirtualSeats,
   tagColor,
 }: RoomViewLayoutProps) {
   const detailRef = useRef<HTMLDivElement>(null);
@@ -945,6 +935,10 @@ function RoomViewLayout({
             };
           }
         }
+        // Sweetheart tables render the couple's names as virtual seats (dim,
+        // non-interactive). Real assignments still win on the same seat.
+        const virtualSeats =
+          t.shape === "sweetheart" ? sweetheartVirtualSeats : undefined;
         return (
           <div
             className={cn(
@@ -957,6 +951,7 @@ function RoomViewLayout({
               shape={t.shape as TableShape}
               capacity={t.capacity}
               assigned={assigned}
+              virtualSeats={virtualSeats}
               size="md"
               rotation={(t.rotation as 0 | 90 | 180 | 270) ?? 0}
               fillState={
@@ -970,18 +965,14 @@ function RoomViewLayout({
             />
             <div className="text-center">
               <div className="text-xs font-medium text-foreground">
-                Table {t.number}
+                {t.shape === "sweetheart"
+                  ? sweetheartLabel
+                  : `Table ${t.number}`}
               </div>
-              {t.shape === "sweetheart" ? (
-                <div className="text-[10px] italic text-muted-foreground">
-                  The couple
+              {t.shape !== "sweetheart" && t.name && (
+                <div className="text-[10px] text-muted-foreground">
+                  {t.name}
                 </div>
-              ) : (
-                t.name && (
-                  <div className="text-[10px] text-muted-foreground">
-                    {t.name}
-                  </div>
-                )
               )}
               <div className="text-[10px] text-muted-foreground/60 tabular-nums">
                 {seated.length} / {t.capacity}
@@ -1007,6 +998,16 @@ function RoomViewLayout({
         notes={selectedTable.notes}
         locked={selectedTable.locked}
         seated={seatedAtSelected}
+        displayLabel={
+          selectedTable.shape === "sweetheart"
+            ? sweetheartLabel
+            : `Table ${selectedTable.number}`
+        }
+        virtualSeats={
+          selectedTable.shape === "sweetheart"
+            ? sweetheartVirtualSeats
+            : undefined
+        }
         isSelectable={selectedGuestId !== null}
         selectedGuestId={selectedGuestId}
         onClose={() => setSelectedTableId(null)}

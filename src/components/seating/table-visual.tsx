@@ -33,6 +33,13 @@ interface Props {
   shape: TableShape;
   capacity: number;
   assigned: Record<number, SeatAssignment>; // seat_number (1-based) → guest
+  /**
+   * Decorative seat assignments that render dimmed and are not interactive
+   * (no click handler, no hover ring). Currently used to pre-fill sweetheart
+   * tables with the couple's names without creating real guest records.
+   * Real `assigned` entries always win over virtual ones at the same seat.
+   */
+  virtualSeats?: Record<number, SeatAssignment>;
   selectedSeat?: number;
   hoverHint?: boolean; // true when user has a guest selected and is looking for a target
   onSeatClick?: (seatNumber: number) => void;
@@ -194,6 +201,7 @@ export function TableVisual({
   shape,
   capacity,
   assigned,
+  virtualSeats,
   selectedSeat,
   hoverHint = false,
   onSeatClick,
@@ -247,29 +255,36 @@ export function TableVisual({
           />
         )}
         {positions.map((pos) => {
-          const guest = assigned[pos.seatNumber];
+          const realGuest = assigned[pos.seatNumber];
+          const virtual = !realGuest ? virtualSeats?.[pos.seatNumber] : null;
+          const guest = realGuest ?? virtual ?? null;
+          const isVirtual = !realGuest && !!virtual;
           const isSelected = selectedSeat === pos.seatNumber;
           const ariaLabel = guest
-            ? `Seat ${pos.seatNumber}, ${guest.fullName}`
+            ? `Seat ${pos.seatNumber}, ${guest.fullName}${
+                isVirtual ? " (host)" : ""
+              }`
             : `Seat ${pos.seatNumber}, empty`;
 
           return (
             <g
               key={pos.seatNumber}
               role="button"
-              tabIndex={onSeatClick ? 0 : -1}
+              tabIndex={onSeatClick && !isVirtual ? 0 : -1}
               aria-label={ariaLabel}
               aria-pressed={isSelected}
               className={cn(
                 "outline-none transition-[transform,opacity] origin-center group/seat",
-                onSeatClick && "cursor-pointer",
+                onSeatClick && !isVirtual && "cursor-pointer",
                 hoverHint && !guest && "animate-pulse"
               )}
               onClick={
-                onSeatClick ? () => onSeatClick(pos.seatNumber) : undefined
+                onSeatClick && !isVirtual
+                  ? () => onSeatClick(pos.seatNumber)
+                  : undefined
               }
               onKeyDown={
-                onSeatClick
+                onSeatClick && !isVirtual
                   ? (e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
@@ -296,6 +311,7 @@ export function TableVisual({
                 className={cn(
                   "fill-none stroke-primary/40 opacity-0 transition-opacity",
                   onSeatClick &&
+                    !isVirtual &&
                     "group-hover/seat:opacity-100 group-focus-visible/seat:opacity-100"
                 )}
                 strokeWidth={2}
@@ -306,7 +322,9 @@ export function TableVisual({
                 r={seatRadius}
                 className={cn(
                   guest
-                    ? "fill-primary/90 stroke-primary"
+                    ? isVirtual
+                      ? "fill-primary/30 stroke-primary/40"
+                      : "fill-primary/90 stroke-primary"
                     : "fill-background stroke-muted-foreground/40",
                   isSelected && "stroke-primary"
                 )}
@@ -362,13 +380,6 @@ export function TableVisual({
                   </text>
                 )}
               </g>
-              {guest?.dietaryKind && (
-                <DietaryGlyph
-                  kind={guest.dietaryKind}
-                  cx={pos.cx + seatRadius - 2}
-                  cy={pos.cy - seatRadius + 2}
-                />
-              )}
             </g>
           );
         })}
@@ -403,71 +414,3 @@ export function TableVisual({
   );
 }
 
-// ── DietaryGlyph — small SVG indicator per dietary kind ───────────────
-
-function DietaryGlyph({
-  kind,
-  cx,
-  cy,
-}: {
-  kind: DietaryKind;
-  cx: number;
-  cy: number;
-}) {
-  if (!kind) return null;
-  if (kind === "vegan") {
-    return (
-      <g className="pointer-events-none">
-        <circle cx={cx} cy={cy} r={4} className="fill-background" />
-        <path
-          d={`M${cx - 2} ${cy + 1} q2 -5 4 -4 q0 4 -4 4 z`}
-          className="fill-emerald-600"
-        />
-      </g>
-    );
-  }
-  if (kind === "vegetarian") {
-    return (
-      <g className="pointer-events-none">
-        <circle cx={cx} cy={cy} r={4} className="fill-background" />
-        <line
-          x1={cx}
-          y1={cy - 2.5}
-          x2={cx}
-          y2={cy + 2.5}
-          className="stroke-amber-600"
-          strokeWidth={0.8}
-          strokeLinecap="round"
-        />
-        <line
-          x1={cx}
-          y1={cy - 1.5}
-          x2={cx - 1.5}
-          y2={cy - 0.5}
-          className="stroke-amber-600"
-          strokeWidth={0.8}
-          strokeLinecap="round"
-        />
-        <line
-          x1={cx}
-          y1={cy - 1.5}
-          x2={cx + 1.5}
-          y2={cy - 0.5}
-          className="stroke-amber-600"
-          strokeWidth={0.8}
-          strokeLinecap="round"
-        />
-      </g>
-    );
-  }
-  // "other" → four-pointed sparkle
-  return (
-    <g className="pointer-events-none">
-      <circle cx={cx} cy={cy} r={4} className="fill-background" />
-      <path
-        d={`M${cx} ${cy - 2.5} L${cx + 0.7} ${cy - 0.7} L${cx + 2.5} ${cy} L${cx + 0.7} ${cy + 0.7} L${cx} ${cy + 2.5} L${cx - 0.7} ${cy + 0.7} L${cx - 2.5} ${cy} L${cx - 0.7} ${cy - 0.7} Z`}
-        className="fill-amber-500"
-      />
-    </g>
-  );
-}

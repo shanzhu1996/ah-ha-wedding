@@ -17,7 +17,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { TableVisual, dietaryKindFor, type SeatAssignment } from "./table-visual";
+import {
+  TableVisual,
+  dietaryKindFor,
+  type SeatAssignment,
+} from "./table-visual";
 import type { TableShape } from "./table-templates";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -44,6 +48,10 @@ interface Props {
   notes: string | null;
   locked: boolean;
   seated: SeatedGuest[];
+  /** Explicit header label. Used for sweethearts → "Alice & Bob" or "Sweetheart". */
+  displayLabel?: string;
+  /** Virtual seats (dimmed, non-interactive). Real seated wins at same seat number. */
+  virtualSeats?: Record<number, SeatAssignment>;
   isSelectable: boolean;
   selectedGuestId: string | null;
   onClose: () => void;
@@ -147,6 +155,8 @@ export function TableDetailPanel({
   tagColor,
   notes,
   locked,
+  displayLabel,
+  virtualSeats,
 }: Props) {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(name ?? "");
@@ -192,7 +202,7 @@ export function TableDetailPanel({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
             <span className="text-xs font-semibold tracking-[0.12em] uppercase text-muted-foreground">
-              Table {number}
+              {displayLabel ?? `Table ${number}`}
             </span>
             <span className="text-xs text-muted-foreground/60">
               · {SHAPE_LABEL[shape]} · {seated.length} / {capacity}
@@ -290,6 +300,7 @@ export function TableDetailPanel({
             shape={shape}
             capacity={capacity}
             assigned={assigned}
+            virtualSeats={virtualSeats}
             selectedSeat={selectedSeat}
             hoverHint={isSelectable}
             onSeatClick={onSeatClick}
@@ -498,21 +509,34 @@ export function TableDetailPanel({
                         </button>
                       </>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => onSeatClick(seatNum)}
-                        className={cn(
-                          "flex-1 text-left pl-1 pr-2 py-0.5 rounded-md text-muted-foreground/60 italic hover:bg-muted/40 transition-colors",
-                          isSelectable && "text-muted-foreground",
-                          isDropTarget && "text-primary font-medium not-italic"
-                        )}
-                      >
-                        {isDropTarget
-                          ? "(drop here)"
-                          : isSelectable
-                            ? "(click to place here)"
-                            : "empty"}
-                      </button>
+                      virtualSeats?.[seatNum] ? (
+                        <span
+                          className="flex-1 pl-1 pr-2 py-0.5 text-muted-foreground italic"
+                          title="Seated by default — the couple"
+                        >
+                          {virtualSeats[seatNum].fullName}
+                          <span className="ml-1 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                            host
+                          </span>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onSeatClick(seatNum)}
+                          className={cn(
+                            "flex-1 text-left pl-1 pr-2 py-0.5 rounded-md text-muted-foreground/60 italic hover:bg-muted/40 transition-colors",
+                            isSelectable && "text-muted-foreground",
+                            isDropTarget &&
+                              "text-primary font-medium not-italic"
+                          )}
+                        >
+                          {isDropTarget
+                            ? "(drop here)"
+                            : isSelectable
+                              ? "(click to place here)"
+                              : "empty"}
+                        </button>
+                      )
                     )}
                   </li>
                 );

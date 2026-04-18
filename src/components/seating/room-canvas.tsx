@@ -169,9 +169,11 @@ export function RoomCanvas({
   }
 
   // Fit on first render once we have measurements + tables,
-  // and re-fit whenever viewport width changes (e.g. detail panel opens)
+  // re-fit on viewport width changes, AND re-fit when a new table arrives
+  // so it's immediately visible without scrolling.
   const didInitialFit = useRef(false);
   const lastWidthRef = useRef(0);
+  const lastCountRef = useRef(0);
   useEffect(() => {
     if (laidOutTables.length === 0 || viewport.width === 0) return;
     // Initial fit
@@ -179,8 +181,17 @@ export function RoomCanvas({
       fitToView();
       didInitialFit.current = true;
       lastWidthRef.current = viewport.width;
+      lastCountRef.current = laidOutTables.length;
       return;
     }
+    // Re-fit when a new table appears (so it lands inside the viewport)
+    if (laidOutTables.length > lastCountRef.current) {
+      fitToView();
+      lastCountRef.current = laidOutTables.length;
+      lastWidthRef.current = viewport.width;
+      return;
+    }
+    lastCountRef.current = laidOutTables.length;
     // Re-fit on any meaningful width change (preview pane, window resize, panel toggle)
     if (Math.abs(viewport.width - lastWidthRef.current) > 30) {
       fitToView();
