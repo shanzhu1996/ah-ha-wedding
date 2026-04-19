@@ -15,12 +15,18 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ExternalLink,
+  CalendarDays,
+  HandCoins,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -194,6 +200,52 @@ const statusColors: Record<string, string> = {
   done: "bg-green-100 text-green-700",
 };
 
+/**
+ * Build a Google search URL for the given terms. Preserved hint keywords
+ * (etsy, amazon, target) keep the intent visible in the results page.
+ */
+function buildSearchUrl(terms: string): string {
+  return `https://www.google.com/search?q=${encodeURIComponent(terms)}`;
+}
+
+/**
+ * Format a due-date string into a relative chip label + tone bucket.
+ * Past = overdue (red), <=7 days = urgent (amber), otherwise soft (muted).
+ */
+function formatDueDate(
+  dateStr: string | null
+): { label: string; full: string; tone: "overdue" | "urgent" | "soft" } | null {
+  if (!dateStr) return null;
+  const due = new Date(dateStr + "T00:00:00");
+  if (Number.isNaN(due.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round(
+    (due.getTime() - today.getTime()) / (24 * 60 * 60 * 1000)
+  );
+  const full = due.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  if (diffDays < 0) {
+    const days = Math.abs(diffDays);
+    return {
+      label: `${days}d overdue`,
+      full,
+      tone: "overdue",
+    };
+  }
+  if (diffDays === 0) return { label: "Due today", full, tone: "urgent" };
+  if (diffDays === 1) return { label: "Due tomorrow", full, tone: "urgent" };
+  if (diffDays <= 7) return { label: `Due in ${diffDays}d`, full, tone: "urgent" };
+  const short = due.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+  return { label: short, full, tone: "soft" };
+}
+
 const STATUS_CONFIG: Record<string, { label: string; icon: React.ComponentType<{ className?: string }> }> = {
   not_started: { label: "Not Started", icon: Circle },
   ordered: { label: "Ordered", icon: Clock },
@@ -213,6 +265,7 @@ interface ShoppingItem {
   vendor_source: string | null;
   notes: string | null;
   due_date: string | null;
+  covered_by_vendor: boolean;
 }
 
 interface ShoppingManagerProps {
@@ -250,6 +303,8 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
   const [searchTerms, setSearchTerms] = useState("");
   const [vendorSource, setVendorSource] = useState("");
   const [notes, setNotes] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [coveredByVendor, setCoveredByVendor] = useState(false);
 
   // Category stats
   const categoryCounts = CATEGORIES.map((cat) => {
@@ -263,8 +318,11 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
     ? Math.round((totalDone / initialItems.length) * 100)
     : 0;
 
-  const totalEstCost = initialItems.reduce((s, i) => s + (Number(i.estimated_cost) || 0), 0);
-  const totalActualCost = initialItems.reduce((s, i) => s + (Number(i.actual_cost) || 0), 0);
+  // Vendor-covered items don't count toward the couple's spend.
+  const couplePaidItems = initialItems.filter((i) => !i.covered_by_vendor);
+  const totalEstCost = couplePaidItems.reduce((s, i) => s + (Number(i.estimated_cost) || 0), 0);
+  const totalActualCost = couplePaidItems.reduce((s, i) => s + (Number(i.actual_cost) || 0), 0);
+  const coveredCount = initialItems.filter((i) => i.covered_by_vendor).length;
 
   const filtered = initialItems.filter((item) => {
     const matchesCat = activeCategory === "all" || item.category === activeCategory;
@@ -288,55 +346,104 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
     const statusConf = STATUS_CONFIG[item.status] || STATUS_CONFIG.not_started;
     const StatusIcon = statusConf.icon;
     const isDone = item.status === "done";
+    const isCovered = item.covered_by_vendor;
+    const due = formatDueDate(item.due_date);
 
     return (
       <div
         key={item.id}
-        className={`flex items-center gap-3 p-3 border rounded-lg group hover:bg-muted/30 ${
-          isDone ? "bg-green-50/60" : ""
-        }`}
+        className={cn(
+          "flex items-center gap-3 p-3 border rounded-lg group hover:bg-muted/30",
+          isDone && !isCovered && "bg-green-50/60",
+          isCovered && "bg-muted/40 border-dashed"
+        )}
       >
-        <Select
-          value={item.status}
-          onValueChange={(v) => quickStatusUpdate(item.id, v ?? "not_started")}
-        >
-          <SelectTrigger className="w-32 h-7 text-xs">
-            <span className="flex items-center gap-1.5">
-              <StatusIcon className="h-3.5 w-3.5" />
-              {statusConf.label}
-            </span>
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(STATUS_CONFIG).map(([value, conf]) => {
-              const Icon = conf.icon;
-              return (
-                <SelectItem key={value} value={value}>
-                  <span className="flex items-center gap-1.5">
-                    <Icon className="h-3.5 w-3.5" />
-                    {conf.label}
-                  </span>
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
+        {isCovered ? (
+          // Covered-by-vendor items aren't bought by the couple — no status
+          // dropdown, just a static badge + vendor.
+          <span className="inline-flex items-center gap-1.5 w-32 text-xs text-muted-foreground shrink-0">
+            <HandCoins className="h-3.5 w-3.5 text-primary/70" />
+            Covered
+          </span>
+        ) : (
+          <Select
+            value={item.status}
+            onValueChange={(v) => quickStatusUpdate(item.id, v ?? "not_started")}
+          >
+            <SelectTrigger className="w-32 h-7 text-xs">
+              <span className="flex items-center gap-1.5">
+                <StatusIcon className="h-3.5 w-3.5" />
+                {statusConf.label}
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(STATUS_CONFIG).map(([value, conf]) => {
+                const Icon = conf.icon;
+                return (
+                  <SelectItem key={value} value={value}>
+                    <span className="flex items-center gap-1.5">
+                      <Icon className="h-3.5 w-3.5" />
+                      {conf.label}
+                    </span>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        )}
 
         <div className="flex-1 min-w-0">
-          <span className={`text-sm font-medium ${isDone ? "line-through text-muted-foreground" : ""}`}>
-            {item.item_name}
-          </span>
-          {item.search_terms && (
-            <p className="text-xs text-muted-foreground truncate">
-              Search: {item.search_terms}
-            </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className={cn(
+                "text-sm font-medium",
+                isDone && !isCovered && "line-through text-muted-foreground",
+                isCovered && "text-muted-foreground"
+              )}
+            >
+              {item.item_name}
+            </span>
+            {isCovered && item.vendor_source && (
+              <span className="text-[11px] text-muted-foreground/70">
+                · by {item.vendor_source}
+              </span>
+            )}
+          </div>
+          {item.search_terms && !isCovered && (
+            <a
+              href={buildSearchUrl(item.search_terms)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors truncate max-w-full"
+              title="Search on Google"
+            >
+              <Search className="h-3 w-3 shrink-0" />
+              <span className="truncate">{item.search_terms}</span>
+              <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+            </a>
           )}
         </div>
+
+        {due && !isCovered && (
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full shrink-0",
+              due.tone === "overdue" && "bg-destructive/10 text-destructive",
+              due.tone === "urgent" && "bg-amber-500/10 text-amber-700",
+              due.tone === "soft" && "bg-muted/60 text-muted-foreground/80"
+            )}
+            title={`Due ${due.full}`}
+          >
+            <CalendarDays className="h-3 w-3" />
+            {due.label}
+          </span>
+        )}
 
         <Badge variant="outline" className="text-xs hidden sm:inline-flex">
           {item.category}
         </Badge>
 
-        {(item.estimated_cost || item.actual_cost) && (
+        {!isCovered && (item.estimated_cost || item.actual_cost) && (
           <span className="text-xs text-muted-foreground hidden sm:inline">
             ${Number(item.actual_cost || item.estimated_cost).toLocaleString()}
           </span>
@@ -399,6 +506,8 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
     setSearchTerms("");
     setVendorSource("");
     setNotes("");
+    setDueDate("");
+    setCoveredByVendor(false);
     setEditingItem(null);
   }
 
@@ -413,6 +522,8 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
     setSearchTerms(item.search_terms || "");
     setVendorSource(item.vendor_source || "");
     setNotes(item.notes || "");
+    setDueDate(item.due_date || "");
+    setCoveredByVendor(!!item.covered_by_vendor);
     setShowDialog(true);
   }
 
@@ -430,6 +541,8 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
       search_terms: searchTerms || null,
       vendor_source: vendorSource || null,
       notes: notes || null,
+      due_date: dueDate || null,
+      covered_by_vendor: coveredByVendor,
     };
     if (editingItem) {
       await supabase.from("shopping_items").update(payload).eq("id", editingItem.id);
@@ -494,6 +607,11 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
             {totalActualCost > 0 && (
               <p className="text-xs text-muted-foreground mt-1">
                 Actual: ${totalActualCost.toLocaleString()}
+              </p>
+            )}
+            {coveredCount > 0 && (
+              <p className="text-[11px] text-muted-foreground/70 mt-1">
+                + {coveredCount} covered by vendors
               </p>
             )}
           </CardContent>
@@ -676,10 +794,52 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
                 onChange={(e) => setSearchTerms(e.target.value)}
                 placeholder="wedding card box Etsy"
               />
+              <p className="text-[11px] text-muted-foreground/70">
+                Click the search row on the item to open a Google search.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Due date</Label>
+                <Input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Vendor / Source</Label>
+                <Input
+                  value={vendorSource}
+                  onChange={(e) => setVendorSource(e.target.value)}
+                  placeholder="e.g., Etsy, Target, Caterer"
+                />
+              </div>
+            </div>
+            <div className="rounded-md border border-dashed border-border/70 bg-muted/30 p-3">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <Checkbox
+                  checked={coveredByVendor}
+                  onCheckedChange={(v) => setCoveredByVendor(v === true)}
+                  className="mt-0.5"
+                />
+                <div className="space-y-0.5">
+                  <p className="text-sm font-medium">Covered by vendor</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Check if a booked vendor provides this (e.g., caterer
+                    brings napkins). It won&apos;t count toward your spend.
+                  </p>
+                </div>
+              </label>
             </div>
             <div className="space-y-2">
-              <Label>Vendor / Source</Label>
-              <Input value={vendorSource} onChange={(e) => setVendorSource(e.target.value)} />
+              <Label>Notes</Label>
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Anything worth remembering — color, SKU, backup plan…"
+                className="min-h-[60px]"
+              />
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => { setShowDialog(false); resetForm(); }}>Cancel</Button>
