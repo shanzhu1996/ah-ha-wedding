@@ -280,8 +280,21 @@ interface ShoppingManagerProps {
 
 export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, partner1Name, partner2Name, partner1Attire, partner2Attire }: ShoppingManagerProps) {
   const router = useRouter();
-  const CATEGORIES = getCategories(partner1Name, partner2Name);
+  const BUILT_IN_CATEGORIES = getCategories(partner1Name, partner2Name);
   const DEFAULT_ITEMS = getDefaultItems(partner1Name, partner2Name, partner1Attire, partner2Attire);
+  // Union built-ins with any categories the couple has added on items.
+  // Couples can type a new category name in the Add/Edit dialog — it
+  // materializes as soon as the first item is saved with that name.
+  const CATEGORIES = [
+    ...BUILT_IN_CATEGORIES,
+    ...Array.from(
+      new Set(
+        initialItems
+          .map((i) => i.category)
+          .filter((c) => c && !BUILT_IN_CATEGORIES.includes(c))
+      )
+    ),
+  ];
   const [activeCategory, setActiveCategory] = useState("all");
   const [viewMode, setViewMode] = useState<"flat" | "grouped">("grouped");
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
@@ -744,14 +757,17 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Category</Label>
-                <Select value={category} onValueChange={(v) => setCategory(v ?? CATEGORIES[0])}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {CATEGORIES.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Input
+                  list="shopping-category-suggestions"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="Pick or type a new one"
+                />
+                <datalist id="shopping-category-suggestions">
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
               </div>
               <div className="space-y-2">
                 <Label>Status</Label>
