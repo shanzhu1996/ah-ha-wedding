@@ -15,7 +15,7 @@ import {
   Sparkles,
   BookOpen,
   Package,
-  Share2,
+  FileText,
   Globe,
   PartyPopper,
   Settings,
@@ -69,7 +69,7 @@ const moreGroups = [
       { href: "/tips", icon: Sparkles, label: "Tips" },
       { href: "/booklets", icon: BookOpen, label: "Booklets" },
       { href: "/packing", icon: Package, label: "Packing" },
-      { href: "/share", icon: Share2, label: "Share" },
+      { href: "/handouts", icon: FileText, label: "Handouts" },
     ],
   },
   {

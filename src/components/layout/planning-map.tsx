@@ -15,7 +15,7 @@ import {
   Sparkles,
   BookOpen,
   Package,
-  Share2,
+  FileText,
   Heart,
   PartyPopper,
   ArrowRight,
@@ -83,7 +83,7 @@ const STEPS: Step[] = [
       { label: "Tips", tagline: "Advice from experience", href: "/tips", icon: Sparkles },
       { label: "Booklets", tagline: "Brief your vendors", href: "/booklets", icon: BookOpen },
       { label: "Packing", tagline: "What goes where?", href: "/packing", icon: Package },
-      { label: "Share", tagline: "Brief your party", href: "/share", icon: Share2 },
+      { label: "Handouts", tagline: "Brief your party", href: "/handouts", icon: FileText },
     ],
   },
 ];

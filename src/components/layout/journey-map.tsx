@@ -13,7 +13,7 @@ import {
   Globe,
   BookOpen,
   Package,
-  Share2,
+  FileText,
   Sparkles,
   PartyPopper,
   Check,
@@ -72,7 +72,7 @@ const PHASES: Phase[] = [
     features: [
       { key: "booklets", label: "Booklets", href: "/booklets", icon: BookOpen },
       { key: "packing", label: "Packing", href: "/packing", icon: Package },
-      { key: "share", label: "Share", href: "/share", icon: Share2 },
+      { key: "handouts", label: "Handouts", href: "/handouts", icon: FileText },
     ],
   },
   {
