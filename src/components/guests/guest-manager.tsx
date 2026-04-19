@@ -740,6 +740,92 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
                   />
                 </div>
                 <div className="space-y-2">
+                  <Label>Role / Relationship</Label>
+                  {(() => {
+                    const presetTags = [
+                      "Maid of honor",
+                      "Best man",
+                      "Bridesmaid",
+                      "Groomsman",
+                      "Parent",
+                      "Grandparent",
+                      "Sibling",
+                      "Family",
+                      "Friend",
+                      "Colleague",
+                      "Plus one",
+                    ];
+                    const normalized = relationshipTag.trim();
+                    const matchesPreset = presetTags.some(
+                      (t) => t.toLowerCase() === normalized.toLowerCase()
+                    );
+                    const selectValue = !normalized
+                      ? ""
+                      : matchesPreset
+                        ? presetTags.find(
+                            (t) =>
+                              t.toLowerCase() === normalized.toLowerCase()
+                          )!
+                        : "__custom__";
+                    return (
+                      <>
+                        <Select
+                          value={selectValue}
+                          onValueChange={(v) => {
+                            const next = v ?? "";
+                            if (next === "__custom__") {
+                              // Keep existing custom value; if none, clear so
+                              // the free-text input starts blank.
+                              if (matchesPreset) setRelationshipTag("");
+                            } else if (next === "") {
+                              setRelationshipTag("");
+                            } else {
+                              setRelationshipTag(next);
+                            }
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="None">
+                              {(v) =>
+                                !v
+                                  ? "None"
+                                  : v === "__custom__"
+                                    ? "Custom…"
+                                    : (v as string)
+                              }
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {presetTags.map((t) => (
+                              <SelectItem key={t} value={t}>
+                                {t}
+                              </SelectItem>
+                            ))}
+                            <SelectItem value="__custom__">
+                              Custom…
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {selectValue === "__custom__" && (
+                          <Input
+                            value={relationshipTag}
+                            onChange={(e) =>
+                              setRelationshipTag(e.target.value)
+                            }
+                            placeholder="Type a role (e.g. Officiant's partner, Niece)"
+                            className="mt-2"
+                          />
+                        )}
+                      </>
+                    );
+                  })()}
+                  <p className="text-[11px] text-muted-foreground">
+                    Tagging your wedding party auto-generates their Handout
+                    and helps Packing, Seating, and Day-of Details suggest
+                    the right people.
+                  </p>
+                </div>
+                <div className="space-y-2">
                   <Label>Notes</Label>
                   <Textarea
                     value={notes}
