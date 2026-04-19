@@ -46,7 +46,13 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { ConfettiCanvas, triggerConfetti } from "@/components/ui/confetti";
 
-type AttirePreference = "dress" | "suit" | "undecided" | null;
+type AttirePreference =
+  | "dress"
+  | "suit"
+  | "mix"
+  | "custom"
+  | "undecided"
+  | null;
 
 const DRESS_ITEMS: { name: string; search: string }[] = [
   { name: "Wedding gown", search: "wedding dress bridal gown" },
@@ -77,7 +83,10 @@ const SUIT_ITEMS: { name: string; search: string }[] = [
 function getAttireItems(attire: AttirePreference): { name: string; search: string }[] {
   if (attire === "dress") return DRESS_ITEMS;
   if (attire === "suit") return SUIT_ITEMS;
-  // undecided or null: show both combined
+  if (attire === "mix") return [...DRESS_ITEMS, ...SUIT_ITEMS];
+  if (attire === "custom") return []; // couple chose to manage themselves
+  // undecided or null: show both combined as a sensible first pass until the
+  // couple answers the in-product prompt and commits to a style.
   return [...DRESS_ITEMS, ...SUIT_ITEMS];
 }
 
@@ -624,6 +633,146 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
     router.refresh();
   }
 
+  /**
+   * Commit the couple's attire choice for partner1 / partner2. Triggered
+   * from the inline prompt shown inside an "{Name}'s Attire" category
+   * while the couple is still "undecided".
+   *
+   * Safe-reseed:
+   *   - Only deletes built-in default items (matching DRESS/SUIT names)
+   *     that are still in default state — never touches custom items or
+   *     anything the couple has edited (status / cost / notes).
+   *   - Inserts the desired list for the chosen style, skipping names
+   *     that are already present.
+   */
+  async function pickAttire(
+    which: "partner1" | "partner2",
+    choice: "dress" | "suit" | "mix" | "custom"
+  ) {
+    const supabase = createClient();
+    const column = which === "partner1" ? "partner1_attire" : "partner2_attire";
+    const partnerName = which === "partner1" ? partner1Name : partner2Name;
+    const categoryName = `${partnerName}'s Attire`;
+
+    const desired =
+      choice === "dress"
+        ? DRESS_ITEMS
+        : choice === "suit"
+          ? SUIT_ITEMS
+          : choice === "mix"
+            ? [...DRESS_ITEMS, ...SUIT_ITEMS]
+            : [];
+    const desiredNames = new Set(desired.map((d) => d.name));
+    const allDefaultNames = new Set(
+      [...DRESS_ITEMS, ...SUIT_ITEMS].map((i) => i.name)
+    );
+
+    const existing = initialItems.filter((i) => i.category === categoryName);
+    const toDelete = existing.filter(
+      (i) =>
+        allDefaultNames.has(i.item_name) &&
+        !desiredNames.has(i.item_name) &&
+        i.status === "not_started" &&
+        !i.actual_cost &&
+        !i.estimated_cost &&
+        !i.notes &&
+        !i.covered_by_vendor
+    );
+    const existingNames = new Set(existing.map((i) => i.item_name));
+    const toAdd = desired.filter((d) => !existingNames.has(d.name));
+
+    // Persist the choice before mutating items so a mid-way failure
+    // doesn't leave an "undecided" wedding with a curated list.
+    await supabase
+      .from("weddings")
+      .update({ [column]: choice })
+      .eq("id", weddingId);
+
+    if (toDelete.length > 0) {
+      await supabase
+        .from("shopping_items")
+        .delete()
+        .in(
+          "id",
+          toDelete.map((i) => i.id)
+        );
+    }
+    if (toAdd.length > 0) {
+      await supabase.from("shopping_items").insert(
+        toAdd.map((d) => ({
+          wedding_id: weddingId,
+          category: categoryName,
+          item_name: d.name,
+          search_terms: d.search || null,
+          status: "not_started",
+          quantity: 1,
+        }))
+      );
+    }
+
+    router.refresh();
+  }
+
+  /**
+   * Returns the prompt metadata for a given attire category when the
+   * couple hasn't committed to a style yet. null otherwise (no prompt).
+   */
+  function attirePromptFor(
+    category: string
+  ): { partner: "partner1" | "partner2"; name: string } | null {
+    if (
+      category === `${partner1Name}'s Attire` &&
+      (partner1Attire === "undecided" || partner1Attire === null)
+    ) {
+      return { partner: "partner1", name: partner1Name };
+    }
+    if (
+      category === `${partner2Name}'s Attire` &&
+      (partner2Attire === "undecided" || partner2Attire === null)
+    ) {
+      return { partner: "partner2", name: partner2Name };
+    }
+    return null;
+  }
+
+  function renderAttirePrompt(
+    partner: "partner1" | "partner2",
+    name: string
+  ) {
+    const choices: {
+      value: "dress" | "suit" | "mix" | "custom";
+      label: string;
+      emoji: string;
+    }[] = [
+      { value: "dress", label: "Dress", emoji: "👗" },
+      { value: "suit", label: "Suit", emoji: "🤵" },
+      { value: "mix", label: "Mix", emoji: "🎭" },
+      { value: "custom", label: "I'll add my own", emoji: "✏️" },
+    ];
+    return (
+      <div className="rounded-lg border border-dashed border-primary/30 bg-primary/[0.04] p-4 mb-3">
+        <p className="text-sm font-medium">What will {name} wear?</p>
+        <p className="text-xs text-muted-foreground mt-0.5 mb-3">
+          Pick a style — we&apos;ll curate a shopping list. You can change
+          it anytime.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {choices.map((c) => (
+            <button
+              key={c.value}
+              type="button"
+              onClick={() => pickAttire(partner, c.value)}
+              className="flex items-center gap-2 px-3 py-2 rounded-md border border-border/70 bg-background text-sm hover:border-primary/60 hover:bg-primary/5 transition-colors text-left"
+            >
+              <span className="text-base">{c.emoji}</span>
+              <span>{c.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <ConfettiCanvas />
@@ -785,6 +934,12 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <div className="space-y-2 mt-2 ml-7">
+                      {(() => {
+                        const prompt = attirePromptFor(cc.category);
+                        return prompt
+                          ? renderAttirePrompt(prompt.partner, prompt.name)
+                          : null;
+                      })()}
                       {catItems.length === 0 ? (
                         <p className="text-xs text-muted-foreground py-2">No items match your search.</p>
                       ) : (
