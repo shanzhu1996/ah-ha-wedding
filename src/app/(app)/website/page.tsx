@@ -8,12 +8,20 @@ export default async function WebsitePage() {
   if (!wedding) redirect("/onboarding");
 
   const supabase = await createClient();
-  const { data: events } = await supabase
-    .from("timeline_events")
-    .select("id, type, event_time, title, description, sort_order")
-    .eq("wedding_id", wedding.id)
-    .eq("type", "day_of")
-    .order("sort_order", { ascending: true });
+
+  const [{ data: events }, { data: website }] = await Promise.all([
+    supabase
+      .from("timeline_events")
+      .select("id, type, event_time, title, description, sort_order")
+      .eq("wedding_id", wedding.id)
+      .eq("type", "day_of")
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("wedding_websites")
+      .select("*")
+      .eq("wedding_id", wedding.id)
+      .maybeSingle(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -29,6 +37,7 @@ export default async function WebsitePage() {
         </p>
       </div>
       <WebsiteBuilder
+        weddingId={wedding.id}
         wedding={{
           partner1_name: wedding.partner1_name,
           partner2_name: wedding.partner2_name,
@@ -39,6 +48,7 @@ export default async function WebsitePage() {
           reception_format: wedding.reception_format,
         }}
         timelineEvents={events || []}
+        initialWebsite={website}
       />
     </div>
   );
