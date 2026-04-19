@@ -8,11 +8,44 @@ export default async function MusicPage() {
   if (!wedding) redirect("/onboarding");
 
   const supabase = await createClient();
-  const { data: songs } = await supabase
-    .from("music_selections")
-    .select("*")
-    .eq("wedding_id", wedding.id)
-    .order("sort_order", { ascending: true });
+  const [songsRes, vendorsRes, planRes] = await Promise.all([
+    supabase
+      .from("music_selections")
+      .select("*")
+      .eq("wedding_id", wedding.id)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("vendors")
+      .select("id, type, company_name")
+      .eq("wedding_id", wedding.id)
+      .in("type", ["dj", "band", "mc"]),
+    supabase
+      .from("wedding_day_details")
+      .select("data")
+      .eq("wedding_id", wedding.id)
+      .eq("section", "entertainment_plan")
+      .maybeSingle(),
+  ]);
 
-  return <MusicManager songs={songs || []} weddingId={wedding.id} />;
+  const rawPlan = planRes.data?.data as
+    | { phase_assignments?: Record<string, string> }
+    | null
+    | undefined;
+  const phaseAssignments: Record<string, string> =
+    rawPlan && typeof rawPlan === "object" && rawPlan.phase_assignments
+      ? Object.fromEntries(
+          Object.entries(rawPlan.phase_assignments).filter(
+            ([, v]) => typeof v === "string" && v.length > 0
+          )
+        )
+      : {};
+
+  return (
+    <MusicManager
+      songs={songsRes.data || []}
+      weddingId={wedding.id}
+      entertainmentVendors={vendorsRes.data || []}
+      initialPhaseAssignments={phaseAssignments}
+    />
+  );
 }

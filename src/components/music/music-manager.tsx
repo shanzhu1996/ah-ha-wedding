@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -12,6 +12,9 @@ import {
   ChevronDown,
   ChevronRight,
   Pencil,
+  Disc3,
+  Music2,
+  Mic,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,10 +43,30 @@ interface Song {
   created_at: string;
 }
 
+interface EntertainmentVendor {
+  id: string;
+  type: "dj" | "band" | "mc" | string;
+  company_name: string;
+}
+
 interface MusicManagerProps {
   songs: Song[];
   weddingId: string;
+  entertainmentVendors: EntertainmentVendor[];
+  initialPhaseAssignments: Record<string, string>;
 }
+
+// Only DJ and Band actually PLAY the music. MC announces but doesn't play.
+// Couples pick DJ vs Band per phase; MC is separate role (covered in booklet).
+function isMusicVendor(v: EntertainmentVendor): boolean {
+  return v.type === "dj" || v.type === "band";
+}
+
+const VENDOR_TYPE_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
+  dj: Disc3,
+  band: Music2,
+  mc: Mic,
+};
 
 // ── Phases: grouped by wedding day flow ────────────────────────────────
 
@@ -97,10 +120,61 @@ const ALL_PHASES = PHASE_GROUPS.flatMap((g) => g.phases);
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerProps) {
+export function MusicManager({
+  songs: initialSongs,
+  weddingId,
+  entertainmentVendors,
+  initialPhaseAssignments,
+}: MusicManagerProps) {
   const router = useRouter();
   const [expandedPhase, setExpandedPhase] = useState<string | null>(null);
   const phaseRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Per-phase vendor assignment. Only meaningful when the couple has
+  // ≥2 music vendors (DJ + band). With one or none, every phase goes to
+  // that vendor (or none) and the selector is hidden.
+  const musicVendors = entertainmentVendors.filter(isMusicVendor);
+  const showPhaseAssigner = musicVendors.length >= 2;
+  const [phaseAssignments, setPhaseAssignments] =
+    useState<Record<string, string>>(initialPhaseAssignments);
+  const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipInitialSave = useRef(true);
+
+  useEffect(() => {
+    if (skipInitialSave.current) {
+      skipInitialSave.current = false;
+      return;
+    }
+    if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    saveTimeout.current = setTimeout(async () => {
+      const supabase = createClient();
+      await supabase.from("wedding_day_details").upsert(
+        {
+          wedding_id: weddingId,
+          section: "entertainment_plan",
+          data: { phase_assignments: phaseAssignments },
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "wedding_id,section" }
+      );
+    }, 600);
+    return () => {
+      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    };
+  }, [phaseAssignments, weddingId]);
+
+  const assignPhase = useCallback(
+    (phaseValue: string, vendorId: string | null) => {
+      setPhaseAssignments((prev) => {
+        if (!vendorId) {
+          const { [phaseValue]: _removed, ...rest } = prev;
+          return rest;
+        }
+        return { ...prev, [phaseValue]: vendorId };
+      });
+    },
+    []
+  );
 
   // Deep-link support: open /music#<phase> to auto-expand + scroll that phase.
   // Used by the Day-of Details MusicLink component.
@@ -304,6 +378,32 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
               <span className="text-xs text-muted-foreground ml-1.5">— {phase.description.split(" · ")[0]}</span>
             )}
           </div>
+          {/* Vendor assignment pill — only when 2+ music vendors exist.
+              Rendered as a simple inline select; clicks don't bubble up
+              to the row's expand button. */}
+          {showPhaseAssigner ? (
+            <span
+              className="shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <select
+                value={phaseAssignments[phase.value] ?? ""}
+                onChange={(e) =>
+                  assignPhase(phase.value, e.target.value || null)
+                }
+                className="text-[11px] rounded-full border border-border/60 bg-background px-2 py-0.5 hover:border-primary/40 focus:outline-none focus:border-primary/60 cursor-pointer"
+                aria-label={`Assign ${phase.label} to vendor`}
+              >
+                <option value="">— Unassigned</option>
+                {musicVendors.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.type === "dj" ? "🎧" : "🎸"} {v.company_name}
+                  </option>
+                ))}
+              </select>
+            </span>
+          ) : null}
+
           {/* Count: "3 / 1-2" — yours vs suggested */}
           {(() => {
             const guidancePart = phase.description.split(" · ")[1];
@@ -367,6 +467,20 @@ export function MusicManager({ songs: initialSongs, weddingId }: MusicManagerPro
       <p className="text-sm text-muted-foreground max-w-xl leading-relaxed">
         Plan songs for every moment of your day. Your DJ or band will use this as their playbook.
       </p>
+
+      {/* Assigner intro — only when 2+ music vendors hired */}
+      {showPhaseAssigner ? (
+        <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3 max-w-2xl">
+          <p className="text-xs text-foreground/80 leading-relaxed">
+            <span className="font-semibold">
+              You have {musicVendors.length} music vendors.
+            </span>{" "}
+            Use the dropdown on each phase to say who plays it. Their
+            booklets will show only the phases they&apos;re responsible
+            for.
+          </p>
+        </div>
+      ) : null}
 
       {/* Phase groups */}
       {PHASE_GROUPS.map((group) => (
