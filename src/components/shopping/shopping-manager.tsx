@@ -695,32 +695,56 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
         </div>
       </div>
 
-      {/* View Mode Toggle */}
-      <div className="flex gap-2 flex-wrap items-center">
-        <Button
-          variant={viewMode === "grouped" ? "default" : "outline"}
-          size="sm"
-          onClick={() => { setViewMode("grouped"); setActiveCategory("all"); }}
-        >
-          By Category
-        </Button>
-        <Button
-          variant={viewMode === "flat" && activeCategory === "all" ? "default" : "outline"}
-          size="sm"
-          onClick={() => { setViewMode("flat"); setActiveCategory("all"); }}
-        >
-          All ({initialItems.length})
-        </Button>
-        {viewMode === "flat" && categoryCounts.map((cc) => (
-          <Button
-            key={cc.category}
-            variant={activeCategory === cc.category ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveCategory(cc.category)}
+      {/* View Mode Toggle — segmented control style so it reads as a view
+          switcher, not as a second primary action (was too similar to
+          "Add Item"). Category filter buttons stay as outline chips. */}
+      <div className="flex gap-3 flex-wrap items-center">
+        <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => {
+              setViewMode("grouped");
+              setActiveCategory("all");
+            }}
+            className={cn(
+              "px-3 py-1 rounded-md transition-colors",
+              viewMode === "grouped"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
           >
-            {cc.category} ({cc.done}/{cc.total})
-          </Button>
-        ))}
+            By Category
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setViewMode("flat");
+              setActiveCategory("all");
+            }}
+            className={cn(
+              "px-3 py-1 rounded-md transition-colors",
+              viewMode === "flat" && activeCategory === "all"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            All ({initialItems.length})
+          </button>
+        </div>
+        {viewMode === "flat" && (
+          <div className="flex gap-2 flex-wrap items-center">
+            {categoryCounts.map((cc) => (
+              <Button
+                key={cc.category}
+                variant={activeCategory === cc.category ? "secondary" : "outline"}
+                size="sm"
+                onClick={() => setActiveCategory(cc.category)}
+              >
+                {cc.category} ({cc.done}/{cc.total})
+              </Button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Items List */}
