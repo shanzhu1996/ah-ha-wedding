@@ -84,6 +84,7 @@ interface ShoppingItem {
   vendor_source: string | null;
   notes: string | null;
   due_date: string | null;
+  covered_by_vendor: boolean;
 }
 
 interface BudgetDashboardProps {
@@ -173,10 +174,13 @@ export function BudgetDashboard({
     return { booked, paid, scheduled, total: paid + scheduled };
   }, [vendors, budgetItems, paymentsByVendor]);
 
-  // From shopping: received items (paid) + ordered/unstarted items (scheduled)
+  // From shopping: received items (paid) + ordered/unstarted items (scheduled).
+  // Covered-by-vendor items are excluded — the vendor provides them, so the
+  // couple's shopping spend shouldn't double-count what's already in a
+  // vendor contract.
   const shoppingTotals = useMemo(() => {
     const withCost = shoppingItems.filter(
-      (s) => (s.actual_cost ?? s.estimated_cost ?? 0) > 0
+      (s) => !s.covered_by_vendor && (s.actual_cost ?? s.estimated_cost ?? 0) > 0
     );
     const paid = withCost
       .filter((s) => s.status === "received" || s.status === "done")
@@ -186,6 +190,27 @@ export function BudgetDashboard({
       .reduce((sum, s) => sum + (s.actual_cost ?? s.estimated_cost ?? 0), 0);
     return { items: withCost, paid, scheduled, total: paid + scheduled };
   }, [shoppingItems]);
+
+  // Group shopping items by shopping category for a cleaner breakdown — so
+  // couples see "Stationery $420 · Reception Decor $1,200" at a glance
+  // instead of a flat list where big and small items blur together.
+  const shoppingByCategory = useMemo(() => {
+    const groups: Record<
+      string,
+      { total: number; items: ShoppingItem[] }
+    > = {};
+    for (const item of shoppingTotals.items) {
+      const cat = item.category || "Uncategorized";
+      if (!groups[cat]) groups[cat] = { total: 0, items: [] };
+      const cost = item.actual_cost ?? item.estimated_cost ?? 0;
+      groups[cat].total += cost;
+      groups[cat].items.push(item);
+    }
+    // Sort by total descending — biggest spend shown first.
+    return Object.entries(groups)
+      .map(([category, g]) => ({ category, ...g }))
+      .sort((a, b) => b.total - a.total);
+  }, [shoppingTotals.items]);
 
   // From custom items (budget_items with no vendor_id and no shopping_item_id)
   const customTotals = useMemo(() => {
@@ -459,43 +484,58 @@ export function BudgetDashboard({
           </button>
 
           {expandedSections.has("shopping") && (
-            shoppingTotals.items.length > 0 ? (
-              <div className="space-y-1 pl-6">
-                {shoppingTotals.items.slice(0, 8).map((item) => {
-                  const cost = item.actual_cost ?? item.estimated_cost ?? 0;
-                  const isSpent = item.status === "received" || item.status === "done";
-                  return (
-                    <Link
-                      key={item.id}
-                      href="/shopping"
-                      className="flex items-center gap-3 py-2 px-2 -mx-2 rounded-lg hover:bg-muted/20 transition-colors group"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm text-foreground">{item.item_name}</span>
-                          <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">
-                            {item.category}
-                          </span>
-                          <span className={cn(
-                            "text-[10px] font-medium px-1.5 py-0.5 rounded-full",
-                            isSpent ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-800 border border-amber-200"
-                          )}>
-                            {item.status}
-                          </span>
-                        </div>
-                      </div>
-                      <span className="text-sm font-medium text-foreground/80 tabular-nums">
-                        {formatCurrency(cost)}
+            shoppingByCategory.length > 0 ? (
+              <div className="space-y-4 pl-6">
+                {shoppingByCategory.map((group) => (
+                  <div key={group.category}>
+                    <div className="flex items-baseline justify-between text-[11px] font-semibold tracking-[0.12em] uppercase text-foreground/70 mb-1 pb-1 border-b border-border/30">
+                      <span>
+                        {group.category}
+                        <span className="text-muted-foreground/60 normal-case tracking-normal font-normal ml-1">
+                          · {group.items.length}
+                        </span>
                       </span>
-                    </Link>
-                  );
-                })}
-                {shoppingTotals.items.length > 8 && (
-                  <Link href="/shopping" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-1">
-                    + {shoppingTotals.items.length - 8} more in Shopping
-                    <ChevronRight className="h-3 w-3" />
-                  </Link>
-                )}
+                      <span className="tabular-nums">
+                        {formatCurrency(group.total)}
+                      </span>
+                    </div>
+                    <div className="space-y-0.5">
+                      {group.items.map((item) => {
+                        const cost = item.actual_cost ?? item.estimated_cost ?? 0;
+                        const isSpent =
+                          item.status === "received" || item.status === "done";
+                        return (
+                          <Link
+                            key={item.id}
+                            href="/shopping"
+                            className="flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-lg hover:bg-muted/20 transition-colors group"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm text-foreground">
+                                  {item.item_name}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "text-[10px] font-medium px-1.5 py-0.5 rounded-full",
+                                    isSpent
+                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                      : "bg-amber-50 text-amber-800 border border-amber-200"
+                                  )}
+                                >
+                                  {item.status}
+                                </span>
+                              </div>
+                            </div>
+                            <span className="text-sm font-medium text-foreground/80 tabular-nums">
+                              {formatCurrency(cost)}
+                            </span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
               <Link href="/shopping" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">

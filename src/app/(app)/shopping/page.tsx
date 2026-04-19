@@ -33,6 +33,7 @@ export default async function ShoppingPage() {
         partner2Name={wedding.partner2_name}
         partner1Attire={wedding.partner1_attire}
         partner2Attire={wedding.partner2_attire}
+        budgetTotal={wedding.budget_total}
       />
     </div>
   );

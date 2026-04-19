@@ -42,6 +42,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { ConfettiCanvas, triggerConfetti } from "@/components/ui/confetti";
 
@@ -307,9 +308,10 @@ interface ShoppingManagerProps {
   partner2Name: string;
   partner1Attire: AttirePreference;
   partner2Attire: AttirePreference;
+  budgetTotal: number | null;
 }
 
-export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, partner1Name, partner2Name, partner1Attire, partner2Attire }: ShoppingManagerProps) {
+export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, partner1Name, partner2Name, partner1Attire, partner2Attire, budgetTotal }: ShoppingManagerProps) {
   const router = useRouter();
   const BUILT_IN_CATEGORIES = getCategories(partner1Name, partner2Name);
   const DEFAULT_ITEMS = getDefaultItems(partner1Name, partner2Name, partner1Attire, partner2Attire);
@@ -657,6 +659,15 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
               <p className="text-[11px] text-muted-foreground/70 mt-1">
                 + {coveredCount} covered by vendors
               </p>
+            )}
+            {budgetTotal && budgetTotal > 0 && totalEstCost > 0 && (
+              <Link
+                href="/budget"
+                className="text-[11px] text-muted-foreground/70 hover:text-primary transition-colors mt-1 inline-flex items-center gap-1"
+              >
+                ~{Math.round((totalEstCost / budgetTotal) * 100)}% of $
+                {budgetTotal.toLocaleString()} budget · View in Budget ↗
+              </Link>
             )}
           </CardContent>
         </Card>
