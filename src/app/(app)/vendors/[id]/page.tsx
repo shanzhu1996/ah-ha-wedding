@@ -35,13 +35,21 @@ export default async function VendorDetailPage({
       .limit(1)
       .single();
 
-    const { data: payments } = vendor
-      ? await supabase
-          .from("budget_items")
-          .select("*")
-          .eq("vendor_id", vendor.id)
-          .order("created_at", { ascending: true })
-      : { data: [] as never[] };
+    const [{ data: payments }, { data: coveredItems }] = vendor
+      ? await Promise.all([
+          supabase
+            .from("budget_items")
+            .select("*")
+            .eq("vendor_id", vendor.id)
+            .order("created_at", { ascending: true }),
+          supabase
+            .from("shopping_items")
+            .select("id, category, item_name, status, notes")
+            .eq("covered_by_vendor_id", vendor.id)
+            .order("category", { ascending: true })
+            .order("item_name", { ascending: true }),
+        ])
+      : [{ data: [] as never[] }, { data: [] as never[] }];
 
     return (
       <VendorDetail
@@ -50,24 +58,32 @@ export default async function VendorDetailPage({
         weddingId={wedding.id}
         weddingDate={wedding.wedding_date}
         initialPayments={payments || []}
+        coveredItems={coveredItems || []}
       />
     );
   }
 
   // id is a UUID — fetch by ID
-  const [{ data: vendor }, { data: payments }] = await Promise.all([
-    supabase
-      .from("vendors")
-      .select("*")
-      .eq("id", id)
-      .eq("wedding_id", wedding.id)
-      .single(),
-    supabase
-      .from("budget_items")
-      .select("*")
-      .eq("vendor_id", id)
-      .order("created_at", { ascending: true }),
-  ]);
+  const [{ data: vendor }, { data: payments }, { data: coveredItems }] =
+    await Promise.all([
+      supabase
+        .from("vendors")
+        .select("*")
+        .eq("id", id)
+        .eq("wedding_id", wedding.id)
+        .single(),
+      supabase
+        .from("budget_items")
+        .select("*")
+        .eq("vendor_id", id)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("shopping_items")
+        .select("id, category, item_name, status, notes")
+        .eq("covered_by_vendor_id", id)
+        .order("category", { ascending: true })
+        .order("item_name", { ascending: true }),
+    ]);
 
   if (!vendor) redirect("/vendors");
 
@@ -78,6 +94,7 @@ export default async function VendorDetailPage({
       weddingId={wedding.id}
       weddingDate={wedding.wedding_date}
       initialPayments={payments || []}
+      coveredItems={coveredItems || []}
     />
   );
 }

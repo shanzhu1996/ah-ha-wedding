@@ -27,6 +27,8 @@ import {
   Lightbulb,
   CircleDot,
   Plus,
+  ShoppingCart,
+  ArrowUpRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -77,12 +79,22 @@ interface VendorData {
   extra_details: Record<string, unknown> | null;
 }
 
+interface CoveredShoppingItem {
+  id: string;
+  category: string;
+  item_name: string;
+  status: string;
+  notes: string | null;
+}
+
 interface VendorDetailProps {
   vendor: VendorData | null;
   vendorType: string;
   weddingId: string;
   weddingDate: string | null;
   initialPayments?: PaymentItem[];
+  /** Shopping items the couple has flagged as provided by this vendor. */
+  coveredItems?: CoveredShoppingItem[];
 }
 
 // ---------------------------------------------------------------------------
@@ -458,7 +470,7 @@ function formatDate(date: Date): string {
 // Component
 // ---------------------------------------------------------------------------
 
-export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initialPayments = [] }: VendorDetailProps) {
+export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initialPayments = [], coveredItems = [] }: VendorDetailProps) {
   const router = useRouter();
   const isNew = !vendor;
   const config = getVendorConfig(vendorType);
@@ -787,6 +799,49 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initi
               </div>
             </CardContent>
           </Card>
+
+          {/* What they provide — shopping items flagged as covered by
+              this vendor. Read-only cross-reference; couples edit the
+              linkage from the Shopping page. */}
+          {coveredItems.length > 0 && (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-medium text-muted-foreground inline-flex items-center gap-2">
+                    <ShoppingCart className="h-4 w-4" />
+                    What they provide
+                  </h3>
+                  <Link
+                    href="/shopping"
+                    className="text-xs text-primary/70 hover:text-primary transition-colors inline-flex items-center gap-1"
+                  >
+                    Edit in Shopping
+                    <ArrowUpRight className="h-3 w-3" />
+                  </Link>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Items flagged as covered — these won&apos;t count toward
+                  your shopping spend.
+                </p>
+                <ul className="space-y-1.5">
+                  {coveredItems.map((item) => (
+                    <li
+                      key={item.id}
+                      className="flex items-center gap-2 text-sm py-1"
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary/60 shrink-0" />
+                      <span className="flex-1 min-w-0 truncate">
+                        {item.item_name}
+                      </span>
+                      <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider shrink-0">
+                        {item.category}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Notes */}
           <Card>

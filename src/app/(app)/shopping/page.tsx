@@ -8,12 +8,19 @@ export default async function ShoppingPage() {
   if (!wedding) redirect("/onboarding");
 
   const supabase = await createClient();
-  const { data: items } = await supabase
-    .from("shopping_items")
-    .select("*")
-    .eq("wedding_id", wedding.id)
-    .order("category", { ascending: true })
-    .order("created_at", { ascending: true });
+  const [{ data: items }, { data: vendors }] = await Promise.all([
+    supabase
+      .from("shopping_items")
+      .select("*")
+      .eq("wedding_id", wedding.id)
+      .order("category", { ascending: true })
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("vendors")
+      .select("id, type, company_name")
+      .eq("wedding_id", wedding.id)
+      .order("company_name", { ascending: true }),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -27,6 +34,7 @@ export default async function ShoppingPage() {
       </div>
       <ShoppingManager
         items={items || []}
+        vendors={vendors || []}
         weddingId={wedding.id}
         weddingStyle={wedding.style}
         partner1Name={wedding.partner1_name}

@@ -307,10 +307,18 @@ interface ShoppingItem {
   notes: string | null;
   due_date: string | null;
   covered_by_vendor: boolean;
+  covered_by_vendor_id: string | null;
+}
+
+interface VendorRef {
+  id: string;
+  type: string;
+  company_name: string;
 }
 
 interface ShoppingManagerProps {
   items: ShoppingItem[];
+  vendors: VendorRef[];
   weddingId: string;
   weddingStyle: string | null;
   partner1Name: string;
@@ -320,7 +328,7 @@ interface ShoppingManagerProps {
   budgetTotal: number | null;
 }
 
-export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, partner1Name, partner2Name, partner1Attire, partner2Attire, budgetTotal }: ShoppingManagerProps) {
+export function ShoppingManager({ items: initialItems, vendors, weddingId, weddingStyle, partner1Name, partner2Name, partner1Attire, partner2Attire, budgetTotal }: ShoppingManagerProps) {
   const router = useRouter();
   const BUILT_IN_CATEGORIES = getCategories(partner1Name, partner2Name);
   const DEFAULT_ITEMS = getDefaultItems(partner1Name, partner2Name, partner1Attire, partner2Attire);
@@ -357,6 +365,7 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
   const [actualCost, setActualCost] = useState("");
   const [searchTerms, setSearchTerms] = useState("");
   const [vendorSource, setVendorSource] = useState("");
+  const [vendorId, setVendorId] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [coveredByVendor, setCoveredByVendor] = useState(false);
@@ -458,11 +467,20 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
             >
               {item.item_name}
             </span>
-            {isCovered && item.vendor_source && (
-              <span className="text-[11px] text-muted-foreground/70">
-                · by {item.vendor_source}
-              </span>
-            )}
+            {isCovered &&
+              (item.covered_by_vendor_id ? (
+                <Link
+                  href={`/vendors/${item.covered_by_vendor_id}`}
+                  className="text-[11px] text-muted-foreground/70 hover:text-primary transition-colors inline-flex items-center gap-0.5"
+                >
+                  · by {item.vendor_source || "vendor"}
+                  <ExternalLink className="h-2.5 w-2.5" />
+                </Link>
+              ) : item.vendor_source ? (
+                <span className="text-[11px] text-muted-foreground/70">
+                  · by {item.vendor_source}
+                </span>
+              ) : null)}
           </div>
           {item.search_terms && !isCovered && (
             <a
@@ -560,6 +578,7 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
     setActualCost("");
     setSearchTerms("");
     setVendorSource("");
+    setVendorId(null);
     setNotes("");
     setDueDate("");
     setCoveredByVendor(false);
@@ -576,6 +595,7 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
     setActualCost(item.actual_cost?.toString() || "");
     setSearchTerms(item.search_terms || "");
     setVendorSource(item.vendor_source || "");
+    setVendorId(item.covered_by_vendor_id || null);
     setNotes(item.notes || "");
     setDueDate(item.due_date || "");
     setCoveredByVendor(!!item.covered_by_vendor);
@@ -585,6 +605,19 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
   async function handleSave() {
     setSaving(true);
     const supabase = createClient();
+    // Auto-link vendor_source to a booked vendor when the typed name
+    // matches (case-insensitive). This keeps the FK in sync as couples
+    // type — no separate picker needed.
+    const resolvedVendorId = (() => {
+      if (!coveredByVendor) return null;
+      if (vendorId) return vendorId;
+      const match = vendors.find(
+        (v) =>
+          v.company_name?.trim().toLowerCase() ===
+          vendorSource.trim().toLowerCase()
+      );
+      return match?.id ?? null;
+    })();
     const payload = {
       wedding_id: weddingId,
       category,
@@ -598,6 +631,7 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
       notes: notes || null,
       due_date: dueDate || null,
       covered_by_vendor: coveredByVendor,
+      covered_by_vendor_id: resolvedVendorId,
     };
     if (editingItem) {
       await supabase.from("shopping_items").update(payload).eq("id", editingItem.id);
@@ -1047,10 +1081,27 @@ export function ShoppingManager({ items: initialItems, weddingId, weddingStyle, 
               <div className="space-y-2">
                 <Label>Vendor / Source</Label>
                 <Input
+                  list="shopping-vendor-suggestions"
                   value={vendorSource}
-                  onChange={(e) => setVendorSource(e.target.value)}
-                  placeholder="e.g., Etsy, Target, Caterer"
+                  onChange={(e) => {
+                    setVendorSource(e.target.value);
+                    // Keep vendorId in sync while typing — picking from
+                    // the datalist selects a booked vendor; free text
+                    // clears the FK so we don't keep a stale link.
+                    const match = vendors.find(
+                      (v) =>
+                        v.company_name?.trim().toLowerCase() ===
+                        e.target.value.trim().toLowerCase()
+                    );
+                    setVendorId(match?.id ?? null);
+                  }}
+                  placeholder="Pick a booked vendor or type a source"
                 />
+                <datalist id="shopping-vendor-suggestions">
+                  {vendors.map((v) => (
+                    <option key={v.id} value={v.company_name} />
+                  ))}
+                </datalist>
               </div>
             </div>
             <div className="rounded-md border border-dashed border-border/70 bg-muted/30 p-3">
