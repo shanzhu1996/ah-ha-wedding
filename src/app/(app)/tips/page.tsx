@@ -1,205 +1,98 @@
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
-import {
-  DollarSign,
-  Clock,
-  Package,
-  AlertTriangle,
-  Ban,
-  Lightbulb,
-  Users,
-  Paintbrush,
-  Timer,
-  Camera,
-  Music,
-  Utensils,
-  Phone,
-  CreditCard,
-  CloudRain,
-  UserX,
-  Shirt,
-  Mic,
-  Thermometer,
-  Car,
-  Cake,
-  Brain,
-  ListChecks,
-  Scissors,
-  Sparkles,
-  Heart,
-} from "lucide-react";
-import { EmergencyKitChecklist } from "./emergency-kit";
+import { getCurrentWedding } from "@/lib/supabase/queries";
+import { createClient } from "@/lib/supabase/server";
+import { TipsContent } from "./tips-content";
+import type {
+  EmergencyKitState,
+  TipsInteractions,
+  CustomKitItem,
+} from "./data";
 
-const budgetHacks = [
-  {
-    tip: "Ask florist to decorate cake with fresh flowers",
-    savings: "Saves $100-300",
-  },
-  {
-    tip: "Repurpose ceremony flowers at reception",
-    savings: "Ask florist to plan double-duty arrangements",
-  },
-  {
-    tip: "Display cake + sheet cake from kitchen",
-    savings: "Saves 40-60%",
-  },
-  {
-    tip: "Choose in-season, locally grown flowers",
-    savings: "Lower markup, fresher blooms",
-  },
-  {
-    tip: "Bulk non-floral items from Amazon",
-    savings: "Candles, votives, card boxes",
-  },
-  {
-    tip: "Use greenery-heavy arrangements",
-    savings: "Eucalyptus & ferns cost less than blooms",
-  },
-  {
-    tip: "Pick an architecturally stunning venue",
-    savings: "Needs less decor",
-  },
-  {
-    tip: 'Skip the "wedding" label',
-    savings: 'Order "event" cake, "party" linens',
-  },
-];
+export function parseKitState(raw: unknown): EmergencyKitState {
+  const empty: EmergencyKitState = { packed: [], hidden: [], custom: [] };
+  if (!raw || typeof raw !== "object") return empty;
+  const r = raw as Record<string, unknown>;
+  const assigneeRaw =
+    r.assignee && typeof r.assignee === "object"
+      ? (r.assignee as Record<string, unknown>)
+      : null;
+  const assignee = assigneeRaw
+    ? {
+        name:
+          typeof assigneeRaw.name === "string" && assigneeRaw.name
+            ? assigneeRaw.name
+            : undefined,
+        contact:
+          typeof assigneeRaw.contact === "string" && assigneeRaw.contact
+            ? assigneeRaw.contact
+            : undefined,
+      }
+    : undefined;
+  return {
+    packed: Array.isArray(r.packed)
+      ? r.packed.filter((x): x is string => typeof x === "string")
+      : [],
+    hidden: Array.isArray(r.hidden)
+      ? r.hidden.filter((x): x is string => typeof x === "string")
+      : [],
+    custom: Array.isArray(r.custom)
+      ? r.custom
+          .map((c): CustomKitItem | null => {
+            if (!c || typeof c !== "object") return null;
+            const row = c as Record<string, unknown>;
+            if (
+              typeof row.id !== "string" ||
+              typeof row.category !== "string" ||
+              typeof row.name !== "string"
+            )
+              return null;
+            if (
+              row.category !== "freshen_up" &&
+              row.category !== "first_aid" &&
+              row.category !== "fix_it" &&
+              row.category !== "fuel_comfort"
+            )
+              return null;
+            return {
+              id: row.id,
+              category: row.category,
+              name: row.name,
+              packed: row.packed === true,
+            };
+          })
+          .filter((x): x is CustomKitItem => x !== null)
+      : [],
+    ...(assignee ? { assignee } : {}),
+  };
+}
 
-const dayOfTips = [
-  {
-    icon: Heart,
-    tip: "Schedule 10 min alone with partner right after ceremony",
-  },
-  {
-    icon: CreditCard,
-    tip: "Lock your card box; assign someone to transport it",
-  },
-  {
-    icon: Users,
-    tip: "Assign a people wrangler for family photos (not the photographer)",
-  },
-  { icon: Music, tip: "Have DJ announce every transition" },
-  { icon: Mic, tip: "Use a microphone for vows" },
-  {
-    icon: Shirt,
-    tip: "Sew weights into outfit hem (for lightweight fabrics outdoors)",
-  },
-  {
-    icon: Utensils,
-    tip: "EAT. Breakfast, lunch, dinner. Someone must put food in your hands",
-  },
-  {
-    icon: Phone,
-    tip: "Put phone away or give it to someone",
-  },
-  {
-    icon: Clock,
-    tip: "Brief your wedding party with printed timeline cards",
-  },
-  {
-    icon: CreditCard,
-    tip: "Have someone else manage vendor payments/tips on the day",
-  },
-];
+function parseInteractions(raw: unknown): TipsInteractions {
+  if (!raw || typeof raw !== "object") return { dismissed: [] };
+  const r = raw as Record<string, unknown>;
+  return {
+    dismissed: Array.isArray(r.dismissed)
+      ? r.dismissed.filter((x): x is string => typeof x === "string")
+      : [],
+  };
+}
 
-const whatIfScenarios = [
-  {
-    icon: CloudRain,
-    title: "Rain on outdoor wedding",
-    solution:
-      "Get venue rain plan in writing. Keep clear bubble umbrellas on hand. Inform guests of any changes via your wedding website.",
-  },
-  {
-    icon: UserX,
-    title: "Vendor no-show",
-    solution:
-      "Maintain a backup contact list for every vendor category. Have a friend with a good camera on standby. Keep a Spotify playlist and Bluetooth speaker as DJ backup.",
-  },
-  {
-    icon: Shirt,
-    title: "Wardrobe malfunction",
-    solution:
-      "Your emergency kit covers this: fashion tape, sewing kit, safety pins, and stain remover. Pack extras of anything you cannot live without.",
-  },
-  {
-    icon: Mic,
-    title: "Tech/AV failure",
-    solution:
-      "Test the mic at rehearsal. Bring a portable Bluetooth speaker as backup. Print all readings so they can be delivered without screens.",
-  },
-  {
-    icon: AlertTriangle,
-    title: "Guest medical emergency",
-    solution:
-      "Know the address of the nearest hospital. Designate a specific person as the 911 caller. Keep first aid supplies in your emergency kit.",
-  },
-  {
-    icon: Thermometer,
-    title: "Extreme heat",
-    solution:
-      "Set up water stations and provide fans or shade. Shorten the outdoor ceremony portion to 20 minutes max.",
-  },
-  {
-    icon: Car,
-    title: "Key person running late",
-    solution:
-      "Build a 15-30 minute buffer into the morning schedule. Keep backup transport phone numbers handy.",
-  },
-  {
-    icon: Cake,
-    title: "Cake disaster",
-    solution:
-      "Have a grocery store backup option identified in advance. Or skip the cake cutting entirely \u2014 genuinely, no one notices.",
-  },
-];
+export default async function TipsPage() {
+  const wedding = await getCurrentWedding();
+  if (!wedding) redirect("/onboarding");
 
-const commonPitfalls = [
-  {
-    icon: Brain,
-    title: "Decision fatigue",
-    description:
-      "If guests won't notice the difference, flip a coin and move on. Save your energy for decisions that matter.",
-  },
-  {
-    icon: ListChecks,
-    title: "Guest list politics",
-    description:
-      "Set your number early, agree on rules with your partner, and hold the line. Every exception creates three more.",
-  },
-  {
-    icon: Scissors,
-    title: "DIY harder than Pinterest",
-    description:
-      "Do a full test run before committing. Multiply your estimated time by 1.5x per table. Know when to outsource.",
-  },
-  {
-    icon: Timer,
-    title: "H&MU delays cascade",
-    description:
-      "Build buffer time into the morning schedule. Your hair and makeup artist must know the hard deadline, not just the start time.",
-  },
-  {
-    icon: Camera,
-    title: "The day goes by in a blur",
-    description:
-      "Schedule 10 minutes alone with your partner and invest in a good photographer. These are what you keep.",
-  },
-  {
-    icon: Music,
-    title: "Over-planning reception",
-    description:
-      "Once dancing starts, let the DJ manage the flow. Overly rigid schedules kill the vibe.",
-  },
-  {
-    icon: Utensils,
-    title: "Forgetting to eat",
-    description:
-      "Seriously, eat. Assign someone to physically put food in your hands. You will forget otherwise.",
-  },
-];
+  const supabase = await createClient();
+  const { data: rows } = await supabase
+    .from("wedding_day_details")
+    .select("section, data")
+    .eq("wedding_id", wedding.id)
+    .in("section", ["emergency_kit", "tips_interactions"]);
 
-export default function TipsPage() {
+  const kitRow = rows?.find((r) => r.section === "emergency_kit");
+  const interactionsRow = rows?.find(
+    (r) => r.section === "tips_interactions"
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -210,130 +103,19 @@ export default function TipsPage() {
           <Badge variant="secondary">Reference</Badge>
         </div>
         <p className="text-muted-foreground mt-1">
-          Budget hacks, day-of tips, emergency kit checklist, and what-if
-          scenarios.
+          Budget hacks, day-of tips, an emergency kit checklist, and what to
+          prepare for. Hide ones that don&apos;t apply to your wedding or
+          turn any of them into a timeline task.
         </p>
       </div>
 
-      <Tabs defaultValue="budget">
-        <TabsList className="w-full flex-wrap">
-          <TabsTrigger value="budget">
-            <DollarSign className="size-4" />
-            Budget Hacks
-          </TabsTrigger>
-          <TabsTrigger value="dayof">
-            <Clock className="size-4" />
-            Day-Of Tips
-          </TabsTrigger>
-          <TabsTrigger value="kit">
-            <Package className="size-4" />
-            Emergency Kit
-          </TabsTrigger>
-          <TabsTrigger value="whatif">
-            <AlertTriangle className="size-4" />
-            What-If
-          </TabsTrigger>
-          <TabsTrigger value="pitfalls">
-            <Ban className="size-4" />
-            Pitfalls
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Budget Hacks */}
-        <TabsContent value="budget">
-          <div className="grid gap-3 sm:grid-cols-2">
-            {budgetHacks.map((hack, i) => (
-              <Card key={i} size="sm">
-                <CardContent className="flex items-start gap-3">
-                  <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                    <DollarSign className="size-3.5" />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="font-medium leading-snug">{hack.tip}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {hack.savings}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
-
-        {/* Day-Of Tips */}
-        <TabsContent value="dayof">
-          <div className="grid gap-3 sm:grid-cols-2">
-            {dayOfTips.map((item, i) => {
-              const Icon = item.icon;
-              return (
-                <Card key={i} size="sm">
-                  <CardContent className="flex items-start gap-3">
-                    <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                      <Icon className="size-3.5" />
-                    </div>
-                    <p className="font-medium leading-snug">{item.tip}</p>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </TabsContent>
-
-        {/* Emergency Kit */}
-        <TabsContent value="kit">
-          <EmergencyKitChecklist />
-        </TabsContent>
-
-        {/* What-If Scenarios */}
-        <TabsContent value="whatif">
-          <div className="grid gap-4 sm:grid-cols-2">
-            {whatIfScenarios.map((scenario, i) => {
-              const Icon = scenario.icon;
-              return (
-                <Card key={i}>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                        <Icon className="size-4" />
-                      </div>
-                      {scenario.title}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-muted-foreground leading-relaxed">
-                      {scenario.solution}
-                    </p>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </TabsContent>
-
-        {/* Common Pitfalls */}
-        <TabsContent value="pitfalls">
-          <div className="space-y-3">
-            {commonPitfalls.map((pitfall, i) => {
-              const Icon = pitfall.icon;
-              return (
-                <Card key={i} size="sm">
-                  <CardContent className="flex items-start gap-4">
-                    <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                      <Icon className="size-4" />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="font-medium">{pitfall.title}</p>
-                      <p className="text-muted-foreground leading-relaxed">
-                        {pitfall.description}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </TabsContent>
-      </Tabs>
+      <TipsContent
+        weddingId={wedding.id}
+        weddingDate={wedding.wedding_date}
+        venueIndoorOutdoor={wedding.venue_indoor_outdoor}
+        initialKitState={parseKitState(kitRow?.data)}
+        initialInteractions={parseInteractions(interactionsRow?.data)}
+      />
     </div>
   );
 }
