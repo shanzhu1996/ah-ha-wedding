@@ -21,6 +21,7 @@ export type VendorType =
   | "videographer"
   | "dj"
   | "band"
+  | "mc"
   | "caterer"
   | "florist"
   | "baker"

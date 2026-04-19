@@ -154,6 +154,14 @@ export interface FamilyPhotosData extends PhotoGroupData {
   wrangler: string;
 }
 
+export interface HairMakeupTouchup {
+  id: string;
+  time: string; // e.g. "4:00 PM"
+  location: string;
+  who: string; // "Bride", "Bride + moms", etc.
+  notes?: string;
+}
+
 export interface GettingReadyData {
   /** Canonical list of hair/makeup stations — add / rename / remove. */
   stations: GettingReadyStation[];
@@ -162,6 +170,12 @@ export interface GettingReadyData {
   /** @deprecated migrated into `stations` on first edit. Kept for back-compat. */
   group_2: GettingReadyGroup;
   hair_makeup_notes: string;
+  /** Does the H&MU artist stay on for touch-ups after the morning prep?
+   * Drives the touch-up section in the H&MU vendor booklet. */
+  hair_makeup_stays_for_touchups?: boolean;
+  /** Optional schedule of touch-up slots during the day (pre-ceremony,
+   * pre-reception, etc.). Falls back to canonical defaults if empty. */
+  touchup_schedule?: HairMakeupTouchup[];
   /** @deprecated Schedule owns photographer arrival time now. */
   photographer_arrival_time: string;
   /** Default detail shots the couple has checked. */

@@ -6,6 +6,7 @@ export const VENDOR_TYPE_TO_CATEGORY: Record<VendorType, string> = {
   videographer: "Videography",
   dj: "Music/DJ",
   band: "Music/DJ",
+  mc: "Music/DJ",
   caterer: "Catering",
   florist: "Flowers",
   baker: "Catering",

@@ -54,6 +54,25 @@ export default async function BookletsPage() {
     (dayOfDetails as Record<string, unknown>)[key] = value as AllSectionData[typeof key];
   }
 
+  // Per-phase music vendor assignment (from Music page). DJ / Band booklets
+  // filter their song lists by this map so each vendor only sees their own
+  // phases when the couple has ≥2 music vendors.
+  const entertainmentPlanRaw = dayOfMap.get("entertainment_plan");
+  const phaseAssignments: Record<string, string> =
+    entertainmentPlanRaw &&
+    typeof entertainmentPlanRaw === "object" &&
+    (entertainmentPlanRaw as { phase_assignments?: unknown })
+      .phase_assignments
+      ? Object.fromEntries(
+          Object.entries(
+            (entertainmentPlanRaw as { phase_assignments: Record<string, unknown> })
+              .phase_assignments
+          ).filter(
+            ([, v]) => typeof v === "string" && (v as string).length > 0
+          )
+        ) as Record<string, string>
+      : {};
+
   return (
     <div className="space-y-6">
       <div>
@@ -79,6 +98,7 @@ export default async function BookletsPage() {
         guests={guestsRes.data || []}
         delegationTasks={delegationRes.data || []}
         dayOfDetails={dayOfDetails}
+        phaseAssignments={phaseAssignments}
       />
     </div>
   );
