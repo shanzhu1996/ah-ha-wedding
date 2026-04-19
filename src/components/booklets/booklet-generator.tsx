@@ -37,7 +37,8 @@ import type { VendorType } from "@/types/database";
 import {
   speechesTotalMinutes,
   mcIntroFor,
-  DAY_OF_ROLE_META,
+  effectiveEmergencyContacts,
+  effectiveRoles,
   type ScheduleData,
   type GettingReadyData,
   type CeremonyData,
@@ -570,7 +571,6 @@ export function BookletGenerator({
               </div>
             )}
             {(hasText(logisticsDayOf?.vendor_meals_timing) ||
-              hasText(receptionDayOf?.vendor_meals_note) ||
               hasText(cocktailDayOf?.catering_notes)) && (
               <div className="pt-2 border-t border-dashed space-y-2">
                 <h4 className="font-semibold text-sm">From Day-of Details</h4>
@@ -588,14 +588,6 @@ export function BookletGenerator({
                       Vendor meals timing
                     </p>
                     <p className="text-sm">{logisticsDayOf!.vendor_meals_timing}</p>
-                  </div>
-                )}
-                {hasText(receptionDayOf?.vendor_meals_note) && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Reception notes
-                    </p>
-                    <p className="text-sm">{receptionDayOf!.vendor_meals_note}</p>
                   </div>
                 )}
               </div>
@@ -698,23 +690,29 @@ export function BookletGenerator({
             <h4 className="font-semibold text-sm">Ceremony Details</h4>
             {ceremonyDayOf ? (
               <div className="space-y-2 text-sm">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Vows
-                    </p>
-                    <p>{ceremonyDayOf.vows_style || "not yet decided"}</p>
-                  </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Vows
+                  </p>
+                  <p>{ceremonyDayOf.vows_style || "not yet decided"}</p>
+                </div>
+                {(ceremonyDayOf.recessional || []).some(
+                  (r) => r.role?.trim() || r.name?.trim()
+                ) && (
                   <div>
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                       Recessional
                     </p>
-                    <p>
-                      {ceremonyDayOf.recessional_style?.replace(/_/g, " ") ||
-                        "not yet decided"}
-                    </p>
+                    <ol className="list-decimal list-inside space-y-0.5">
+                      {ceremonyDayOf.recessional.map((r) => (
+                        <li key={r.id}>
+                          {r.role || "(role)"}
+                          {hasText(r.name) && ` — ${r.name}`}
+                        </li>
+                      ))}
+                    </ol>
                   </div>
-                </div>
+                )}
                 {ceremonyDayOf.unity_ceremony &&
                   ceremonyDayOf.unity_ceremony !== "none" && (
                     <div>
@@ -797,40 +795,47 @@ export function BookletGenerator({
                     <p className="whitespace-pre-wrap">{logisticsDayOf.transportation}</p>
                   </div>
                 )}
-                {(hasText(logisticsDayOf.emergency_contact_name) ||
-                  hasText(logisticsDayOf.emergency_contact_phone)) && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Emergency contact
-                    </p>
-                    <p>
-                      {logisticsDayOf.emergency_contact_name}
-                      {hasText(logisticsDayOf.emergency_contact_phone) &&
-                        ` · ${logisticsDayOf.emergency_contact_phone}`}
-                    </p>
-                  </div>
-                )}
-                {logisticsDayOf.roles &&
-                  DAY_OF_ROLE_META.some(({ key }) =>
-                    hasText(logisticsDayOf.roles?.[key])
-                  ) && (
+                {(() => {
+                  const contacts = effectiveEmergencyContacts(logisticsDayOf).filter(
+                    (c) => hasText(c.name) || hasText(c.phone)
+                  );
+                  if (contacts.length === 0) return null;
+                  return (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        Emergency contacts
+                      </p>
+                      <ul className="list-disc list-inside">
+                        {contacts.map((c) => (
+                          <li key={c.id}>
+                            {c.name}
+                            {hasText(c.phone) && ` · ${c.phone}`}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })()}
+                {(() => {
+                  const roles = effectiveRoles(logisticsDayOf).filter((r) =>
+                    hasText(r.assignee)
+                  );
+                  if (roles.length === 0) return null;
+                  return (
                     <div>
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                         Day-of roles
                       </p>
                       <ul className="list-disc list-inside">
-                        {DAY_OF_ROLE_META.map(({ key, label }) => {
-                          const name = logisticsDayOf.roles?.[key];
-                          if (!hasText(name)) return null;
-                          return (
-                            <li key={key}>
-                              <strong>{label}:</strong> {name}
-                            </li>
-                          );
-                        })}
+                        {roles.map((r) => (
+                          <li key={r.id}>
+                            <strong>{r.label}:</strong> {r.assignee}
+                          </li>
+                        ))}
                       </ul>
                     </div>
-                  )}
+                  );
+                })()}
                 {hasText(logisticsDayOf.notes) && (
                   <div>
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">

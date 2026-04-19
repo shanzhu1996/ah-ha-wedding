@@ -8,7 +8,8 @@ import {
   getDefaultSectionData,
   speechesTotalMinutes,
   mcIntroFor,
-  DAY_OF_ROLE_META,
+  effectiveEmergencyContacts,
+  effectiveRoles,
   type ScheduleData,
   type GettingReadyData,
   type CeremonyData,
@@ -133,12 +134,13 @@ function renderReceptionMoment(
     }
     case "dinner": {
       const dinnerSongs = renderPhaseSongs("dinner", songs, null);
-      const vendorMeals = hasTextLocal(reception.vendor_meals_note) ? (
+      const vendorMealsTiming = logistics?.vendor_meals_timing;
+      const vendorMeals = hasTextLocal(vendorMealsTiming) ? (
         <div className="pl-4 text-neutral-700">
           <span className="font-semibold text-xs uppercase tracking-wider mr-1">
             Vendor meals:
           </span>
-          {reception.vendor_meals_note}
+          {vendorMealsTiming}
         </div>
       ) : null;
       primary =
@@ -569,30 +571,36 @@ export default async function DayOfPrintPage() {
                       {hasText(r.reader) && (
                         <span className="text-neutral-600"> — {r.reader}</span>
                       )}
-                      {hasText(r.notes) && (
-                        <span className="text-neutral-500 text-xs"> · {r.notes}</span>
-                      )}
                     </li>
                   ))}
                 </ul>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
-                  Vows:
-                </span>
-                {ceremony.vows_style ? titleCase(ceremony.vows_style) : empty()}
-              </div>
-              <div>
-                <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
-                  Recessional:
-                </span>
-                {ceremony.recessional_style
-                  ? titleCase(ceremony.recessional_style)
-                  : empty()}
-              </div>
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
+                Vows:
+              </span>
+              {ceremony.vows_style ? titleCase(ceremony.vows_style) : empty()}
             </div>
+            {(ceremony.recessional || []).some(
+              (r) => r.role?.trim() || r.name?.trim()
+            ) && (
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                  Recessional
+                </h3>
+                <ol className="mt-1 list-decimal list-inside space-y-0.5">
+                  {ceremony.recessional.map((r) => (
+                    <li key={r.id}>
+                      {r.role || "(role)"}
+                      {hasText(r.name) && (
+                        <span className="text-neutral-600"> — {r.name}</span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
             {ceremony.unity_ceremony && ceremony.unity_ceremony !== "none" && (
               <div>
                 <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
@@ -629,13 +637,33 @@ export default async function DayOfPrintPage() {
               <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
                 Location:
               </span>
-              {cocktail.location ? titleCase(cocktail.location) : empty()}
+              {cocktail.location ? (
+                <>
+                  {titleCase(cocktail.location)}
+                  {cocktail.location !== "same_venue" &&
+                    hasText(cocktail.location_detail) && (
+                      <span className="text-neutral-600">
+                        {" "}
+                        · {cocktail.location_detail}
+                      </span>
+                    )}
+                </>
+              ) : (
+                empty()
+              )}
             </div>
             <div>
               <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
                 Duration:
               </span>
-              {cocktail.duration ? `${cocktail.duration} min` : empty()}
+              {(() => {
+                if (!cocktail.duration) return empty();
+                if (cocktail.duration === "custom") {
+                  const m = cocktail.duration_custom?.trim();
+                  return m ? `${m} min` : empty();
+                }
+                return `${cocktail.duration} min`;
+              })()}
             </div>
             <div>
               <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
@@ -647,13 +675,17 @@ export default async function DayOfPrintPage() {
               <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
                 Activities:
               </span>
-              {[
-                cocktail.activities_lawn_games && "Lawn games",
-                cocktail.activities_photo_booth && "Photo booth",
-                cocktail.activities_live_music && "Live music",
-              ]
-                .filter(Boolean)
-                .join(", ") || empty("none selected")}
+              {(() => {
+                const active = [
+                  cocktail.activities_lawn_games && "Lawn games",
+                  cocktail.activities_photo_booth && "Photo booth",
+                  cocktail.activities_live_music && "Live music",
+                  ...(cocktail.custom_activities || []),
+                ].filter(Boolean) as string[];
+                return active.length > 0
+                  ? active.join(", ")
+                  : empty("none selected");
+              })()}
             </div>
           </div>
           {hasText(cocktail.catering_notes) && (
@@ -734,40 +766,50 @@ export default async function DayOfPrintPage() {
                 {logistics.rain_plan}
               </p>
             )}
-            {(hasText(logistics.emergency_contact_name) ||
-              hasText(logistics.emergency_contact_phone)) && (
-              <p>
-                <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
-                  Emergency contact:
-                </span>
-                {logistics.emergency_contact_name}
-                {hasText(logistics.emergency_contact_phone) && ` · ${logistics.emergency_contact_phone}`}
-              </p>
-            )}
-            {logistics.roles &&
-              DAY_OF_ROLE_META.some(
-                ({ key }) => hasText(logistics.roles?.[key])
-              ) && (
+            {(() => {
+              const contacts = effectiveEmergencyContacts(logistics).filter(
+                (c) => hasText(c.name) || hasText(c.phone)
+              );
+              if (contacts.length === 0) return null;
+              return (
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mt-3">
+                    Emergency contacts
+                  </h3>
+                  <ul className="mt-1 space-y-0.5">
+                    {contacts.map((c) => (
+                      <li key={c.id}>
+                        {c.name}
+                        {hasText(c.phone) && ` · ${c.phone}`}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
+            {(() => {
+              const roles = effectiveRoles(logistics).filter((r) =>
+                hasText(r.assignee)
+              );
+              if (roles.length === 0) return null;
+              return (
                 <div>
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mt-3">
                     Day-of roles
                   </h3>
                   <ul className="mt-1 space-y-0.5">
-                    {DAY_OF_ROLE_META.map(({ key, label }) => {
-                      const name = logistics.roles?.[key];
-                      if (!hasText(name)) return null;
-                      return (
-                        <li key={key}>
-                          <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
-                            {label}:
-                          </span>
-                          {name}
-                        </li>
-                      );
-                    })}
+                    {roles.map((r) => (
+                      <li key={r.id}>
+                        <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
+                          {r.label}:
+                        </span>
+                        {r.assignee}
+                      </li>
+                    ))}
                   </ul>
                 </div>
-              )}
+              );
+            })()}
             {reception.exit_plan &&
               (hasText(reception.exit_plan.point_person) ||
                 hasText(reception.exit_plan.rain_backup) ||

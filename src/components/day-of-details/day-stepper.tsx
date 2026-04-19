@@ -289,18 +289,22 @@ export function DayStepper({ weddingId, initialData, songs: initialSongs }: DayS
           <GettingReadySection
             data={(data.getting_ready || {}) as any}
             onChange={(d) => handleChange("getting_ready", d)}
+            scheduleData={(data.schedule || undefined) as any}
+            onNavigateToSchedule={() => handleSectionClick("schedule")}
           />
         )}
         {activeSection === "ceremony" && (
           <CeremonySection
             data={(data.ceremony || {}) as any}
             onChange={(d) => handleChange("ceremony", d)}
+            songs={songs}
           />
         )}
         {activeSection === "cocktail" && (
           <CocktailSection
             data={(data.cocktail || {}) as any}
             onChange={(d) => handleChange("cocktail", d)}
+            songs={songs}
           />
         )}
         {(activePill === "reception" || activePill === "dancing") && (
@@ -309,7 +313,10 @@ export function DayStepper({ weddingId, initialData, songs: initialSongs }: DayS
             data={(data.reception || {}) as any}
             onChange={(d) => handleChange("reception", d)}
             scheduleData={(data.schedule || undefined) as any}
+            onScheduleChange={(d) => handleChange("schedule", d)}
             onNavigateToSchedule={() => handleSectionClick("schedule")}
+            logisticsData={(data.logistics || undefined) as any}
+            onNavigateToLogistics={() => handleSectionClick("logistics")}
             songs={songs}
             phaseFilter={activePill === "dancing" ? "dancing" : "reception"}
           />

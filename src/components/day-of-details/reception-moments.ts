@@ -6,7 +6,6 @@ import type {
   ReceptionData,
   MomentExtras,
   CustomReceptionMoment,
-  TossMomentId,
   ScheduleData,
   ScheduleEntry,
 } from "./types";
@@ -35,6 +34,8 @@ const MOMENT_SCHEDULE_KEYWORDS: Record<string, string[]> = {
   garter_toss: ["garter toss"],
   anniversary_dance: ["anniversary dance"],
   shoe_game: ["shoe game"],
+  slideshow: ["slideshow", "photo montage", "montage"],
+  dessert_bar: ["dessert bar", "dessert table", "sweet table"],
 };
 
 /**
@@ -107,9 +108,12 @@ export function resolveReceptionMoments(
   const hidden = new Set(data.hidden_moments || []);
   // Built-ins the couple hasn't hidden
   const builtInIds: string[] = RECEPTION_MOMENT_IDS.filter((id) => !hidden.has(id));
-  // Tosses only appear when toggled on — and also respect hidden
+  // Tosses appear when the Schedule has a matching entry — Schedule is
+  // the source of truth. Hidden ids are still suppressed.
   const tossIds: string[] = RECEPTION_TOSS_IDS.filter(
-    (id) => data[id as TossMomentId] === true && !hidden.has(id)
+    (id) =>
+      findScheduleEntryForMoment(id, schedule) !== undefined &&
+      !hidden.has(id)
   );
   const customs = data.custom_moments || [];
   const customIds = customs.map((c) => c.id);

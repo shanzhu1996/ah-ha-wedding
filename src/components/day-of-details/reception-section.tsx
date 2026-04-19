@@ -17,8 +17,8 @@ import {
   X,
   Plus,
   ArrowRight,
+  ArrowUpRight,
   ChevronDown,
-  ChevronRight,
   Music,
   UtensilsCrossed,
   Users2,
@@ -26,7 +26,16 @@ import {
   LogOut,
   ShieldCheck,
   StickyNote,
+  PartyPopper,
+  Flame,
+  Info,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
@@ -52,18 +61,25 @@ import type {
   MomentExtras,
   CustomReceptionMoment,
   ScheduleData,
+  ScheduleEntry,
   TossMomentId,
   ReceptionPhase,
+  LogisticsData,
 } from "./types";
 import {
   speechesTotalMinutes,
   RECEPTION_MOMENT_TITLES,
+  RECEPTION_TOSS_IDS,
   phaseForMoment,
 } from "./types";
 import { MomentCard, type MomentSummaryChip } from "./moment-card";
 import { MomentUniformFields } from "./moment-uniform-fields";
 import { MomentMusicBlock } from "./moment-music-block";
 import { MusicLink, summarizeSongs } from "./music-link";
+import {
+  CollapsibleSection,
+  type SectionSummaryChip,
+} from "./collapsible-section";
 import type { WeddingSong } from "./day-stepper";
 import {
   resolveReceptionMoments,
@@ -94,6 +110,10 @@ const MOMENT_DESCRIPTIONS: Record<string, string> = {
     "All married couples dance; the MC dismisses them from the floor by years married, shortest first — the longest-married couple wins.",
   shoe_game:
     "Couple sits back-to-back holding each other's shoes. Questions are asked — they raise whichever shoe fits.",
+  slideshow:
+    "A photo/video montage playing during or after dinner — childhood photos, the couple's story, or guest contributions. Needs a screen + AV cue.",
+  dessert_bar:
+    "A table of assorted sweets (macarons, mini tarts, candy) revealed mid-dancing. Couples sometimes introduce it with a short MC cue.",
 };
 
 interface ReceptionSectionProps {
@@ -101,8 +121,16 @@ interface ReceptionSectionProps {
   onChange: (data: ReceptionData) => void;
   /** Schedule data — used to pull Schedule-derived times onto moment pills. */
   scheduleData?: ScheduleData;
+  /** Mutator for Schedule data (used by Dancing Quick-add buttons to
+   *  insert/remove toss entries). Optional — buttons disable without it. */
+  onScheduleChange?: (data: ScheduleData) => void;
   /** Callback when the user clicks "Set in Schedule" — jumps to Schedule tab. */
   onNavigateToSchedule?: () => void;
+  /** Read-only Logistics data — source of truth for Vendor meals surfaced
+   *  on the Dinner moment card. */
+  logisticsData?: LogisticsData;
+  /** Click handler for the "Edit in Logistics" link on the Dinner pill. */
+  onNavigateToLogistics?: () => void;
   /** Full song list (wedding_songs). Music tab is the source of truth;
    *  Day-of displays read-only references via MusicLink. */
   songs?: WeddingSong[];
@@ -119,11 +147,98 @@ export function ReceptionSection({
   data,
   onChange,
   scheduleData,
+  onScheduleChange,
   onNavigateToSchedule,
+  logisticsData,
+  onNavigateToLogistics,
   songs = [],
   phaseFilter = "reception",
 }: ReceptionSectionProps) {
   const set = (patch: Partial<ReceptionData>) => onChange({ ...data, ...patch });
+
+  // ── Toss helpers (Schedule is the source of truth) ──────────────────
+  // Clicking a Quick-add button inserts / removes a Schedule entry titled
+  // like the toss. The Dancing timeline reads from Schedule, so the pill
+  // appears automatically.
+
+  function parseTimeToMinutes(t: string | undefined): number {
+    if (!t) return NaN;
+    const m = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?$/);
+    if (!m) return NaN;
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    const period = m[3]?.toUpperCase();
+    if (period === "PM" && h < 12) h += 12;
+    if (period === "AM" && h === 12) h = 0;
+    return h * 60 + min;
+  }
+  function formatMinutesToTime(mins: number): string {
+    const h24 = Math.floor(mins / 60) % 24;
+    const m = ((mins % 60) + 60) % 60;
+    const period = h24 >= 12 ? "PM" : "AM";
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+  }
+  /** Smart default time per extra moment, anchored to the nearest sensible
+   *  Schedule entry (dinner, cake cutting, last dance). Returns "" when no
+   *  anchor is available — couple sets it manually on Schedule tab. */
+  function defaultTossTime(id: TossMomentId): string {
+    const shift = (anchorId: string, mins: number): string => {
+      const t = findScheduleEntryForMoment(anchorId, scheduleData)?.time;
+      const base = parseTimeToMinutes(t);
+      if (Number.isNaN(base)) return "";
+      return formatMinutesToTime(base + mins);
+    };
+    switch (id) {
+      // Reception-phase extras — anchor to dinner
+      case "shoe_game":
+        return shift("dinner", 30);
+      case "slideshow":
+        return shift("dinner", 15);
+      // Dancing-phase extras — anchor to last dance (mid-dancing reveals)
+      case "anniversary_dance":
+        return shift("last_dance", -40);
+      case "bouquet_toss":
+        return shift("last_dance", -20);
+      case "garter_toss":
+        return shift("last_dance", -15);
+      case "dessert_bar": {
+        // Prefer cake cutting + 45 min; fallback to last dance − 60 min.
+        const fromCake = shift("cake_cutting", 45);
+        if (fromCake) return fromCake;
+        return shift("last_dance", -60);
+      }
+      default:
+        return shift("last_dance", -20);
+    }
+  }
+  function tossInSchedule(id: TossMomentId): ScheduleEntry | undefined {
+    return findScheduleEntryForMoment(id, scheduleData);
+  }
+  function addTossToSchedule(id: TossMomentId) {
+    if (!onScheduleChange || !scheduleData) return;
+    if (tossInSchedule(id)) return;
+    const entry: ScheduleEntry = {
+      id: crypto.randomUUID(),
+      title: RECEPTION_MOMENT_TITLES[id],
+      time: defaultTossTime(id),
+      notes: "",
+      linkedSection: "reception",
+    };
+    onScheduleChange({
+      ...scheduleData,
+      entries: [...scheduleData.entries, entry],
+    });
+  }
+  function removeTossFromSchedule(id: TossMomentId) {
+    if (!onScheduleChange || !scheduleData) return;
+    const existing = tossInSchedule(id);
+    if (!existing) return;
+    onScheduleChange({
+      ...scheduleData,
+      entries: scheduleData.entries.filter((e) => e.id !== existing.id),
+    });
+  }
 
   // Keep latest data reachable from toast Undo callbacks (which capture stale
   // `data` at toast-show time). Undo writes should always merge into current.
@@ -310,18 +425,41 @@ export function ReceptionSection({
     set({ speeches: (data.speeches || []).filter((s) => s.id !== id) });
   }
 
-  // Reception Notes collapse
-  const [notesOpen, setNotesOpen] = useState(
-    () =>
-      !!data.cultural_notes?.trim() ||
-      data.bouquet_toss ||
-      data.garter_toss ||
-      data.anniversary_dance ||
-      data.shoe_game
+  // Phase-filtered extras list + summary chip precomputed for readability.
+  const extrasForPhase = RECEPTION_TOSS_IDS.filter(
+    (id) => phaseForMoment(id) === phaseFilter
   );
+  const extrasAddedLabels = extrasForPhase
+    .filter((id) => tossInSchedule(id))
+    .map((id) => RECEPTION_MOMENT_TITLES[id]);
+  const extrasSummaryChips: SectionSummaryChip[] =
+    extrasAddedLabels.length === 0
+      ? []
+      : [
+          {
+            label:
+              extrasAddedLabels.length <= 2
+                ? extrasAddedLabels.join(" · ")
+                : `${extrasAddedLabels[0]} · ${extrasAddedLabels[1]} +${extrasAddedLabels.length - 2}`,
+            tone: "accent",
+          },
+        ];
 
   return (
     <div className="space-y-6">
+      {/* Dancing phase: surface the Open dancing playlist at top — Music
+          tab owns it; this is a read-only pointer so couples don't have to
+          hunt across tabs to manage the main dance floor. */}
+      {phaseFilter === "dancing" && (
+        <MusicLink
+          phase="open_dancing"
+          songs={songs || []}
+          expected="playlist"
+          label="Open dancing playlist"
+          hint="~30–45 songs that keep the floor moving"
+        />
+      )}
+
       {/* Timeline */}
       <DndContext
         sensors={sensors}
@@ -389,73 +527,106 @@ export function ReceptionSection({
         </div>
       )}
 
-      {/* Notes block — phase-specific contents */}
-      <div className="pt-2">
-        <button
-          type="button"
-          onClick={() => setNotesOpen((o) => !o)}
-          aria-expanded={notesOpen}
-          className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+      {/* Phase-scoped extras: Reception tab gets reception-phase extras,
+          Dancing tab gets dancing-phase extras. Shared rendering, just
+          a different ID set + labeling per phase. */}
+      {extrasForPhase.length > 0 && (
+        <CollapsibleSection
+          icon={<PartyPopper />}
+          title={phaseFilter === "dancing" ? "Dancing extras" : "Reception extras"}
+          hint={
+            phaseFilter === "dancing"
+              ? "tap to add as a moment — time comes from Schedule"
+              : "dinner-time interactions and reveals — time comes from Schedule"
+          }
+          summaryChips={extrasSummaryChips}
+          emptyLabel="None added"
         >
-          {notesOpen ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
-          {phaseFilter === "dancing" ? "Dancing extras" : "Reception notes"}
-          {!notesOpen && (
-            <span className="text-xs text-muted-foreground/60 font-normal ml-1">
-              {phaseFilter === "dancing"
-                ? "bouquet toss, garter toss, anniversary dance, shoe game"
-                : "cultural traditions"}
-            </span>
-          )}
-        </button>
+          <TooltipProvider delay={150}>
+            <div className="flex flex-wrap gap-2">
+              {extrasForPhase.map((id) => {
+                const added = !!tossInSchedule(id);
+                const description = MOMENT_DESCRIPTIONS[id];
+                return (
+                  <div
+                    key={id}
+                    className="inline-flex items-center gap-1"
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        added
+                          ? removeTossFromSchedule(id)
+                          : addTossToSchedule(id)
+                      }
+                      disabled={!onScheduleChange}
+                      title={
+                        added
+                          ? "Click to remove from timeline + Schedule"
+                          : "Click to add — a Schedule entry will be created"
+                      }
+                      className={cn(
+                        "inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-colors",
+                        added
+                          ? "border-primary/50 bg-primary/5 text-foreground hover:border-primary"
+                          : "border-border/80 bg-background text-foreground/70 hover:border-primary/40 hover:text-primary",
+                        !onScheduleChange && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      {added ? (
+                        <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+                      ) : (
+                        <Plus className="h-3 w-3 shrink-0" />
+                      )}
+                      {RECEPTION_MOMENT_TITLES[id]}
+                    </button>
+                    {description && (
+                      <Tooltip>
+                        <TooltipTrigger
+                          type="button"
+                          aria-label={`What is ${RECEPTION_MOMENT_TITLES[id]}?`}
+                          className="p-1 rounded-full text-muted-foreground/50 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs leading-relaxed">
+                          {description}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </TooltipProvider>
+          <p className="text-[11px] text-muted-foreground/70 mt-3">
+            Adds a Schedule entry so the vendor team knows when it
+            happens. Defaults are smart but adjustable on the Schedule
+            tab.
+          </p>
+        </CollapsibleSection>
+      )}
 
-        {notesOpen && (
-          <div className="mt-4 space-y-6 border-l-2 border-border/40 pl-5">
-            {phaseFilter === "dancing" && (
-              <div>
-                <h4 className="text-sm font-medium mb-1">Dancing extras</h4>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Turn these on to add them as moments in the timeline above.
-                </p>
-                <div className="flex flex-wrap gap-4">
-                  {([
-                    ["bouquet_toss", "Bouquet toss"],
-                    ["garter_toss", "Garter toss"],
-                    ["anniversary_dance", "Anniversary dance"],
-                    ["shoe_game", "Shoe game"],
-                  ] as const).map(([key, label]) => (
-                    <label key={key} className="flex items-center gap-2 text-sm">
-                      <Checkbox
-                        checked={data[key]}
-                        onCheckedChange={(v) => set({ [key]: !!v } as Partial<ReceptionData>)}
-                      />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {phaseFilter === "reception" && (
-              <div>
-                <h4 className="text-sm font-medium mb-1">Cultural or religious traditions</h4>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Hora, money dance, or any reception traditions you want to include.
-                </p>
-                <Textarea
-                  placeholder="Describe any cultural or religious reception elements..."
-                  value={data.cultural_notes}
-                  onChange={(e) => set({ cultural_notes: e.target.value })}
-                  className="text-sm min-h-[80px]"
-                />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      {phaseFilter === "reception" && (
+        <CollapsibleSection
+          icon={<Flame />}
+          title="Cultural or religious traditions"
+          hint="hora, money dance, or any reception traditions to include"
+          summaryChips={
+            data.cultural_notes?.trim()
+              ? [{ label: "has notes", tone: "muted" }]
+              : []
+          }
+          emptyLabel="None — skip if not applicable"
+        >
+          <Textarea
+            placeholder="Describe any cultural or religious reception elements…"
+            value={data.cultural_notes}
+            onChange={(e) => set({ cultural_notes: e.target.value })}
+            className="text-sm min-h-[80px]"
+          />
+        </CollapsibleSection>
+      )}
     </div>
   );
 
@@ -490,6 +661,8 @@ export function ReceptionSection({
       case "garter_toss":
       case "anniversary_dance":
       case "shoe_game":
+      case "slideshow":
+      case "dessert_bar":
         return renderToss(id as TossMomentId, title, extras);
       default:
         return null;
@@ -656,9 +829,10 @@ export function ReceptionSection({
   }
 
   function renderDinner(title: string, extras: MomentExtras | undefined) {
+    const vendorMeals = logisticsData?.vendor_meals_timing?.trim();
     const summary = chips([
       summarizeSongs("dinner", songs, "playlist"),
-      data.vendor_meals_note?.trim() ? "vendor meals noted" : null,
+      vendorMeals ? "vendor meals noted" : null,
       ...extrasChips(extras),
     ]);
     return (
@@ -697,14 +871,39 @@ export function ReceptionSection({
           <PrimaryField
             icon={<UtensilsCrossed className="h-4 w-4 text-primary/80" />}
             label="Vendor meals"
-            hint="when vendors eat, usually during speeches"
+            hint="when vendors eat — managed in Logistics"
           >
-            <Textarea
-              placeholder="e.g., Vendors eat during speeches. DJ eats first, then photographer."
-              value={data.vendor_meals_note}
-              onChange={(e) => set({ vendor_meals_note: e.target.value })}
-              className="text-sm min-h-[60px]"
-            />
+            <button
+              type="button"
+              onClick={onNavigateToLogistics}
+              disabled={!onNavigateToLogistics}
+              className={cn(
+                "group/vm w-full flex items-center gap-3 rounded-md border px-3 py-2.5 transition-colors text-left",
+                vendorMeals
+                  ? "border-primary/30 bg-primary/[0.04] hover:border-primary/60"
+                  : "border-dashed border-border/80 bg-background hover:border-primary/40",
+                !onNavigateToLogistics && "opacity-60 cursor-not-allowed"
+              )}
+            >
+              {vendorMeals ? (
+                <span className="text-sm text-foreground flex-1 min-w-0 truncate whitespace-nowrap">
+                  {vendorMeals}
+                </span>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 text-muted-foreground/70 shrink-0" />
+                  <span className="text-sm text-muted-foreground flex-1">
+                    Not set
+                  </span>
+                </>
+              )}
+              {onNavigateToLogistics && (
+                <span className="inline-flex items-center gap-1 text-xs text-primary/70 group-hover/vm:text-primary transition-colors shrink-0">
+                  {vendorMeals ? "Edit" : "Add"} in Logistics
+                  <ArrowUpRight className="h-3 w-3" />
+                </span>
+              )}
+            </button>
           </PrimaryField>
 
           <MomentUniformFields
@@ -1175,22 +1374,22 @@ export function ReceptionSection({
         onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={tossSummary}
         onRename={(t) => renameMoment(id, t)}
-        onRemove={() => set({ [id]: false } as Partial<ReceptionData>)}
-        removeLabel="Hide from timeline"
+        onRemove={() => removeTossFromSchedule(id)}
+        removeLabel="Remove from timeline"
       >
         <div className="space-y-5">
           <Description momentId={id} />
           <PrimaryField
             icon={<Music className="h-4 w-4 text-primary/80" />}
-            label="Toss song"
-            hint="optional — many couples have a signature"
+            label="Music cue"
+            hint="optional — song title or playlist note"
           >
             <MomentMusicBlock
               skip={extras?.skip_music ?? false}
               onSkipChange={(v) => updateExtras(id, { skip_music: v })}
             >
               <Input
-                placeholder='e.g., "Single Ladies" by Beyoncé'
+                placeholder="Song — or describe the playlist"
                 value={extras?.song ?? ""}
                 onChange={(e) => updateExtras(id, { song: e.target.value })}
                 className="h-10 text-sm"

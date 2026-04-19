@@ -117,6 +117,7 @@ function parseTo24h(time: string): [number, number] | null {
 
 // ── Getting Ready ──────────────────────────────────────────────────────
 
+/** @deprecated Use `stations` instead. Kept for back-compat with old data. */
 export interface GettingReadyGroup {
   label: string;
   location: string;
@@ -124,14 +125,55 @@ export interface GettingReadyGroup {
   who: string;
 }
 
+export interface GettingReadyStation {
+  id: string;
+  /** Who's getting styled — the primary identifier for the station. */
+  who: string;
+  location: string;
+}
+
+export interface PhotoSubgroup {
+  id: string;
+  /** e.g., "Bridesmaids", "Immediate family" */
+  label: string;
+  /** Names — comma-separated or free form. */
+  members: string;
+}
+
+export interface PhotoGroupData {
+  /** @deprecated migrated to subgroups[]. Kept for back-compat. */
+  who: string;
+  where: string;
+  time: string;
+  notes: string;
+  subgroups: PhotoSubgroup[];
+}
+
+export interface FamilyPhotosData extends PhotoGroupData {
+  /** Planner tip: family members scatter. Assign someone to round them up. */
+  wrangler: string;
+}
+
 export interface GettingReadyData {
+  /** Canonical list of hair/makeup stations — add / rename / remove. */
+  stations: GettingReadyStation[];
+  /** @deprecated migrated into `stations` on first edit. Kept for back-compat. */
   group_1: GettingReadyGroup;
+  /** @deprecated migrated into `stations` on first edit. Kept for back-compat. */
   group_2: GettingReadyGroup;
   hair_makeup_notes: string;
-  detail_shots: string[]; // checked items from default list
+  /** @deprecated Schedule owns photographer arrival time now. */
+  photographer_arrival_time: string;
+  /** Default detail shots the couple has checked. */
+  detail_shots: string[];
+  /** Couple-added shots beyond the default list. */
+  custom_detail_shots: string[];
+  /** @deprecated derived from first_look_time/location having content. */
   first_look: boolean;
   first_look_time: string;
   first_look_location: string;
+  bridal_party_photos: PhotoGroupData;
+  family_photos: FamilyPhotosData;
   cultural_notes: string;
 }
 
@@ -150,15 +192,77 @@ export const DEFAULT_DETAIL_SHOTS = [
 
 export function getDefaultGettingReadyData(): GettingReadyData {
   return {
+    stations: [],
     group_1: { label: "Group 1", location: "", time: "", who: "" },
     group_2: { label: "Group 2", location: "", time: "", who: "" },
     hair_makeup_notes: "",
+    photographer_arrival_time: "",
     detail_shots: [],
+    custom_detail_shots: [],
     first_look: false,
     first_look_time: "",
     first_look_location: "",
+    bridal_party_photos: {
+      who: "",
+      where: "",
+      time: "",
+      notes: "",
+      subgroups: [],
+    },
+    family_photos: {
+      who: "",
+      where: "",
+      time: "",
+      wrangler: "",
+      notes: "",
+      subgroups: [],
+    },
     cultural_notes: "",
   };
+}
+
+/**
+ * One-time migration helper: if `stations` is empty, reads the old
+ * `group_1 / group_2` fields and synthesizes a station list. Callers can
+ * treat this as the single source of truth.
+ */
+export function effectiveStations(
+  d: Pick<GettingReadyData, "stations" | "group_1" | "group_2">
+): GettingReadyStation[] {
+  if (d.stations?.length) {
+    // Old records may carry `label` or `time` fields — drop `time` (the
+    // Schedule now owns the start time for the whole hair & makeup block)
+    // and fold `label` into `who` when `who` is empty.
+    return d.stations.map((s) => {
+      const legacyLabel = (s as unknown as { label?: string }).label;
+      return {
+        id: s.id,
+        who: s.who?.trim() ? s.who : legacyLabel || "",
+        location: s.location || "",
+      };
+    });
+  }
+  const fromGroup = (
+    group: GettingReadyGroup | undefined
+  ): GettingReadyStation | null => {
+    if (!group) return null;
+    const hasContent =
+      group.label?.trim() ||
+      group.location?.trim() ||
+      group.time?.trim() ||
+      group.who?.trim();
+    if (!hasContent) return null;
+    return {
+      id: crypto.randomUUID(),
+      who: group.who?.trim() || group.label || "",
+      location: group.location || "",
+    };
+  };
+  const migrated = [
+    fromGroup(d.group_1),
+    fromGroup(d.group_2),
+  ].filter((s): s is GettingReadyStation => s !== null);
+  return migrated;
 }
 
 // ── Ceremony ───────────────────────────────────────────────────────────
@@ -173,16 +277,16 @@ export interface ReadingEntry {
   id: string;
   reader: string;
   title: string;
-  notes: string;
 }
 
 export interface CeremonyData {
   processional: ProcessionalEntry[];
+  /** People exiting the aisle, in order. Mirrors processional's schema. */
+  recessional: ProcessionalEntry[];
   readings: ReadingEntry[];
   vows_style: "custom" | "traditional" | "mix" | "";
   unity_ceremony: "none" | "sand" | "candle" | "handfasting" | "wine_box" | "other" | "";
   unity_notes: string;
-  recessional_style: "together" | "bridal_party_first" | "";
   officiant_notes: string;
   cultural_notes: string;
 }
@@ -195,11 +299,14 @@ export function getDefaultCeremonyData(): CeremonyData {
       { id: crypto.randomUUID(), role: "Partner 1", name: "" },
       { id: crypto.randomUUID(), role: "Partner 2", name: "" },
     ],
+    recessional: [
+      { id: crypto.randomUUID(), role: "Couple", name: "" },
+      { id: crypto.randomUUID(), role: "Wedding party", name: "" },
+    ],
     readings: [],
     vows_style: "",
     unity_ceremony: "",
     unity_notes: "",
-    recessional_style: "",
     officiant_notes: "",
     cultural_notes: "",
   };
@@ -209,28 +316,47 @@ export function getDefaultCeremonyData(): CeremonyData {
 
 export interface CocktailData {
   location: "same_venue" | "different_area" | "outdoor" | "";
-  duration: "45" | "60" | "90" | "";
+  /** Specific area name shown when location is "different_area" or "outdoor". */
+  location_detail: string;
+  duration: "45" | "60" | "90" | "custom" | "";
+  /** Minutes, only valid when duration === "custom". */
+  duration_custom: string;
   activities_lawn_games: boolean;
   activities_photo_booth: boolean;
   activities_live_music: boolean;
+  /** Couple-added activities beyond the 3 defaults. */
+  custom_activities: string[];
   music_mood: "background_jazz" | "acoustic" | "dj_playlist" | "live_band" | "";
   catering_notes: string;
-  photos_during: boolean;
-  photos_notes: string;
+  /** What the photographer captures during cocktail hour — multi-select. */
+  photographer_focus: string[];
+  /** Free-form additions to the photographer focus list. */
+  photographer_notes: string;
   cultural_notes: string;
 }
+
+/** Preset photographer-focus choices shown as checkboxes. */
+export const PHOTOGRAPHER_FOCUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "couple_portraits", label: "Couple portraits" },
+  { value: "joining_guests", label: "Joining guests" },
+  { value: "guest_candids", label: "Guest candids only" },
+  { value: "golden_hour", label: "Sunset / golden hour" },
+];
 
 export function getDefaultCocktailData(): CocktailData {
   return {
     location: "",
+    location_detail: "",
     duration: "",
+    duration_custom: "",
     activities_lawn_games: false,
     activities_photo_booth: false,
     activities_live_music: false,
+    custom_activities: [],
     music_mood: "",
     catering_notes: "",
-    photos_during: false,
-    photos_notes: "",
+    photographer_focus: [],
+    photographer_notes: "",
     cultural_notes: "",
   };
 }
@@ -297,12 +423,16 @@ export const RECEPTION_MOMENT_IDS = [
 
 export type BuiltInReceptionMomentId = (typeof RECEPTION_MOMENT_IDS)[number];
 
-/** Optional "extra" moments shown only when their toggle is on. */
+/** Optional "extra" moments shown only when the couple adds them via
+ *  the Quick-add chips. Named `_TOSS_` for historical reasons — the set
+ *  now also includes non-toss extras like slideshow + dessert bar. */
 export const RECEPTION_TOSS_IDS = [
   "bouquet_toss",
   "garter_toss",
   "anniversary_dance",
   "shoe_game",
+  "slideshow",
+  "dessert_bar",
 ] as const;
 
 export type TossMomentId = (typeof RECEPTION_TOSS_IDS)[number];
@@ -319,6 +449,8 @@ export const RECEPTION_PHASE_MOMENT_IDS: readonly string[] = [
   "parent_dances",
   "speeches",
   "cake_cutting",
+  "shoe_game",
+  "slideshow",
 ];
 
 export const DANCING_PHASE_MOMENT_IDS: readonly string[] = [
@@ -327,7 +459,7 @@ export const DANCING_PHASE_MOMENT_IDS: readonly string[] = [
   "bouquet_toss",
   "garter_toss",
   "anniversary_dance",
-  "shoe_game",
+  "dessert_bar",
 ];
 
 /** Which phase a moment id belongs to. Custom moments default to "reception". */
@@ -351,6 +483,8 @@ export const RECEPTION_MOMENT_TITLES: Record<
   garter_toss: "Garter toss",
   anniversary_dance: "Anniversary dance",
   shoe_game: "Shoe game",
+  slideshow: "Slideshow",
+  dessert_bar: "Dessert bar",
 };
 
 /**
@@ -414,6 +548,10 @@ export function defaultMcLineForMoment(
       return "We invite all married couples to the dance floor.";
     case "shoe_game":
       return "Time for the shoe game — grab your chairs!";
+    case "slideshow":
+      return "Let's take a moment to look back — here's a little slideshow of the journey.";
+    case "dessert_bar":
+      return "The dessert bar is now open — please help yourself!";
     default:
       return "";
   }
@@ -434,6 +572,8 @@ export const TYPICAL_MC_MOMENTS: ReadonlySet<string> = new Set([
   "garter_toss",
   "anniversary_dance",
   "shoe_game",
+  "slideshow",
+  "dessert_bar",
 ]);
 
 export interface ExitPlan {
@@ -455,11 +595,6 @@ export interface ReceptionData {
   first_dance_notes: string;
   parent_dances: ParentDance[];
   speeches: SpeechEntry[];
-  vendor_meals_note: string;
-  bouquet_toss: boolean;
-  garter_toss: boolean;
-  anniversary_dance: boolean;
-  shoe_game: boolean;
   cake_cutting: boolean;
   cake_cutting_song: string;
   last_dance_song: string;
@@ -548,11 +683,6 @@ export function getDefaultReceptionData(): ReceptionData {
       { id: crypto.randomUUID(), who: "Partner 2 & Parent", song: "", artist: "" },
     ],
     speeches: [],
-    vendor_meals_note: "",
-    bouquet_toss: false,
-    garter_toss: false,
-    anniversary_dance: false,
-    shoe_game: false,
     cake_cutting: true,
     cake_cutting_song: "",
     last_dance_song: "",
@@ -577,6 +707,9 @@ export interface PhotoShotListData {
   pre_ceremony: PhotoShot[];
   ceremony_family: PhotoShot[];
   reception: PhotoShot[];
+  /** Sensitive notes for the photographer — divorced family dynamics,
+   *  relatives to exclude from certain photos, moments to avoid, etc. */
+  do_not_shoot_notes: string;
 }
 
 export function getDefaultPhotoShotListData(): PhotoShotListData {
@@ -617,11 +750,13 @@ export function getDefaultPhotoShotListData(): PhotoShotListData {
       shot("Golden hour portraits (schedule ~60 min before sunset)"),
       shot("Exit / send-off moment"),
     ],
+    do_not_shoot_notes: "",
   };
 }
 
 // ── Logistics ──────────────────────────────────────────────────────────
 
+/** @deprecated kept so legacy records can be migrated at read time. */
 export interface DayOfRoles {
   rings: string;
   license: string;
@@ -644,15 +779,41 @@ export const DAY_OF_ROLE_META: {
   { key: "timeline", label: "Timeline nudger", hint: "Keeps the day on schedule" },
 ];
 
+export interface DayOfRole {
+  id: string;
+  /** Display label. Built-ins use the preset wording; customs are couple-entered. */
+  label: string;
+  /** Short explainer, only set on built-in roles. */
+  hint?: string;
+  /** Name & phone of the person assigned — free-form string. */
+  assignee: string;
+  /** True for the 6 preset roles, false/undefined for couple-added customs. */
+  isBuiltIn?: boolean;
+}
+
+export interface EmergencyContact {
+  id: string;
+  name: string;
+  phone: string;
+}
+
 export interface LogisticsData {
   transportation: string;
   rain_plan: string;
-  emergency_contact_name: string;
-  emergency_contact_phone: string;
+  /** Multiple emergency contacts — coordinator, backup, family rep, etc. */
+  emergency_contacts: EmergencyContact[];
+  /** @deprecated use `emergency_contacts`; kept for read-time migration. */
+  emergency_contact_name?: string;
+  /** @deprecated use `emergency_contacts`; kept for read-time migration. */
+  emergency_contact_phone?: string;
   vendor_meals_timing: string;
   cultural_notes: string;
   notes: string;
-  /** Named runners for day-of responsibilities. Optional; older records may omit. */
+  /** Named runners for day-of responsibilities — 6 preset built-ins plus
+   *  any couple-added customs. Use `effectiveRoles()` to handle both the
+   *  current list shape and the legacy object shape. */
+  roles_list: DayOfRole[];
+  /** @deprecated legacy 6-field object shape; use `roles_list`. */
   roles?: DayOfRoles;
 }
 
@@ -660,20 +821,76 @@ export function getDefaultLogisticsData(): LogisticsData {
   return {
     transportation: "",
     rain_plan: "",
-    emergency_contact_name: "",
-    emergency_contact_phone: "",
+    emergency_contacts: [],
     vendor_meals_timing: "",
     cultural_notes: "",
     notes: "",
-    roles: {
-      rings: "",
-      license: "",
-      tips: "",
-      toasts_cue: "",
-      gifts: "",
-      timeline: "",
-    },
+    roles_list: DAY_OF_ROLE_META.map((m) => ({
+      id: crypto.randomUUID(),
+      label: m.label,
+      hint: m.hint,
+      assignee: "",
+      isBuiltIn: true,
+    })),
   };
+}
+
+/**
+ * Normalize Day-of roles to the array shape. Handles three cases:
+ *   - Current: `roles_list: DayOfRole[]` already present
+ *   - Legacy: `roles: DayOfRoles` object (6 keys) — convert to array
+ *   - Empty: seed with 6 built-in defaults
+ */
+export function effectiveRoles(d: LogisticsData): DayOfRole[] {
+  if (Array.isArray(d.roles_list) && d.roles_list.length > 0) {
+    return d.roles_list;
+  }
+  const legacy = (d as unknown as { roles?: DayOfRoles }).roles;
+  if (legacy && typeof legacy === "object") {
+    return DAY_OF_ROLE_META.map((m) => ({
+      id: crypto.randomUUID(),
+      label: m.label,
+      hint: m.hint,
+      assignee: legacy[m.key] ?? "",
+      isBuiltIn: true,
+    }));
+  }
+  return DAY_OF_ROLE_META.map((m) => ({
+    id: crypto.randomUUID(),
+    label: m.label,
+    hint: m.hint,
+    assignee: "",
+    isBuiltIn: true,
+  }));
+}
+
+/**
+ * Normalize Emergency contacts to array shape. Handles legacy single
+ * name+phone fields by migrating into a single array entry; empty
+ * records return an empty array.
+ */
+export function effectiveEmergencyContacts(
+  d: LogisticsData
+): EmergencyContact[] {
+  if (Array.isArray(d.emergency_contacts) && d.emergency_contacts.length > 0) {
+    return d.emergency_contacts;
+  }
+  const legacyName = (
+    d as unknown as { emergency_contact_name?: string }
+  ).emergency_contact_name;
+  const legacyPhone = (
+    d as unknown as { emergency_contact_phone?: string }
+  ).emergency_contact_phone;
+  if (legacyName?.trim() || legacyPhone?.trim()) {
+    return [
+      {
+        id: crypto.randomUUID(),
+        name: legacyName ?? "",
+        phone: legacyPhone ?? "",
+      },
+    ];
+  }
+  return [];
 }
 
 // ── Section keys ───────────────────────────────────────────────────────
@@ -758,8 +975,8 @@ export function isGettingReadyComplete(d: GettingReadyData): CompletionState {
 
 export function isCeremonyComplete(d: CeremonyData): CompletionState {
   const hasProcessional = (d.processional || []).some((p) => hasText(p.name));
+  const hasRecessional = (d.recessional || []).some((p) => hasText(p.name));
   const hasVows = !!d.vows_style;
-  const hasRecessional = !!d.recessional_style;
   if (hasVows && hasRecessional) return "done";
   if (hasProcessional || hasVows || hasRecessional) return "partial";
   return "empty";
@@ -780,13 +997,13 @@ export function isReceptionComplete(d: ReceptionData): CompletionState {
 }
 
 export function isLogisticsComplete(d: LogisticsData): CompletionState {
-  const hasEmergency = hasText(d.emergency_contact_phone);
+  const contacts = effectiveEmergencyContacts(d);
+  const hasEmergency = contacts.some((c) => hasText(c.phone));
   const hasRain = hasText(d.rain_plan);
   const anyField =
     hasText(d.transportation) ||
     hasText(d.rain_plan) ||
-    hasText(d.emergency_contact_name) ||
-    hasText(d.emergency_contact_phone) ||
+    contacts.some((c) => hasText(c.name) || hasText(c.phone)) ||
     hasText(d.vendor_meals_timing) ||
     hasText(d.cultural_notes) ||
     hasText(d.notes);
