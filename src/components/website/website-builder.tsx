@@ -755,6 +755,8 @@ export function WebsiteBuilder({
         // 23505 = unique_violation (most likely the slug)
         if (error.code === "23505") {
           setSlugError("That URL is taken — try a different one.");
+        } else if (error.message?.includes("slug_locked_while_published")) {
+          setSlugError("URL is locked while published. Unpublish to change it.");
         } else {
           toast.error("Could not save changes", {
             description: error.message,
@@ -898,12 +900,18 @@ export function WebsiteBuilder({
                   placeholder="sarah-and-james"
                   className="font-mono text-sm"
                   aria-invalid={slugError !== null}
+                  disabled={published}
+                  readOnly={published}
                 />
               </div>
               {slugError ? (
                 <p className="text-xs text-destructive flex items-center gap-1">
                   <AlertCircle className="h-3 w-3" />
                   {slugError}
+                </p>
+              ) : published ? (
+                <p className="text-xs text-muted-foreground">
+                  Locked while published. Unpublish to change — any link you&apos;ve already shared with guests would break.
                 </p>
               ) : null}
             </div>
