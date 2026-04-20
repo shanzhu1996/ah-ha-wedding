@@ -54,7 +54,17 @@ export function GuestSearch({
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return [];
+    // Empty query while focused: show unseated guests — these are the ones
+    // the couple is most likely to be looking for, so seat them without
+    // having to type anything.
+    if (!q) {
+      return guests
+        .filter((g) => !g.table_id)
+        .sort((a, b) =>
+          `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`)
+        )
+        .slice(0, 8);
+    }
     return guests
       .filter((g) => {
         const full = `${g.first_name} ${g.last_name}`.toLowerCase();
@@ -92,7 +102,9 @@ export function GuestSearch({
     inputRef.current?.blur();
   }
 
-  const showResults = focused && (results.length > 0 || query.trim().length > 0);
+  // Show dropdown whenever focused — lets the couple see unseated guests
+  // without having to type anything first.
+  const showResults = focused;
 
   return (
     <div className="relative">
@@ -100,7 +112,7 @@ export function GuestSearch({
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
         <Input
           ref={inputRef}
-          placeholder="Find a guest…"
+          placeholder="Pick a guest to seat…"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -138,7 +150,9 @@ export function GuestSearch({
         >
           {results.length === 0 ? (
             <li className="px-2.5 py-2 text-xs text-muted-foreground italic">
-              No guests match “{query}”
+              {query.trim().length > 0
+                ? `No guests match “${query}”`
+                : "Everyone is seated. Type to find a seated guest."}
             </li>
           ) : (
             results.map((g, i) => {

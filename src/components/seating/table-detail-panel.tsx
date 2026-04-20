@@ -40,6 +40,12 @@ export interface SeatedGuest {
 
 type Rotation = 0 | 90 | 180 | 270;
 
+interface UnseatedGuestRef {
+  id: string;
+  first_name: string;
+  last_name: string;
+}
+
 interface Props {
   id: string;
   number: number;
@@ -50,6 +56,10 @@ interface Props {
   notes: string | null;
   locked: boolean;
   seated: SeatedGuest[];
+  /** Guests not yet assigned to any seat — used for the inline seat picker. */
+  unseatedGuests: UnseatedGuestRef[];
+  /** Assign a guest directly to a specific seat (from the inline picker). */
+  onAssignToSeat: (seatNumber: number, guestId: string) => Promise<void> | void;
   /** Explicit header label. Used for sweethearts → "Alice & Bob" or "Sweetheart". */
   displayLabel?: string;
   /** Virtual seats (dimmed, non-interactive). Real seated wins at same seat number. */
@@ -150,6 +160,8 @@ export function TableDetailPanel({
   capacity,
   rotation,
   seated,
+  unseatedGuests,
+  onAssignToSeat,
   isSelectable,
   selectedGuestId,
   onClose,
@@ -180,6 +192,39 @@ export function TableDetailPanel({
   const [draggingGuestId, setDraggingGuestId] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState(notes ?? "");
   const [notesSaving, setNotesSaving] = useState(false);
+  // Inline seat picker — which empty-seat row is currently being typed in.
+  const [pickerSeat, setPickerSeat] = useState<number | null>(null);
+  const [pickerQuery, setPickerQuery] = useState("");
+  const [pickerIdx, setPickerIdx] = useState(0);
+
+  const pickerResults = pickerSeat !== null
+    ? (() => {
+        const q = pickerQuery.trim().toLowerCase();
+        const base = q
+          ? unseatedGuests.filter((g) => {
+              const full = `${g.first_name} ${g.last_name}`.toLowerCase();
+              return full.includes(q);
+            })
+          : unseatedGuests;
+        return base
+          .slice()
+          .sort((a, b) =>
+            `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`)
+          )
+          .slice(0, 8);
+      })()
+    : [];
+
+  function closePicker() {
+    setPickerSeat(null);
+    setPickerQuery("");
+    setPickerIdx(0);
+  }
+
+  async function pickForSeat(seatNum: number, guestId: string) {
+    await onAssignToSeat(seatNum, guestId);
+    closePicker();
+  }
 
   // Build seat_number → guest map
   const assigned: Record<number, SeatAssignment> = {};
@@ -451,11 +496,12 @@ export function TableDetailPanel({
             </div>
           )}
 
-          {seated.length === 0 && !isSweetheart ? (
-            <p className="text-sm text-muted-foreground italic">
-              No guests seated yet. Pick a guest and click a seat.
+          {seated.length === 0 && !isSweetheart && (
+            <p className="text-xs text-muted-foreground italic pb-1">
+              Click any seat below to place a guest.
             </p>
-          ) : (
+          )}
+          {!(seated.length === 0 && isSweetheart) && (
             <ul className="space-y-1">
               {Array.from({ length: capacity }).map((_, idx) => {
                 const seatNum = idx + 1;
@@ -568,10 +614,86 @@ export function TableDetailPanel({
                             host
                           </span>
                         </span>
+                      ) : pickerSeat === seatNum ? (
+                        <div className="flex-1 relative">
+                          <Input
+                            autoFocus
+                            value={pickerQuery}
+                            onChange={(e) => {
+                              setPickerQuery(e.target.value);
+                              setPickerIdx(0);
+                            }}
+                            onBlur={() => setTimeout(closePicker, 150)}
+                            onKeyDown={(e) => {
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                setPickerIdx((i) => Math.min(i + 1, pickerResults.length - 1));
+                              } else if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                setPickerIdx((i) => Math.max(0, i - 1));
+                              } else if (e.key === "Enter") {
+                                e.preventDefault();
+                                const hit = pickerResults[pickerIdx];
+                                if (hit) pickForSeat(seatNum, hit.id);
+                              } else if (e.key === "Escape") {
+                                closePicker();
+                              }
+                            }}
+                            placeholder={
+                              unseatedGuests.length === 0
+                                ? "No unseated guests left"
+                                : "Type a name…"
+                            }
+                            className="h-7 text-sm"
+                          />
+                          {pickerResults.length > 0 && (
+                            <ul
+                              role="listbox"
+                              className="absolute top-full left-0 right-0 mt-1 max-h-64 overflow-auto rounded-md border border-border/60 bg-popover shadow-md z-50"
+                            >
+                              {pickerResults.map((g, i) => (
+                                <li key={g.id}>
+                                  <button
+                                    type="button"
+                                    // mousedown to win the race against input blur
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      pickForSeat(seatNum, g.id);
+                                    }}
+                                    // onClick is the canonical path; catch it too
+                                    // in case browsers fire click without mousedown
+                                    // (e.g. keyboard Enter that bubbles here).
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      pickForSeat(seatNum, g.id);
+                                    }}
+                                    onMouseEnter={() => setPickerIdx(i)}
+                                    className={cn(
+                                      "w-full text-left px-2.5 py-1.5 text-xs",
+                                      i === pickerIdx ? "bg-muted/60" : "hover:bg-muted/40"
+                                    )}
+                                  >
+                                    {g.first_name} {g.last_name}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
                       ) : (
                         <button
                           type="button"
-                          onClick={() => onSeatClick(seatNum)}
+                          onClick={() => {
+                            if (isSelectable) {
+                              onSeatClick(seatNum);
+                            } else {
+                              setPickerSeat(seatNum);
+                              setPickerQuery("");
+                              setPickerIdx(0);
+                            }
+                          }}
                           className={cn(
                             "flex-1 text-left pl-1 pr-2 py-0.5 rounded-md text-muted-foreground/60 italic hover:bg-muted/40 transition-colors",
                             isSelectable && "text-muted-foreground",
@@ -583,7 +705,7 @@ export function TableDetailPanel({
                             ? "(drop here)"
                             : isSelectable
                               ? "(click to place here)"
-                              : "empty"}
+                              : "click to add a guest"}
                         </button>
                       )
                     )}

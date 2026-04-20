@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Wand2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,6 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { AddTableDialog } from "./add-table-dialog";
-import { UnassignedSidebar } from "./unassigned-sidebar";
 import { RoomCanvas } from "./room-canvas";
 import { TableDetailPanel } from "./table-detail-panel";
 import {
@@ -22,7 +22,6 @@ import {
   type SeatAssignment,
 } from "./table-visual";
 import { DietarySummary } from "./dietary-summary";
-import { GuestSearch } from "./guest-search";
 import { toast } from "sonner";
 import { triggerConfetti } from "@/components/ui/confetti";
 import { useSeatAssignment } from "./use-seat-assignment";
@@ -152,7 +151,11 @@ export function SeatingManager({
   const { assign, unassign, swap, applyOverlay } = useSeatAssignment();
 
   const [addOpen, setAddOpen] = useState(false);
-  const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
+  // Selection state removed 2026-04-19 — the old "pick a guest → click a seat"
+  // flow was replaced by the inline per-seat picker in TableDetailPanel.
+  // Kept as a const so existing code paths don't break while we clean up.
+  const selectedGuestId: string | null = null;
+  const setSelectedGuestId: (id: string | null) => void = () => {};
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   // Briefly pulse a seat (e.g. after guest-search jump) — {tableId, seat}.
   const [highlightSeat, setHighlightSeat] = useState<{
@@ -846,33 +849,13 @@ export function SeatingManager({
       );
       return;
     }
-    // Occupied → swap (atomic via RPC if both seated, else bump-and-place)
-    if (dragged.table_id && dragged.seat_number) {
-      await recordedSwap(
-        {
-          id: dragged.id,
-          table_id: dragged.table_id,
-          seat_number: dragged.seat_number,
-        },
-        {
-          id: occupant.id,
-          table_id: occupant.table_id,
-          seat_number: occupant.seat_number,
-        },
-        `Swapped ${dragged.first_name} and ${occupant.first_name}`
-      );
-    } else {
-      await recordedUnassign(
-        occupant.id,
-        `Unseated ${occupant.first_name} ${occupant.last_name}`
-      );
-      await recordedAssign(
-        dragged.id,
-        tableId,
-        targetSeatNumber,
-        `Placed ${dragged.first_name} ${dragged.last_name}`
-      );
-    }
+    // Occupied → reject. Swap was removed 2026-04-19 to keep the mental
+    // model simple (drag only lands on empty seats). To swap two people,
+    // unseat one first then drag the other. Note: `occupant` is kept in scope
+    // so the toast can name whose seat is taken.
+    toast.info(
+      `Seat is taken by ${occupant.first_name} ${occupant.last_name} — unseat them first.`
+    );
   }
 
   // ── Selected table for detail panel ─────────────────────────────────
@@ -891,9 +874,9 @@ export function SeatingManager({
       {/* Editorial header */}
       <div>
         <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
-          Seating chart
+          Seating
         </h1>
-        {taglineParts.length > 0 && (
+        {taglineParts.length > 0 ? (
           <p className="text-sm text-muted-foreground mt-2">
             {taglineParts.map((part, i) => (
               <span key={i}>
@@ -908,6 +891,17 @@ export function SeatingManager({
               </span>
             ))}
           </p>
+        ) : guests.length === 0 ? (
+          <p className="text-sm text-muted-foreground mt-2">
+            Seating starts with guests.{" "}
+            <Link href="/guests" className="text-primary font-medium hover:underline">
+              Add guests →
+            </Link>
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground mt-2">
+            Build your floor plan — add tables, open one to pick a guest for each seat. Best done after RSVPs close.
+          </p>
         )}
       </div>
 
@@ -920,15 +914,6 @@ export function SeatingManager({
           <Plus className="h-3.5 w-3.5" />
           Add table
         </Button>
-        {guests.length > 0 && (
-          <GuestSearch
-            guests={guests}
-            tables={initialTables}
-            sweetheartLabel={sweetheartLabel}
-            onJumpToSeated={jumpToSeated}
-            onSelectUnseated={setSelectedGuestId}
-          />
-        )}
         {initialTables.length > 0 && unseatedConfirmed > 0 && (
           <Button
             size="sm"
@@ -940,37 +925,6 @@ export function SeatingManager({
             Fill empty seats
           </Button>
         )}
-        {selectedGuestId && (
-          <div className="text-xs ml-1 px-2 py-1 rounded-md bg-primary/10 text-primary font-medium inline-flex items-center gap-2">
-            <span>Click a seat to place</span>
-            {(() => {
-              const g = initialGuests.find((x) => x.id === selectedGuestId);
-              return g?.table_id ? (
-                <>
-                  <span className="text-primary/40">·</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (selectedGuestId) unassign(selectedGuestId);
-                      clearSelection();
-                    }}
-                    className="underline hover:text-foreground"
-                  >
-                    unseat
-                  </button>
-                </>
-              ) : null;
-            })()}
-            <span className="text-primary/40">·</span>
-            <button
-              type="button"
-              onClick={clearSelection}
-              className="underline hover:text-foreground"
-            >
-              cancel
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Contextual help — varies by state */}
@@ -980,25 +934,13 @@ export function SeatingManager({
           Everyone else gathers around.
         </p>
       )}
-      {initialTables.length > 0 &&
-        selectedGuestId === null &&
-        seatedConfirmed === 0 && (
-          <p className="text-xs text-muted-foreground leading-relaxed -mt-3">
-            <strong className="font-medium text-foreground/70">
-              Drag tables
-            </strong>{" "}
-            to arrange them. Click a table to see its seats. Click a name,
-            then a seat — to place or swap.
-          </p>
-        )}
-      {initialTables.length > 0 &&
-        selectedGuestId === null &&
-        seatedConfirmed > 0 &&
-        unseatedConfirmed > 0 && (
-          <p className="text-xs text-muted-foreground leading-relaxed -mt-3">
-            Click a name, then a seat to place or swap.
-          </p>
-        )}
+      {initialTables.length > 0 && seatedConfirmed === 0 && (
+        <p className="text-xs text-muted-foreground leading-relaxed -mt-3">
+          <strong className="font-medium text-foreground/70">Drag tables</strong>{" "}
+          to arrange them. Click a table to open it, then click any seat to
+          pick a guest.
+        </p>
+      )}
       {confirmed.length > 0 &&
         unseatedConfirmed === 0 &&
         initialTables.length > 0 && (
@@ -1023,6 +965,14 @@ export function SeatingManager({
         handleSeatClick={handleSeatClick}
         handleGuestPillClick={handleGuestPillClick}
         handleGuestDragToSeat={handleGuestDragToSeat}
+        assignGuestToSeat={async (guestId, tableId, seatNumber) => {
+          await recordedAssign(
+            guestId,
+            tableId,
+            seatNumber,
+            `Placed guest at seat ${seatNumber}`
+          );
+        }}
         unseatGuest={unseatGuest}
         deleteTable={deleteTable}
         renameTable={renameTable}
@@ -1148,6 +1098,11 @@ interface RoomViewLayoutProps {
     tableId: string,
     targetSeatNumber: number
   ) => void;
+  assignGuestToSeat: (
+    guestId: string,
+    tableId: string,
+    seatNumber: number
+  ) => Promise<void> | void;
   unseatGuest: (guestId: string) => void;
   deleteTable: (tableId: string) => void;
   renameTable: (tableId: string, name: string | null) => Promise<void> | void;
@@ -1190,6 +1145,7 @@ function RoomViewLayout({
   handleSeatClick,
   handleGuestPillClick,
   handleGuestDragToSeat,
+  assignGuestToSeat,
   unseatGuest,
   deleteTable,
   renameTable,
@@ -1361,6 +1317,16 @@ function RoomViewLayout({
             ? highlightSeat.seatNumber
             : undefined
         }
+        unseatedGuests={guests
+          .filter((g) => !g.table_id)
+          .map((g) => ({
+            id: g.id,
+            first_name: g.first_name,
+            last_name: g.last_name,
+          }))}
+        onAssignToSeat={(seatNum, guestId) =>
+          assignGuestToSeat(guestId, selectedTable.id, seatNum)
+        }
         isSelectable={selectedGuestId !== null}
         selectedGuestId={selectedGuestId}
         onClose={() => setSelectedTableId(null)}
@@ -1385,32 +1351,16 @@ function RoomViewLayout({
     </div>
   ) : null;
 
-  const sidebar = (
-    <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-      <UnassignedSidebar
-        guests={unassigned}
-        selectedGuestId={selectedGuestId}
-        onSelectGuest={setSelectedGuestId}
-      />
-    </aside>
-  );
-
   // ── Layouts ──
-  //  (a) No panel open: canvas left, sidebar right (3-col grid condensed to 2-col)
-  //  (b) Panel open, wide: canvas left, panel right. Sidebar hidden.
-  //  (c) Panel open, narrow: canvas on top, panel below. Sidebar hidden.
+  //  (a) No panel open: canvas full-width
+  //  (b) Panel open, wide: canvas left, panel right
+  //  (c) Panel open, narrow: canvas on top, panel below
 
   if (!detailOpen) {
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4">
-        {canvas}
-        {sidebar}
-      </div>
-    );
+    return <div>{canvas}</div>;
   }
 
   if (isWide) {
-    // Side-by-side — sidebar is hidden while detail is open
     return (
       <div className="grid grid-cols-[1fr_400px] gap-4 items-start">
         {canvas}
@@ -1419,7 +1369,6 @@ function RoomViewLayout({
     );
   }
 
-  // Stacked fallback with auto-scroll
   return (
     <div className="space-y-4">
       {canvas}
