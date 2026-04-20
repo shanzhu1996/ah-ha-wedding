@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
-  Sparkles,
   Trash2,
   Edit,
   Search,
@@ -43,196 +42,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import Link from "next/link";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { ConfettiCanvas, triggerConfetti } from "@/components/ui/confetti";
-
-type AttirePreference =
-  | "dress"
-  | "suit"
-  | "mix"
-  | "custom"
-  | "undecided"
-  | null;
-
-const DRESS_ITEMS: { name: string; search: string }[] = [
-  { name: "Wedding gown", search: "wedding dress bridal gown" },
-  { name: "Veil or headpiece", search: "bridal veil headpiece" },
-  { name: "Wedding shoes", search: "bridal wedding shoes" },
-  { name: "Comfortable backup flats", search: "foldable ballet flats wedding" },
-  { name: "Bridal earrings", search: "bridal earrings wedding jewelry" },
-  { name: "Bridal necklace", search: "bridal necklace Etsy" },
-  { name: "Hair accessories", search: "bridal hair comb pins" },
-  { name: "Garter", search: "wedding garter Etsy" },
-  { name: "Getting-ready robe", search: "bride getting ready robe satin" },
-  { name: "Bridal undergarments", search: "strapless bra shapewear bridal" },
-  { name: "Dress hanger (for photos)", search: "personalized bridal dress hanger" },
-  { name: "Something old/new/borrowed/blue", search: "something blue bridal charm" },
-];
-
-const SUIT_ITEMS: { name: string; search: string }[] = [
-  { name: "Suit or tuxedo", search: "groom wedding suit" },
-  { name: "Dress shirt", search: "men's white dress shirt wedding" },
-  { name: "Tie or bow tie", search: "groom tie bow tie wedding" },
-  { name: "Cufflinks", search: "wedding cufflinks groom" },
-  { name: "Dress shoes", search: "men's dress shoes wedding" },
-  { name: "Belt or suspenders", search: "groom belt suspenders" },
-  { name: "Pocket square", search: "pocket square wedding" },
-  { name: "Getting-ready outfit", search: "" },
-];
-
-function getAttireItems(attire: AttirePreference): { name: string; search: string }[] {
-  if (attire === "dress") return DRESS_ITEMS;
-  if (attire === "suit") return SUIT_ITEMS;
-  if (attire === "mix") return [...DRESS_ITEMS, ...SUIT_ITEMS];
-  if (attire === "custom") return []; // couple chose to manage themselves
-  // undecided or null: show both combined as a sensible first pass until the
-  // couple answers the in-product prompt and commits to a style.
-  return [...DRESS_ITEMS, ...SUIT_ITEMS];
-}
-
-const STATIC_CATEGORIES = [
-  "Stationery",
-  "Emergency & Personal Care",
-  "Ceremony",
-  "Cocktail Hour",
-  "Reception Decor",
-  "Welcome Table",
-  "Signage",
-  "Rentals",
-  "Welcome Bags",
-  "Gifts",
-];
-
-function getCategories(partner1Name: string, partner2Name: string): string[] {
-  return [
-    `${partner1Name}'s Attire`,
-    `${partner2Name}'s Attire`,
-    ...STATIC_CATEGORIES,
-  ];
-}
-
-function getDefaultItems(
-  partner1Name: string,
-  partner2Name: string,
-  partner1Attire: AttirePreference,
-  partner2Attire: AttirePreference,
-): Record<string, { name: string; search: string }[]> {
-  return {
-    [`${partner1Name}'s Attire`]: getAttireItems(partner1Attire),
-    [`${partner2Name}'s Attire`]: getAttireItems(partner2Attire),
-    "Stationery": [
-      { name: "Save-the-dates", search: "save the date cards Etsy" },
-      { name: "Wedding invitations", search: "wedding invitation suite Etsy" },
-      { name: "RSVP cards + envelopes", search: "RSVP cards wedding" },
-      { name: "Detail / enclosure cards", search: "wedding detail cards" },
-      { name: "Postage stamps", search: "USPS wedding stamps" },
-      { name: "Thank-you cards", search: "wedding thank you cards" },
-    ],
-    "Emergency & Personal Care": [
-      { name: "Bridal emergency kit (pre-assembled)", search: "bridal emergency kit pre made Amazon" },
-      { name: "Groom emergency kit", search: "groom emergency kit" },
-      { name: "Stain pen (Tide To Go)", search: "Tide to go stain remover pen" },
-      { name: "Safety pins (assorted sizes)", search: "safety pins assorted" },
-      { name: "Sewing kit (white + colored thread)", search: "mini sewing kit travel" },
-      { name: "Double-sided fashion tape", search: "fashion tape double sided bridal" },
-      { name: "Blister bandaids / moleskin", search: "blister bandages heel" },
-      { name: "Bobby pins + hair ties", search: "bobby pins pack" },
-      { name: "Hairspray / setting spray", search: "bridal hair setting spray" },
-      { name: "Deodorant (travel size)", search: "travel deodorant" },
-      { name: "Mints / breath freshener", search: "Altoids tin wedding" },
-      { name: "Pain relievers (Advil / Tylenol)", search: "travel size advil" },
-      { name: "Tampons / pads", search: "travel size tampons" },
-      { name: "Makeup touch-up kit", search: "bridal makeup touch up kit" },
-      { name: "Lint roller", search: "lint roller travel size" },
-      { name: "Static guard spray", search: "static guard spray dress" },
-      { name: "Backup shirt (groom)", search: "" },
-      { name: "Backup tie / cufflinks (groom)", search: "" },
-    ],
-    "Ceremony": [
-      { name: "Welcome sign + easel", search: "wedding welcome sign acrylic Etsy" },
-      { name: "Guest book + pen", search: "wedding guest book alternative" },
-      { name: "Card box", search: "wedding card box lock Etsy" },
-      { name: "Ceremony arch/arbor decor", search: "wedding arch decor" },
-      { name: "Aisle runner", search: "wedding aisle runner" },
-      { name: "Unity ceremony items", search: "unity candle sand ceremony set" },
-      { name: "Ring pillow or ring box", search: "ring bearer pillow box" },
-      { name: "Flower girl basket + petals", search: "flower girl basket petals" },
-      { name: "Flower girl crown / halo", search: "flower girl crown halo wedding" },
-      { name: "Programs", search: "wedding ceremony programs" },
-      { name: "Reserved seating signs", search: "reserved wedding sign" },
-      { name: "Unplugged ceremony sign", search: "unplugged ceremony sign" },
-      { name: "Parents' corsages & boutonnieres", search: "" },
-      { name: "Grandparents' corsages & boutonnieres", search: "" },
-      { name: "Bridal party bouquets", search: "" },
-      { name: "Groomsmen boutonnieres", search: "" },
-    ],
-    "Cocktail Hour": [
-      { name: "Signature cocktail sign", search: "signature cocktail sign wedding" },
-      { name: "Bar menu sign", search: "bar menu sign wedding" },
-      { name: "Photo booth props", search: "wedding photo booth props" },
-      { name: "Lawn games", search: "wedding lawn games cornhole" },
-    ],
-    "Reception Decor": [
-      { name: "Centerpieces", search: "wedding centerpiece" },
-      { name: "Candles + holders", search: "wedding candles votive holders bulk" },
-      { name: "Table numbers", search: "wedding table numbers acrylic Etsy" },
-      { name: "Table number holders / stands", search: "table number holder stand wedding" },
-      { name: "Table linens", search: "wedding table runner linen" },
-      { name: "Napkins", search: "wedding cloth napkins" },
-      { name: "Charger plates", search: "wedding charger plates gold" },
-      { name: "Place cards", search: "wedding place cards Etsy" },
-      { name: "Menu cards", search: "wedding menu cards" },
-      { name: "Cake topper", search: "wedding cake topper Etsy" },
-      { name: "Cake cutting set", search: "wedding cake cutting set" },
-      { name: "Cake stand", search: "wedding cake stand" },
-      { name: "Toasting flutes", search: "wedding toasting glasses" },
-      { name: "Sweetheart table decor", search: "sweetheart table decor" },
-      { name: "String lights", search: "string lights wedding reception" },
-      { name: "Wedding favors", search: "wedding favors" },
-      { name: "Sparklers / exit items", search: "wedding sparklers send off" },
-      { name: "Kids' activity bags", search: "wedding kids activity bag favor" },
-      { name: "Crayons & coloring books", search: "wedding kids coloring book" },
-      { name: "Kids' menu cards", search: "kids menu card wedding" },
-    ],
-    "Welcome Table": [
-      { name: "Welcome sign", search: "wedding welcome sign" },
-      { name: "Framed photos", search: "gold photo frames wedding" },
-      { name: "Escort card display", search: "escort card display wedding" },
-      { name: "Memorial table items", search: "in loving memory wedding frame" },
-    ],
-    "Signage": [
-      { name: "Seating chart display", search: "wedding seating chart sign" },
-      { name: "Hashtag sign", search: "wedding hashtag sign" },
-      { name: "Directional signs", search: "wedding directional signs" },
-      { name: "Cards & gifts sign", search: "cards and gifts sign wedding" },
-      { name: "Guest book sign", search: "guest book sign wedding" },
-    ],
-    "Rentals": [
-      { name: "Tables", search: "" },
-      { name: "Chairs", search: "" },
-      { name: "Place settings (china, flatware, glassware)", search: "" },
-      { name: "Dance floor", search: "" },
-      { name: "Tent / canopy", search: "" },
-      { name: "Lighting (uplights, chandeliers)", search: "" },
-      { name: "Lounge furniture", search: "" },
-      { name: "Audio equipment", search: "" },
-    ],
-    "Welcome Bags": [
-      { name: "Tote bags", search: "wedding welcome bag tote" },
-      { name: "Water bottles", search: "personalized water bottle labels wedding" },
-      { name: "Snacks & local treats", search: "" },
-      { name: "Itinerary cards", search: "wedding weekend itinerary card" },
-      { name: "Hangover kit items", search: "wedding hangover kit supplies" },
-    ],
-    "Gifts": [
-      { name: "Wedding party gifts", search: "wedding party gift box set" },
-      { name: "Parents gifts", search: "parent gift wedding" },
-      { name: "Flower girl gift", search: "flower girl gift" },
-      { name: "Ring bearer gift", search: "ring bearer gift" },
-      { name: "Officiant gift + thank-you card", search: "officiant thank you gift" },
-    ],
-  };
-}
+import {
+  DRESS_ITEMS,
+  SUIT_ITEMS,
+  STATIC_CATEGORIES,
+  getCategories,
+  getDefaultItems,
+  type AttirePreference,
+} from "@/lib/shopping/defaults";
 
 const statusColors: Record<string, string> = {
   not_started: "bg-gray-100 text-gray-700",
@@ -352,7 +172,6 @@ export function ShoppingManager({ items: initialItems, vendors, weddingId, weddi
   );
   const [showDialog, setShowDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<ShoppingItem | null>(null);
-  const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -534,41 +353,6 @@ export function ShoppingManager({ items: initialItems, vendors, weddingId, weddi
     );
   }
 
-  async function generateDefaults() {
-    setGenerating(true);
-    const supabase = createClient();
-
-    const rows: Array<{
-      wedding_id: string;
-      category: string;
-      item_name: string;
-      search_terms: string | null;
-      status: string;
-      quantity: number;
-    }> = [];
-
-    for (const [cat, items] of Object.entries(DEFAULT_ITEMS)) {
-      for (const item of items) {
-        // Skip if already exists
-        if (initialItems.some((i) => i.category === cat && i.item_name === item.name)) continue;
-        rows.push({
-          wedding_id: weddingId,
-          category: cat,
-          item_name: item.name,
-          search_terms: item.search || null,
-          status: "not_started",
-          quantity: 1,
-        });
-      }
-    }
-
-    if (rows.length > 0) {
-      await supabase.from("shopping_items").insert(rows);
-    }
-    setGenerating(false);
-    router.refresh();
-  }
-
   function resetForm() {
     setItemName("");
     setCategory(CATEGORIES[0]);
@@ -633,12 +417,16 @@ export function ShoppingManager({ items: initialItems, vendors, weddingId, weddi
       covered_by_vendor: coveredByVendor,
       covered_by_vendor_id: resolvedVendorId,
     };
-    if (editingItem) {
-      await supabase.from("shopping_items").update(payload).eq("id", editingItem.id);
-    } else {
-      await supabase.from("shopping_items").insert(payload);
-    }
+    const isEdit = !!editingItem;
+    const { error } = isEdit
+      ? await supabase.from("shopping_items").update(payload).eq("id", editingItem.id)
+      : await supabase.from("shopping_items").insert(payload);
     setSaving(false);
+    if (error) {
+      toast.error("Could not save item", { description: error.message });
+      return;
+    }
+    toast.success(isEdit ? "Item updated" : "Item added");
     setShowDialog(false);
     resetForm();
     router.refresh();
@@ -862,10 +650,6 @@ export function ShoppingManager({ items: initialItems, vendors, weddingId, weddi
           <Plus className="h-4 w-4" />
           Add Item
         </Button>
-        <Button variant="outline" onClick={generateDefaults} disabled={generating} className="gap-2">
-          <Sparkles className="h-4 w-4" />
-          {generating ? "Generating..." : "Auto-Fill Defaults"}
-        </Button>
         <div className="flex-1" />
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -934,7 +718,7 @@ export function ShoppingManager({ items: initialItems, vendors, weddingId, weddi
       {initialItems.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            Click &ldquo;Auto-Fill Defaults&rdquo; to populate a comprehensive shopping list.
+            Your shopping list is empty. Use + Add Item to start building it.
           </CardContent>
         </Card>
       ) : viewMode === "grouped" ? (
