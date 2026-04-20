@@ -17,6 +17,7 @@ import {
   X,
   Lightbulb,
   AlertTriangle,
+  CheckSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -50,6 +51,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 
 interface Guest {
@@ -94,6 +96,7 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [filterRsvp, setFilterRsvp] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"default" | "last" | "first" | "rsvp">("default");
   const [filterDietary, setFilterDietary] = useState<boolean>(false);
   const [showDialog, setShowDialog] = useState(false);
   const [showBulkDialog, setShowBulkDialog] = useState(false);
@@ -101,6 +104,13 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
   const [saving, setSaving] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [bulkSuccessCount, setBulkSuccessCount] = useState<number | null>(null);
+  // IDs of the most recent bulk-add, for a ~30s "Undo" affordance.
+  const [lastBulkIds, setLastBulkIds] = useState<string[]>([]);
+  // Multi-select mode — lets the couple tick several guests and delete them
+  // in one action (e.g., removing RSVP decliners).
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showContactSection, setShowContactSection] = useState(false);
   const [rsvpTipDismissed, setRsvpTipDismissed] = useState(true);
 
@@ -151,7 +161,14 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
       return matchesSearch && matchesRsvp && matchesDietary;
     })
     .sort((a, b) => {
-      // Most actionable first: pending > no_response > confirmed > declined
+      if (sortBy === "last") {
+        return `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`);
+      }
+      if (sortBy === "first") {
+        return `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`);
+      }
+      // "rsvp" and "default" both use RSVP priority; default is the smart
+      // action-order (pending first), which is what the couple usually wants.
       const priority: Record<string, number> = {
         pending: 0,
         no_response: 1,
@@ -221,13 +238,17 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
       notes: notes || null,
     };
 
-    if (editingGuest) {
-      await supabase.from("guests").update(payload).eq("id", editingGuest.id);
-    } else {
-      await supabase.from("guests").insert(payload);
-    }
+    const isEdit = !!editingGuest;
+    const { error } = isEdit
+      ? await supabase.from("guests").update(payload).eq("id", editingGuest.id)
+      : await supabase.from("guests").insert(payload);
 
     setSaving(false);
+    if (error) {
+      toast.error("Could not save guest", { description: error.message });
+      return;
+    }
+    toast.success(isEdit ? "Guest updated" : "Guest added");
     setShowDialog(false);
     resetForm();
     router.refresh();
@@ -248,10 +269,20 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
       .filter(Boolean);
 
     const guests = lines.map((line) => {
-      const parts = line.split(/[\t,]+/).map((p) => p.trim());
-      const nameParts = parts[0].split(/\s+/);
-      const firstName = nameParts[0] || "";
-      const lastName = nameParts.slice(1).join(" ") || "";
+      // Split by tab or comma first (Excel/Google Sheets use tab, CSV uses comma).
+      // If the row has 2+ fields, treat them as first + last. Otherwise fall
+      // back to splitting by whitespace (handles "John Smith" plain-paste).
+      const parts = line.split(/[\t,]+/).map((p) => p.trim()).filter(Boolean);
+      let firstName = "";
+      let lastName = "";
+      if (parts.length >= 2) {
+        firstName = parts[0];
+        lastName = parts.slice(1).join(" ");
+      } else {
+        const nameParts = (parts[0] || "").split(/\s+/);
+        firstName = nameParts[0] || "";
+        lastName = nameParts.slice(1).join(" ") || "";
+      }
       return {
         wedding_id: weddingId,
         first_name: firstName,
@@ -263,14 +294,78 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
     });
 
     if (guests.length > 0) {
-      await supabase.from("guests").insert(guests);
+      const { data } = await supabase.from("guests").insert(guests).select("id");
+      const ids = (data || []).map((r) => r.id as string);
       setBulkSuccessCount(guests.length);
-      setTimeout(() => setBulkSuccessCount(null), 3000);
+      setLastBulkIds(ids);
+      // Banner self-hides after 30s; the undo window closes with it so a
+      // later "Undo" click can't accidentally nuke newer unrelated guests.
+      setTimeout(() => {
+        setBulkSuccessCount(null);
+        setLastBulkIds([]);
+      }, 30000);
     }
 
     setSaving(false);
     setShowBulkDialog(false);
     setBulkText("");
+    router.refresh();
+  }
+
+  async function handleUndoBulk() {
+    if (lastBulkIds.length === 0) return;
+    const supabase = createClient();
+    const count = lastBulkIds.length;
+    await supabase.from("guests").delete().in("id", lastBulkIds);
+    setLastBulkIds([]);
+    setBulkSuccessCount(null);
+    toast.success(`Removed ${count} guest${count !== 1 ? "s" : ""}`);
+    router.refresh();
+  }
+
+  function enterSelectMode() {
+    setSelectMode(true);
+    setSelectedIds(new Set());
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll(visibleIds: string[]) {
+    setSelectedIds((prev) => {
+      const allSelected = visibleIds.every((id) => prev.has(id));
+      if (allSelected) {
+        const next = new Set(prev);
+        visibleIds.forEach((id) => next.delete(id));
+        return next;
+      }
+      const next = new Set(prev);
+      visibleIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  async function handleBulkDelete() {
+    if (selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    if (!confirm(`Delete ${count} guest${count !== 1 ? "s" : ""}? This cannot be undone.`)) return;
+    setBulkDeleting(true);
+    const supabase = createClient();
+    await supabase.from("guests").delete().in("id", Array.from(selectedIds));
+    setBulkDeleting(false);
+    toast.success(`Deleted ${count} guest${count !== 1 ? "s" : ""}`);
+    exitSelectMode();
     router.refresh();
   }
 
@@ -350,17 +445,34 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
         </div>
       )}
 
-      {/* Bulk Add Success */}
+      {/* Bulk Add Success + Undo */}
       {bulkSuccessCount !== null && (
-        <div className="animate-fade-in-up flex items-center gap-2.5 pl-3 pr-4 py-2 rounded-md bg-emerald-50 border border-emerald-200 text-sm">
+        <div className="animate-fade-in-up flex items-center gap-2.5 pl-3 pr-2 py-2 rounded-md bg-emerald-50 border border-emerald-200 text-sm">
           <span className="text-emerald-600">&#10024;</span>
-          <p className="text-xs font-medium text-emerald-800">
+          <p className="text-xs font-medium text-emerald-800 flex-1">
             {bulkSuccessCount} guest{bulkSuccessCount !== 1 ? "s" : ""} added. Your list is growing.
           </p>
+          {lastBulkIds.length > 0 && (
+            <button
+              type="button"
+              onClick={handleUndoBulk}
+              className="text-xs font-medium text-emerald-800 hover:underline px-2 py-1"
+            >
+              Undo
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => { setBulkSuccessCount(null); setLastBulkIds([]); }}
+            className="text-emerald-700/60 hover:text-emerald-900 transition-colors p-1"
+            aria-label="Dismiss"
+          >
+            <X className="h-3 w-3" />
+          </button>
         </div>
       )}
 
-      {/* Toolbar: search + actions */}
+      {/* Toolbar: search + sort + actions */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -371,7 +483,31 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        {initialGuests.length > 1 && (
+          <Select value={sortBy} onValueChange={(v) => v && setSortBy(v as typeof sortBy)}>
+            <SelectTrigger className="h-9 w-[170px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">Smart order</SelectItem>
+              <SelectItem value="last">Last name A-Z</SelectItem>
+              <SelectItem value="first">First name A-Z</SelectItem>
+              <SelectItem value="rsvp">RSVP status</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
         <div className="flex items-center gap-2">
+          {initialGuests.length > 0 && !selectMode && (
+            <Button
+              variant="outline"
+              onClick={enterSelectMode}
+              size="sm"
+              className="gap-1.5 text-xs h-9"
+            >
+              <CheckSquare className="h-3.5 w-3.5" />
+              Select
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={() => setShowBulkDialog(true)}
@@ -394,6 +530,35 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
           </Button>
         </div>
       </div>
+
+      {/* Select-mode action bar */}
+      {selectMode && (
+        <div className="animate-fade-in-up flex items-center gap-2 pl-3 pr-2 py-2 rounded-md bg-primary/[0.05] border border-primary/20 text-sm">
+          <p className="text-xs font-medium text-foreground flex-1">
+            {selectedIds.size === 0
+              ? "Tap rows to select them, or use the checkbox in the header to select all."
+              : `${selectedIds.size} selected`}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleBulkDelete}
+            disabled={selectedIds.size === 0 || bulkDeleting}
+            className="h-8 text-xs gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/5 hover:text-destructive"
+          >
+            <Trash2 className="h-3 w-3" />
+            {bulkDeleting ? "Deleting..." : `Delete ${selectedIds.size || ""}`}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={exitSelectMode}
+            className="h-8 text-xs"
+          >
+            Cancel
+          </Button>
+        </div>
+      )}
 
       {/* Guest Table */}
       {filtered.length === 0 ? (
@@ -439,6 +604,20 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/50">
+                {selectMode && (
+                  <th className="w-10 px-3 py-2.5">
+                    <Checkbox
+                      checked={
+                        filtered.length > 0 &&
+                        filtered.every((g) => selectedIds.has(g.id))
+                      }
+                      onCheckedChange={() =>
+                        toggleSelectAll(filtered.map((g) => g.id))
+                      }
+                      aria-label="Select all"
+                    />
+                  </th>
+                )}
                 <th className="text-left px-3 py-2.5 text-xs font-semibold tracking-[0.1em] uppercase text-foreground/80">Guest</th>
 
                 {/* RSVP column header with filter */}
@@ -506,7 +685,26 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
             </thead>
             <tbody>
               {filtered.map((guest) => (
-                <tr key={guest.id} className="border-b border-border/30 hover:bg-muted/20 group transition-colors">
+                <tr
+                  key={guest.id}
+                  className={`border-b border-border/30 group transition-colors ${
+                    selectMode && selectedIds.has(guest.id)
+                      ? "bg-primary/[0.04]"
+                      : "hover:bg-muted/20"
+                  }`}
+                >
+                  {selectMode && (
+                    <td
+                      className="w-10 px-3 py-3 cursor-pointer"
+                      onClick={() => toggleSelect(guest.id)}
+                    >
+                      <Checkbox
+                        checked={selectedIds.has(guest.id)}
+                        onCheckedChange={() => toggleSelect(guest.id)}
+                        aria-label={`Select ${guest.first_name} ${guest.last_name}`}
+                      />
+                    </td>
+                  )}
                   {/* Name + plus-one inline */}
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-1.5">
@@ -850,7 +1048,7 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
 
       {/* Bulk Add Dialog */}
       <Dialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] flex flex-col gap-3">
           <DialogHeader>
             <DialogTitle>Bulk Add Guests</DialogTitle>
           </DialogHeader>
@@ -862,8 +1060,9 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
             onChange={(e) => setBulkText(e.target.value)}
             placeholder={`John Smith\nJane Doe\nBob Johnson`}
             rows={10}
+            className="resize-none flex-1 min-h-[240px] overflow-y-auto"
           />
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 shrink-0">
             <Button variant="outline" onClick={() => setShowBulkDialog(false)}>
               Cancel
             </Button>
