@@ -41,9 +41,11 @@ interface NavGroup {
   items: NavItem[];
 }
 
+// 4 groups align with the 4 questions on the Dashboard Planning Map.
+// If you rename a group, update planning-map.tsx so mental models stay in sync.
 const navGroups: NavGroup[] = [
   {
-    title: "The Basics",
+    title: "The People",
     items: [
       { href: "/vendors", icon: Users, label: "Vendors" },
       { href: "/guests", icon: ClipboardList, label: "Guests" },
@@ -69,7 +71,7 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    title: "The Home Stretch",
+    title: "Wrapping Up",
     items: [
       { href: "/tips", icon: Sparkles, label: "Tips" },
       { href: "/booklets", icon: BookOpen, label: "Booklets" },
@@ -88,8 +90,8 @@ export function Sidebar() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => {
     const initial = new Set<string>();
     // Always expand the first two groups by default
-    initial.add("Get Started");
-    initial.add("Set the Vibe");
+    initial.add("The People");
+    initial.add("Your Vision");
     // Also expand the group containing the current page
     for (const group of navGroups) {
       if (group.items.some((item) => pathname === item.href)) {

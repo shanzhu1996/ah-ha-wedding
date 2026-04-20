@@ -39,9 +39,14 @@ export default async function VendorsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)]">
-        Vendors
-      </h1>
+      <div>
+        <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
+          Vendors
+        </h1>
+        <p className="text-sm text-muted-foreground mt-2">
+          Everyone helping you pull this off — photographer, caterer, florist, DJ, and so on. Track contacts, contracts, arrival times, and meals in one place.
+        </p>
+      </div>
       <VendorList
         vendors={vendors || []}
         weddingId={wedding.id}

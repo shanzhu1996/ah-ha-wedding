@@ -6,7 +6,6 @@ import { Heart, ArrowRight, ArrowLeft, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -52,15 +51,9 @@ export default function OnboardingPage() {
   const [weddingPartySize, setWeddingPartySize] = useState("");
   const [partner1Attire, setPartner1Attire] = useState("undecided");
   const [partner2Attire, setPartner2Attire] = useState("undecided");
-  const [ceremonyStyle, setCeremonyStyle] = useState("");
-  const [receptionFormat, setReceptionFormat] = useState("");
 
-  // Step 3
-  const [colorPalette, setColorPalette] = useState("");
-  const [culturalElements, setCulturalElements] = useState("");
-  const [venueCurfew, setVenueCurfew] = useState("");
-  const [honeymoonDeparture, setHoneymoonDeparture] = useState("");
-
+  // Step 3 — Sub-events only. Palette, curfew, cultural elements, honeymoon
+  // timing are gathered later (Moodboard / Settings / Post-Wedding).
   // Sub-events
   const [hasEngagementParty, setHasEngagementParty] = useState(false);
   const [hasRehearsalDinner, setHasRehearsalDinner] = useState(false);
@@ -77,12 +70,9 @@ export default function OnboardingPage() {
     } = await supabase.auth.getUser();
     if (!user) return;
 
-    const colors = colorPalette
-      .split(",")
-      .map((c) => c.trim())
-      .filter(Boolean);
-
-    // Use RPC function to atomically create wedding + add user as owner
+    // Use RPC function to atomically create wedding + add user as owner.
+    // Palette / cultural / curfew / honeymoon are left NULL here and set later
+    // via Settings or the relevant tool page.
     const { data: weddingId, error } = await supabase.rpc(
       "create_wedding_with_owner",
       {
@@ -95,15 +85,15 @@ export default function OnboardingPage() {
         p_guest_count_estimate: guestCount ? parseInt(guestCount) : null,
         p_budget_total: budget ? parseFloat(budget) : null,
         p_style: (style as WeddingStyle) || null,
-        p_color_palette: colors.length > 0 ? colors : null,
+        p_color_palette: null,
         p_bridal_party_size: weddingPartySize ? parseInt(weddingPartySize) : null,
         p_partner1_attire: partner1Attire !== "undecided" ? partner1Attire : null,
         p_partner2_attire: partner2Attire !== "undecided" ? partner2Attire : null,
-        p_ceremony_style: ceremonyStyle || null,
-        p_reception_format: receptionFormat || null,
-        p_cultural_elements: culturalElements || null,
-        p_venue_curfew: venueCurfew || null,
-        p_honeymoon_departure: honeymoonDeparture || null,
+        p_ceremony_style: null,
+        p_reception_format: null,
+        p_cultural_elements: null,
+        p_venue_curfew: null,
+        p_honeymoon_departure: null,
       }
     );
 
@@ -170,10 +160,10 @@ export default function OnboardingPage() {
         </div>
 
         <div className="bg-card border rounded-xl p-6 shadow-sm">
-          {/* Step 1: The Basics */}
+          {/* Step 1: The Essentials */}
           {step === 1 && (
             <div className="space-y-4">
-              <h2 className="font-semibold text-lg mb-4">The Basics</h2>
+              <h2 className="font-semibold text-lg mb-4">The Essentials</h2>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="p1">Partner 1</Label>
@@ -343,39 +333,6 @@ export default function OnboardingPage() {
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Ceremony Style</Label>
-                  <Select value={ceremonyStyle} onValueChange={(v) => setCeremonyStyle(v ?? "")}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="religious">Religious</SelectItem>
-                      <SelectItem value="secular">Secular</SelectItem>
-                      <SelectItem value="non-traditional">Non-traditional</SelectItem>
-                      <SelectItem value="cultural">Cultural</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Reception Format</Label>
-                  <Select
-                    value={receptionFormat}
-                    onValueChange={(v) => setReceptionFormat(v ?? "")}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="sit-down">Sit-down Dinner</SelectItem>
-                      <SelectItem value="buffet">Buffet</SelectItem>
-                      <SelectItem value="cocktail">Cocktail Style</SelectItem>
-                      <SelectItem value="family-style">Family Style</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
             </div>
           )}
 
@@ -409,55 +366,9 @@ export default function OnboardingPage() {
                   </div>
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="colors">Color Palette</Label>
-                <Input
-                  id="colors"
-                  placeholder="Dusty rose, sage green, gold (comma separated)"
-                  value={colorPalette}
-                  onChange={(e) => setColorPalette(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="cultural">
-                  Cultural or Religious Elements
-                </Label>
-                <Textarea
-                  id="cultural"
-                  placeholder="Hora, tea ceremony, jumping the broom, etc."
-                  value={culturalElements}
-                  onChange={(e) => setCulturalElements(e.target.value)}
-                  rows={3}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="curfew">Venue Curfew</Label>
-                  <Input
-                    id="curfew"
-                    type="time"
-                    value={venueCurfew}
-                    onChange={(e) => setVenueCurfew(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Honeymoon Departure</Label>
-                  <Select
-                    value={honeymoonDeparture}
-                    onValueChange={(v) => setHoneymoonDeparture(v ?? "")}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="same-night">Same night</SelectItem>
-                      <SelectItem value="next-morning">Next morning</SelectItem>
-                      <SelectItem value="few-days">Few days later</SelectItem>
-                      <SelectItem value="no-honeymoon">No honeymoon yet</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+              <p className="text-xs text-muted-foreground pt-2">
+                You can set color palette, curfew, honeymoon details, and cultural traditions later from Settings or the relevant page.
+              </p>
             </div>
           )}
 

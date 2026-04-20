@@ -136,11 +136,11 @@ export default async function PackingPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)]">
-          Packing Lists
+        <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
+          Packing
         </h1>
-        <p className="text-muted-foreground mt-1">
-          Organize items into labeled boxes for venue delivery.
+        <p className="text-sm text-muted-foreground mt-2">
+          Organize items into labeled boxes for venue delivery — one box per destination, one manifest per person carrying it.
         </p>
       </div>
       <PackingManager

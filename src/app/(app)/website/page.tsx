@@ -26,14 +26,11 @@ export default async function WebsitePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)]">
-          Wedding Website
+        <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
+          Website
         </h1>
-        <p className="text-muted-foreground mt-1">
-          Your wedding website is where guests go for everything — the
-          date, venue, dress code, schedule, registry, and travel info.
-          Send the link with your save-the-dates so guests have one place
-          to find all the details and RSVP.
+        <p className="text-sm text-muted-foreground mt-2">
+          One page guests bookmark — date, venue, dress code, schedule, registry, and travel info. Send the link with your save-the-dates so everything lives in one spot.
         </p>
       </div>
       <WebsiteBuilder

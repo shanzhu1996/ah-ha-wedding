@@ -22,12 +22,12 @@ import { Button } from "@/components/ui/button";
 
 const featureGroups = [
   {
-    title: "The Basics",
+    title: "The People",
     tagline: "Who's coming, who's helping.",
     features: [
       {
         icon: Users,
-        title: "Vendor Hub",
+        title: "Vendors",
         description:
           "Contacts, contracts, payment schedule, and notes for every vendor.",
       },
@@ -65,13 +65,13 @@ const featureGroups = [
         icon: CalendarDays,
         title: "Timeline",
         description:
-          "Auto-generated pre-wedding checklist and hour-by-hour day-of schedule.",
+          "Auto-generated pre-wedding checklist, plus a day-of schedule you fill in moment by moment.",
       },
       {
         icon: Wallet,
         title: "Budget",
         description:
-          "Live dashboard with payment calendar and vendor tip calculator.",
+          "Live dashboard — budget vs spent, per-vendor payment schedule, and deposit tracking.",
       },
       {
         icon: ClipboardCheck,
@@ -99,14 +99,14 @@ const featureGroups = [
       },
       {
         icon: Globe,
-        title: "Wedding Website",
+        title: "Website",
         description:
-          "Beautiful site with built-in RSVP form — no coding needed.",
+          "Beautiful site guests bookmark — venue, schedule, dress code, registry, FAQs, and travel info.",
       },
     ],
   },
   {
-    title: "The Home Stretch",
+    title: "Wrapping Up",
     tagline: "Final week, zero surprises.",
     features: [
       {

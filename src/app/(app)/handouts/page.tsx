@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import { Lightbulb } from "lucide-react";
 import { getCurrentWedding } from "@/lib/supabase/queries";
 import { createClient } from "@/lib/supabase/server";
 import { HandoutsManager } from "@/components/handouts/handouts-manager";
@@ -36,6 +38,7 @@ export default async function HandoutsPage() {
     { data: delegationTasks },
     { data: guests },
     { data: settingsRow },
+    { count: totalGuestCount },
   ] = await Promise.all([
     supabase
       .from("timeline_events")
@@ -59,6 +62,10 @@ export default async function HandoutsPage() {
       .eq("wedding_id", wedding.id)
       .eq("section", "handouts")
       .maybeSingle(),
+    supabase
+      .from("guests")
+      .select("*", { count: "exact", head: true })
+      .eq("wedding_id", wedding.id),
   ]);
 
   const partyMembers = (guests || [])
@@ -71,16 +78,42 @@ export default async function HandoutsPage() {
     .filter((m) => m.name.length > 0)
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  const hasGuests = (totalGuestCount ?? 0) > 0;
+  const hasPartyMembers = partyMembers.length > 0;
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)]">
+        <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
           Handouts
         </h1>
-        <p className="text-muted-foreground mt-1">
-          One info sheet per wedding-party member — timeline, dress code, contacts.
+        <p className="text-sm text-muted-foreground mt-2">
+          One info sheet per wedding-party member — their day-of timeline, dress code, and key contacts.
         </p>
       </div>
+      {!hasPartyMembers && (
+        <div className="flex items-start gap-2.5 pl-3 pr-3 py-2.5 rounded-md bg-primary/[0.04] border border-primary/15 text-sm">
+          <Lightbulb className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+          <p className="text-xs text-foreground/80 leading-relaxed flex-1">
+            {hasGuests ? (
+              <>
+                Handouts pull from your wedding-party tags. Open{" "}
+                <Link href="/guests" className="text-primary font-medium hover:underline">
+                  Guests
+                </Link>{" "}
+                and add a relationship tag (MOH, best man, bridesmaid, parent, etc.) to anyone you&apos;ll brief.
+              </>
+            ) : (
+              <>
+                Add guests first — then tag the wedding party so they show up here.{" "}
+                <Link href="/guests" className="text-primary font-medium hover:underline">
+                  Go to Guests →
+                </Link>
+              </>
+            )}
+          </p>
+        </div>
+      )}
       <HandoutsManager
         wedding={wedding}
         timelineEvents={timelineEvents || []}

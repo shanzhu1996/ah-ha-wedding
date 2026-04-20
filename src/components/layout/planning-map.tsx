@@ -69,7 +69,7 @@ const STEPS: Step[] = [
       { label: "Budget", tagline: "Where is the money going?", href: "/budget", icon: Wallet },
       { label: "Day-of Details", tagline: "Ceremony, reception, photos & logistics", href: "/day-of-details", icon: ClipboardCheck, highlight: true },
       { label: "Shopping", tagline: "What do you need?", href: "/shopping", icon: CheckSquare },
-      { label: "Layout", tagline: "Where does everything go?", href: "/layout-guide", icon: LayoutGrid },
+      { label: "Layout Guide", tagline: "Where does everything go?", href: "/layout-guide", icon: LayoutGrid },
       { label: "Seating", tagline: "Who sits where?", href: "/seating", icon: Layout },
       { label: "Website", tagline: "Where do guests find info?", href: "/website", icon: Globe },
     ],

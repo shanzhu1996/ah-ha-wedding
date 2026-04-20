@@ -18,10 +18,10 @@ export default async function SettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)]">
+        <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
           Settings
         </h1>
-        <p className="text-muted-foreground mt-1">
+        <p className="text-sm text-muted-foreground mt-2">
           Manage your wedding details and account.
         </p>
       </div>

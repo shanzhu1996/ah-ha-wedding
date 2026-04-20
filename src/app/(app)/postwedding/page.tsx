@@ -25,11 +25,11 @@ export default async function PostWeddingPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)]">
+        <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
           Post-Wedding
         </h1>
-        <p className="text-muted-foreground mt-1">
-          Thank-you tracker, name changes, vendor reviews, and wrap-up tasks.
+        <p className="text-sm text-muted-foreground mt-2">
+          After the dust settles — thank-you notes, name changes, vendor reviews, and all the little wrap-up tasks.
         </p>
       </div>
       <PostWeddingManager

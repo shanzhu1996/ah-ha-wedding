@@ -19,10 +19,10 @@ export default async function LayoutGuidePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)]">
-          Layout & Design
+        <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
+          Layout Guide
         </h1>
-        <p className="text-muted-foreground mt-1">
+        <p className="text-sm text-muted-foreground mt-2">
           Where does everything GO? Plan the physical layout of each space — welcome table, ceremony seating, reception floor plan, and table settings. Check off items you need and they&apos;ll be added to your shopping list.
         </p>
         <p className="text-xs text-muted-foreground/60 mt-2">

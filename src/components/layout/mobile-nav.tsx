@@ -42,7 +42,7 @@ const primaryTabs = [
 
 const moreGroups = [
   {
-    title: "The Basics",
+    title: "The People",
     items: [
       { href: "/vendors", icon: Users, label: "Vendors" },
     ],
@@ -64,7 +64,7 @@ const moreGroups = [
     ],
   },
   {
-    title: "The Home Stretch",
+    title: "Wrapping Up",
     items: [
       { href: "/tips", icon: Sparkles, label: "Tips" },
       { href: "/booklets", icon: BookOpen, label: "Booklets" },

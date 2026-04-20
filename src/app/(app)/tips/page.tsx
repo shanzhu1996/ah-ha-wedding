@@ -97,15 +97,13 @@ export default async function TipsPage() {
     <div className="space-y-6">
       <div>
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)]">
-            Tips & Emergency Kit
+          <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
+            Tips
           </h1>
           <Badge variant="secondary">Reference</Badge>
         </div>
-        <p className="text-muted-foreground mt-1">
-          Budget hacks, day-of tips, an emergency kit checklist, and what to
-          prepare for. Hide ones that don&apos;t apply to your wedding or
-          turn any of them into a timeline task.
+        <p className="text-sm text-muted-foreground mt-2">
+          Budget hacks, day-of advice, an emergency kit checklist, and what to prepare for. Hide the ones that don&apos;t apply, or turn any of them into a timeline task.
         </p>
       </div>
 
