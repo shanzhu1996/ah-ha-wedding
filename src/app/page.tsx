@@ -184,14 +184,11 @@ export default function LandingPage() {
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link href="/login?signup=true">
               <Button size="lg" className="text-base px-8 gap-2">
-                Start Planning Free
+                Start Planning
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
           </div>
-          <p className="text-sm text-muted-foreground mt-4">
-            Free to use. Premium features available.
-          </p>
         </div>
       </section>
 
@@ -254,7 +251,7 @@ export default function LandingPage() {
           </p>
           <Link href="/login?signup=true">
             <Button size="lg" className="text-base px-8 gap-2">
-              Get Started Free
+              Get Started
               <ArrowRight className="h-4 w-4" />
             </Button>
           </Link>
