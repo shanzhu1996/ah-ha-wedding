@@ -29,18 +29,26 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
+  const [duplicateEmail, setDuplicateEmail] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const supabase = createClient();
 
+  function switchMode(next: "login" | "signup") {
+    setMode(next);
+    setError("");
+    setDuplicateEmail(false);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setDuplicateEmail(false);
     setLoading(true);
 
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -48,6 +56,10 @@ function LoginForm() {
           },
         });
         if (error) throw error;
+        if (data?.user && data.user.identities?.length === 0) {
+          setDuplicateEmail(true);
+          return;
+        }
         router.push("/onboarding");
       } else {
         const { error } = await supabase.auth.signInWithPassword({
@@ -178,7 +190,25 @@ function LoginForm() {
               </div>
             </div>
 
-            {error && (
+            {duplicateEmail && (
+              <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-2">
+                <p>This email is already registered.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("login");
+                    setDuplicateEmail(false);
+                    setPassword("");
+                  }}
+                  className="text-primary font-medium hover:underline inline-flex items-center gap-1"
+                >
+                  Log in instead
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+
+            {error && !duplicateEmail && (
               <p className="text-sm text-destructive">{error}</p>
             )}
 
@@ -203,7 +233,7 @@ function LoginForm() {
             <>
               Don&apos;t have an account?{" "}
               <button
-                onClick={() => setMode("signup")}
+                onClick={() => switchMode("signup")}
                 className="text-primary font-medium hover:underline"
               >
                 Sign up
@@ -213,7 +243,7 @@ function LoginForm() {
             <>
               Already have an account?{" "}
               <button
-                onClick={() => setMode("login")}
+                onClick={() => switchMode("login")}
                 className="text-primary font-medium hover:underline"
               >
                 Log in
