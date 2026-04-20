@@ -46,6 +46,7 @@ const DURATION_LABEL: Record<
   "45": "45 min",
   "60": "60 min",
   "90": "90 min",
+  custom: "Custom",
 };
 
 const MOOD_LABEL: Record<

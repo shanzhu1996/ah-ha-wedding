@@ -48,6 +48,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { TimePicker } from "@/components/ui/time-picker";
 import {
@@ -560,12 +561,18 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initi
       }
       setSaving(false);
       if (data) {
+        toast.success("Vendor added");
         router.push(`/vendors/${data.id}`);
         router.refresh();
       }
     } else {
-      await supabase.from("vendors").update(payload).eq("id", vendor.id);
+      const { error } = await supabase.from("vendors").update(payload).eq("id", vendor.id);
       setSaving(false);
+      if (error) {
+        toast.error("Could not save", { description: error.message });
+        return;
+      }
+      toast.success("Saved");
       router.refresh();
     }
   }
@@ -758,9 +765,14 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initi
           {/* Logistics section */}
           <Card>
             <CardContent className="pt-6">
-              <h3 className="text-sm font-medium text-muted-foreground mb-4">
-                Day-of Logistics
-              </h3>
+              <div className="flex items-baseline justify-between mb-4 gap-3 flex-wrap">
+                <h3 className="text-sm font-medium text-muted-foreground">
+                  Day-of Logistics
+                </h3>
+                <p className="text-[11px] text-muted-foreground/70">
+                  These fields print on this vendor&apos;s booklet.
+                </p>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Arrival Time</Label>
@@ -770,20 +782,28 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initi
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="setupLocation">Setup Location</Label>
+                  <Label htmlFor="setupLocation">
+                    Setup Location
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                      (optional)
+                    </span>
+                  </Label>
                   <Input
                     id="setupLocation"
                     value={setupLocation}
                     onChange={(e) => setSetupLocation(e.target.value)}
-                    placeholder="e.g. Grand Ballroom, Side Entrance"
+                    placeholder="e.g. Grand Ballroom, Side Entrance — skip if not applicable"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Breakdown Time</Label>
+                  <Label>End Time</Label>
                   <TimePicker
                     value={breakdownTime}
                     onChange={(v) => setBreakdownTime(v)}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    When they wrap up — coverage end, last song, breakdown start.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="mealsNeeded">Vendor Meals Needed</Label>

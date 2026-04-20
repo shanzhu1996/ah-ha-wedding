@@ -64,17 +64,30 @@ function formatDate(d: string) {
   });
 }
 
+// Sort by payment-type chronology, not by paid status. Checking an item
+// should NOT reshuffle the list — the ✓ icon already signals "done".
+//
+//   Deposit  →  top      (first money out, at booking)
+//   Balance  →  middle   (by due_date asc; undated last within group)
+//   Purchase →  middle   (grouped with balance)
+//   Tip      →  bottom   (paid day-of; last money out)
+const TYPE_ORDER: Record<string, number> = {
+  deposit: 0,
+  balance: 1,
+  purchase: 1,
+  tip: 2,
+};
+
 function sortPayments(a: PaymentItem, b: PaymentItem) {
-  // Unpaid with due_date first (sorted by due_date), then unpaid without due_date, then paid (most recent first)
-  if (a.paid !== b.paid) return a.paid ? 1 : -1;
-  if (!a.paid && !b.paid) {
-    if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
-    if (a.due_date) return -1;
-    if (b.due_date) return 1;
-    return 0;
-  }
-  // both paid — most recently paid last
-  return (a.paid_at ?? "").localeCompare(b.paid_at ?? "");
+  const aOrder = TYPE_ORDER[a.item_type] ?? 1;
+  const bOrder = TYPE_ORDER[b.item_type] ?? 1;
+  if (aOrder !== bOrder) return aOrder - bOrder;
+
+  // Within the same type, sort by due_date ascending; undated items go last.
+  if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
+  if (a.due_date) return -1;
+  if (b.due_date) return 1;
+  return 0;
 }
 
 // ── Component ──────────────────────────────────────────────────────────
@@ -162,8 +175,11 @@ export function PaymentSchedule({
   }
 
   async function handleAdd() {
-    const amt = parseFloat(newAmount);
-    if (!newLabel.trim() || isNaN(amt) || amt < 0) return;
+    // Empty amount → 0, so couples can scaffold a payment row and fill in the
+    // dollar value later when the vendor confirms the number.
+    const parsed = parseFloat(newAmount);
+    const amt = isNaN(parsed) ? 0 : parsed;
+    if (!newLabel.trim() || amt < 0) return;
     setSaving(true);
     const { error } = await supabase.from("budget_items").insert({
       wedding_id: weddingId,
@@ -195,8 +211,10 @@ export function PaymentSchedule({
 
   async function handleEditSave() {
     if (!editingId) return;
-    const amt = parseFloat(editAmount);
-    if (!editLabel.trim() || isNaN(amt) || amt < 0) return;
+    // Empty amount → 0 (same rationale as handleAdd).
+    const parsed = parseFloat(editAmount);
+    const amt = isNaN(parsed) ? 0 : parsed;
+    if (!editLabel.trim() || amt < 0) return;
     setSaving(true);
     const { error } = await supabase
       .from("budget_items")

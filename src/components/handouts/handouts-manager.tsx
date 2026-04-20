@@ -14,7 +14,8 @@ import {
   Sparkles,
   Info,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -176,15 +177,16 @@ export function HandoutsManager({
               Each tagged person gets their own handout.
             </p>
           </div>
-          <Button variant="outline" size="sm" asChild>
-            <Link
-              href="/guests"
-              className="inline-flex items-center gap-1.5 whitespace-nowrap"
-            >
-              Manage in Guests
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
+          <Link
+            href="/guests"
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "inline-flex items-center gap-1.5 whitespace-nowrap"
+            )}
+          >
+            Manage in Guests
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
         </CardHeader>
         <CardContent>
           {partyMembers.length === 0 ? (
@@ -194,15 +196,16 @@ export function HandoutsManager({
               <p className="text-xs text-muted-foreground mt-1 mb-4">
                 Open Guests and set a Role / Relationship on each party member.
               </p>
-              <Button size="sm" asChild>
-                <Link
-                  href="/guests"
-                  className="inline-flex items-center gap-1.5 whitespace-nowrap"
-                >
-                  Go to Guests
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
+              <Link
+                href="/guests"
+                className={cn(
+                  buttonVariants({ size: "sm" }),
+                  "inline-flex items-center gap-1.5 whitespace-nowrap"
+                )}
+              >
+                Go to Guests
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -281,17 +284,25 @@ export function HandoutsManager({
             <Printer className="h-5 w-5" />
             Preview & Print
           </CardTitle>
-          <Button size="sm" variant="outline" asChild disabled={partyMembers.length === 0}>
+          {partyMembers.length === 0 ? (
+            <Button size="sm" variant="outline" disabled>
+              <Printer className="h-4 w-4" />
+              Print all (0)
+            </Button>
+          ) : (
             <Link
               href="/print/handouts"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 whitespace-nowrap"
+              className={cn(
+                buttonVariants({ size: "sm", variant: "outline" }),
+                "inline-flex items-center gap-2 whitespace-nowrap"
+              )}
             >
               <Printer className="h-4 w-4" />
               Print all ({partyMembers.length})
             </Link>
-          </Button>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           {partyMembers.length === 0 ? (

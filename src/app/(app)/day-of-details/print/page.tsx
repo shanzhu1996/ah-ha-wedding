@@ -92,7 +92,8 @@ function hasTextLocal(s: string | null | undefined): boolean {
 function renderReceptionMoment(
   m: ResolvedMoment,
   reception: ReceptionData,
-  songs: MusicSong[]
+  songs: MusicSong[],
+  logistics: LogisticsData
 ) {
   // Title line with time prefix
   const header = (
@@ -703,7 +704,7 @@ export default async function DayOfPrintPage() {
           <h2 className="section-head">Reception</h2>
           <ol className="mt-2 space-y-3 text-sm">
             {resolveReceptionMoments(reception).map((m) =>
-              renderReceptionMoment(m, reception, songs)
+              renderReceptionMoment(m, reception, songs, logistics)
             )}
           </ol>
           {hasText(reception.cultural_notes) && (

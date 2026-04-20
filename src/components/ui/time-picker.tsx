@@ -16,13 +16,21 @@ interface TimePickerProps {
 }
 
 export function TimePicker({ value, onChange, className }: TimePickerProps) {
-  // Parse HH:MM (24h) value into 12h components
-  const [hour12, setHour12] = useState("12");
-  const [minute, setMinute] = useState("00");
-  const [period, setPeriod] = useState("PM");
+  // Parse HH:MM (24h) value into 12h components.
+  // Unset value → all three undefined so Selects render their placeholders
+  // ("Hr", "Min", "—"). This prevents the confusion where "12:00 PM" looked
+  // committed to the couple but DB value was still null.
+  const [hour12, setHour12] = useState<string | undefined>(undefined);
+  const [minute, setMinute] = useState<string | undefined>(undefined);
+  const [period, setPeriod] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!value) return;
+    if (!value) {
+      setHour12(undefined);
+      setMinute(undefined);
+      setPeriod(undefined);
+      return;
+    }
     const [hStr, mStr] = value.split(":");
     const h = parseInt(hStr);
     const m = parseInt(mStr);
@@ -35,11 +43,22 @@ export function TimePicker({ value, onChange, className }: TimePickerProps) {
     setPeriod(p);
   }, [value]);
 
-  function update(newH12: string, newMin: string, newPeriod: string) {
-    let h = parseInt(newH12);
-    if (newPeriod === "AM" && h === 12) h = 0;
-    if (newPeriod === "PM" && h !== 12) h += 12;
-    const result = `${String(h).padStart(2, "0")}:${newMin}`;
+  // Commit a time as soon as the user picks any of the three selects —
+  // missing pieces fall back to sensible defaults (minute "00", period "PM").
+  // The user's explicit action (picking anything) counts as intent to set a
+  // time, so we persist immediately rather than waiting for all three.
+  function update(
+    newH12: string | undefined,
+    newMin: string | undefined,
+    newPeriod: string | undefined
+  ) {
+    const h12 = newH12 ?? hour12 ?? "12";
+    const mm = newMin ?? minute ?? "00";
+    const p = newPeriod ?? period ?? "PM";
+    let h = parseInt(h12);
+    if (p === "AM" && h === 12) h = 0;
+    if (p === "PM" && h !== 12) h += 12;
+    const result = `${String(h).padStart(2, "0")}:${mm}`;
     onChange(result);
   }
 
@@ -99,7 +118,7 @@ export function TimePicker({ value, onChange, className }: TimePickerProps) {
         }}
       >
         <SelectTrigger className="h-9 w-[4.2rem] text-center text-sm px-2">
-          <SelectValue />
+          <SelectValue placeholder="—" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="AM">AM</SelectItem>

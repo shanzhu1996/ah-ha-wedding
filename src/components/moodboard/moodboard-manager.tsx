@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -65,7 +66,7 @@ const SECTIONS = [
     maxImages: 3,
     suggestedCount: "3",
     priority: true,
-    notePlaceholder: "Notes for your stationer & florist — which tones do you love or want to avoid?",
+    notePlaceholder: "Notes on your palette — tones you love, colors to avoid, where each appears.",
   },
   {
     key: "venue_setting",
@@ -156,7 +157,7 @@ const SECTIONS = [
     maxImages: 5,
     suggestedCount: "3-5",
     priority: false,
-    notePlaceholder: "Notes for your stationer — style, paper weight, calligraphy preference?",
+    notePlaceholder: "Notes on style — paper weight, calligraphy, modern vs. vintage, where you'll order.",
   },
   {
     key: "lighting",
@@ -182,7 +183,7 @@ const SECTIONS = [
     maxImages: 5,
     suggestedCount: "3-5",
     priority: false,
-    notePlaceholder: "Notes for your planner — personal touches, DIY elements, special items?",
+    notePlaceholder: "Notes for your coordinator — personal touches, DIY elements, special items?",
   },
 ];
 
@@ -235,22 +236,57 @@ export function MoodboardManager({
     localStorage.setItem(`ahha-vibe-${weddingId}`, vibeWords);
   }
 
-  // Section notes — local state, saves to DB on blur
+  // Section notes — local state with debounced autosave.
+  // Flow: onChange → schedule save in 800ms → saving indicator →
+  // upsert → "Saved ✓" fades after 2s. onBlur saves immediately as a failsafe.
   const [localNotes, setLocalNotes] = useState<Record<string, string>>(() => {
     const notes: Record<string, string> = {};
     initialSections.forEach((s) => { notes[s.section_key] = s.notes || ""; });
     return notes;
   });
+  const savedNotesRef = useRef<Record<string, string>>(
+    Object.fromEntries(initialSections.map((s) => [s.section_key, s.notes || ""]))
+  );
+  type NoteStatus = "idle" | "saving" | "saved";
+  const [noteStatus, setNoteStatus] = useState<Record<string, NoteStatus>>({});
+  const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const savedTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   async function saveNotes(sectionKey: string) {
     const notes = localNotes[sectionKey] || "";
+    if (notes === (savedNotesRef.current[sectionKey] || "")) return;
+    setNoteStatus((s) => ({ ...s, [sectionKey]: "saving" }));
     const supabase = createClient();
-    await supabase
+    const { error } = await supabase
       .from("moodboard_sections")
       .upsert(
         { wedding_id: weddingId, section_key: sectionKey, notes: notes || null },
         { onConflict: "wedding_id,section_key" }
       );
+    if (error) {
+      toast.error("Could not save notes", { description: error.message });
+      setNoteStatus((s) => ({ ...s, [sectionKey]: "idle" }));
+      return;
+    }
+    savedNotesRef.current[sectionKey] = notes;
+    setNoteStatus((s) => ({ ...s, [sectionKey]: "saved" }));
+    // Fade back to idle so the badge doesn't linger.
+    if (savedTimers.current[sectionKey]) {
+      clearTimeout(savedTimers.current[sectionKey]);
+    }
+    savedTimers.current[sectionKey] = setTimeout(() => {
+      setNoteStatus((s) => ({ ...s, [sectionKey]: "idle" }));
+    }, 2000);
+  }
+
+  function handleNotesChange(sectionKey: string, value: string) {
+    setLocalNotes((prev) => ({ ...prev, [sectionKey]: value }));
+    if (debounceTimers.current[sectionKey]) {
+      clearTimeout(debounceTimers.current[sectionKey]);
+    }
+    debounceTimers.current[sectionKey] = setTimeout(() => {
+      saveNotes(sectionKey);
+    }, 800);
   }
 
   const sectionMap = new Map<string, MoodboardSection>();
@@ -683,26 +719,25 @@ export function MoodboardManager({
               )}
             </div>
 
-            {/* Fix 8: Vendor notes — always visible as an input */}
-            <div>
-              {localNotes[def.key] ? (
-                <Textarea
-                  value={localNotes[def.key]}
-                  onChange={(e) => setLocalNotes((prev) => ({ ...prev, [def.key]: e.target.value }))}
-                  onBlur={() => saveNotes(def.key)}
-                  placeholder={def.notePlaceholder}
-                  className="text-sm min-h-[50px] resize-none"
-                  rows={2}
-                />
-              ) : (
-                <Input
-                  value=""
-                  onChange={(e) => setLocalNotes((prev) => ({ ...prev, [def.key]: e.target.value }))}
-                  onBlur={() => saveNotes(def.key)}
-                  placeholder={def.notePlaceholder}
-                  className="text-sm h-9"
-                />
-              )}
+            {/* Vendor notes — single persistent Textarea so focus stays when
+                the first character flips the field from empty to non-empty. */}
+            <div className="space-y-1">
+              <Textarea
+                value={localNotes[def.key] || ""}
+                onChange={(e) => handleNotesChange(def.key, e.target.value)}
+                onBlur={() => saveNotes(def.key)}
+                placeholder={def.notePlaceholder}
+                className="text-sm min-h-[50px] resize-none"
+                rows={2}
+              />
+              <div className="h-4 text-[11px] leading-4">
+                {noteStatus[def.key] === "saving" && (
+                  <span className="text-muted-foreground">Saving…</span>
+                )}
+                {noteStatus[def.key] === "saved" && (
+                  <span className="text-emerald-600 animate-fade-in-up">Saved ✓</span>
+                )}
+              </div>
             </div>
           </div>
         )}

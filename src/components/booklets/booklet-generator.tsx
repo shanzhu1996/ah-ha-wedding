@@ -2897,7 +2897,7 @@ export function BookletGenerator({
             {vendor.breakdown_time && (
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Breakdown Time
+                  End Time
                 </p>
                 <p className="mt-0.5">{formatTime(vendor.breakdown_time)}</p>
               </div>

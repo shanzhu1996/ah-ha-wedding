@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import type { BudgetItemType, VendorType, ItemStatus } from "@/types/database";
 import { cn } from "@/lib/utils";
@@ -301,7 +302,12 @@ export function BudgetDashboard({
     const amount = parseFloat(budgetInput);
     if (isNaN(amount) || amount < 0) return;
     const supabase = createClient();
-    await supabase.from("weddings").update({ budget_total: amount }).eq("id", weddingId);
+    const { error } = await supabase.from("weddings").update({ budget_total: amount }).eq("id", weddingId);
+    if (error) {
+      toast.error("Could not update budget", { description: error.message });
+      return;
+    }
+    toast.success("Budget updated");
     setShowBudgetDialog(false);
     router.refresh();
   }
@@ -320,11 +326,15 @@ export function BudgetDashboard({
       vendor_id: null,
       shopping_item_id: null,
     };
-    if (editingItem) {
-      await supabase.from("budget_items").update(payload).eq("id", editingItem.id);
-    } else {
-      await supabase.from("budget_items").insert(payload);
+    const isEdit = !!editingItem;
+    const { error } = isEdit
+      ? await supabase.from("budget_items").update(payload).eq("id", editingItem.id)
+      : await supabase.from("budget_items").insert(payload);
+    if (error) {
+      toast.error("Could not save item", { description: error.message });
+      return;
     }
+    toast.success(isEdit ? "Item updated" : "Item added");
     setShowDialog(false);
     resetForm();
     router.refresh();

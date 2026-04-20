@@ -8,10 +8,8 @@ import { cn } from "@/lib/utils";
 import {
   SECTION_KEYS,
   SECTION_META,
-  getSectionCompletion,
   type SectionKey,
   type AllSectionData,
-  type CompletionState,
 } from "./types";
 
 // ── Pill bar ─────────────────────────────────────────────────────────
@@ -64,27 +62,6 @@ interface DayStepperProps {
   weddingId: string;
   initialData: Record<string, unknown>;
   songs: WeddingSong[];
-}
-
-// ── Completion dot ─────────────────────────────────────────────────────
-
-function CompletionDot({ state, active }: { state: CompletionState; active: boolean }) {
-  if (state === "none" || state === "empty") return null;
-  const color =
-    state === "done"
-      ? active
-        ? "bg-emerald-200"
-        : "bg-emerald-500"
-      : active
-        ? "bg-amber-200"
-        : "bg-amber-500";
-  return <span className={cn("inline-block h-1.5 w-1.5 rounded-full", color)} aria-hidden />;
-}
-
-function completionTitle(label: string, state: CompletionState): string {
-  if (state === "done") return `${label} — complete`;
-  if (state === "partial") return `${label} — in progress`;
-  return label;
 }
 
 // ── Component ──────────────────────────────────────────────────────────
@@ -172,10 +149,10 @@ export function DayStepper({ weddingId, initialData, songs: initialSongs }: DayS
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)]">
+          <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
             Day-of Details
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-sm text-muted-foreground mt-2">
             Plan every moment of your wedding day — from getting ready to the grand exit.
           </p>
         </div>
@@ -223,35 +200,29 @@ export function DayStepper({ weddingId, initialData, songs: initialSongs }: DayS
           {PILL_KEYS.map((pill) => {
             const isActive = pill === activePill;
             const meta = PILL_META[pill];
-            const sKey = sectionKeyForPill(pill);
-            const completion = getSectionCompletion(
-              sKey,
-              (data[sKey] ?? {}) as AllSectionData[typeof sKey]
-            );
             return (
               <button
                 key={pill}
                 id={`pill-${pill}`}
                 onClick={() => handlePillClick(pill)}
                 className={cn(
-                  "shrink-0 snap-start px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 inline-flex items-center gap-1.5",
+                  "shrink-0 snap-start px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 inline-flex items-center",
                   isActive
                     ? "bg-primary text-primary-foreground shadow-[0_2px_10px_rgba(196,168,130,0.25)]"
                     : "bg-primary/8 text-muted-foreground hover:bg-primary/15 hover:text-foreground"
                 )}
-                title={completionTitle(meta.label, completion)}
+                title={meta.label}
               >
                 <span className="hidden sm:inline">{meta.label}</span>
                 <span className="sm:hidden">{meta.shortLabel}</span>
-                <CompletionDot state={completion} active={isActive} />
               </button>
             );
           })}
         </div>
 
-        {/* Mobile: section indicator */}
-        <p className="text-xs text-muted-foreground/70 mt-2 sm:hidden">
-          {PILL_META[activePill].label} · {activeIndex + 1} of {PILL_KEYS.length}
+        {/* Section indicator — always visible so couples know where they are */}
+        <p className="text-xs text-muted-foreground/70 mt-2">
+          Step {activeIndex + 1} of {PILL_KEYS.length} · {PILL_META[activePill].label}
         </p>
       </div>
 
