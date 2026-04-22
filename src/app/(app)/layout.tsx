@@ -1,12 +1,23 @@
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
+import { MobileTopBar } from "@/components/layout/mobile-top-bar";
+import { MobileBreadcrumb } from "@/components/layout/mobile-breadcrumb";
+import { getCurrentWedding } from "@/lib/supabase/queries";
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export default async function AppLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const wedding = await getCurrentWedding();
+
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="flex-1 overflow-auto md:pb-0 pb-[calc(5rem+env(safe-area-inset-bottom))]">
+      <MobileTopBar weddingDate={wedding?.wedding_date ?? null} />
+      <main className="flex-1 overflow-auto md:pt-0 pt-[calc(3rem+env(safe-area-inset-top))] pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0">
         <div className="max-w-6xl mx-auto p-6 sm:p-8 animate-page-enter">
+          <MobileBreadcrumb />
           {children}
         </div>
       </main>

@@ -1,6 +1,9 @@
+import { cache } from "react";
 import { createClient } from "./server";
 
-export async function getCurrentWedding() {
+// cached() dedupes per-request so layout + page can both call without
+// double-fetching the wedding row.
+export const getCurrentWedding = cache(async function _getCurrentWedding() {
   const supabase = await createClient();
   const {
     data: { user },
@@ -24,7 +27,7 @@ export async function getCurrentWedding() {
     .single();
 
   return wedding;
-}
+});
 
 export async function getWeddingStats(weddingId: string) {
   const supabase = await createClient();

@@ -74,3 +74,27 @@ export const footerItems: NavItem[] = [
   { href: "/postwedding", icon: PartyPopper, label: "Post-Wedding" },
   { href: "/settings", icon: Settings, label: "Settings" },
 ];
+
+export interface BreadcrumbInfo {
+  step: number;
+  group: string;
+  tool: string;
+}
+
+/** Find breadcrumb info for a pathname (returns null for Dashboard/footer/unknown). */
+export function findBreadcrumb(pathname: string): BreadcrumbInfo | null {
+  for (let i = 0; i < navGroups.length; i++) {
+    const group = navGroups[i];
+    const item = group.items.find((it) => it.href === pathname);
+    if (item) {
+      return { step: i + 1, group: group.title, tool: item.label };
+    }
+  }
+  return null;
+}
+
+/** Flattened nav items (groups + footer) — used for search in the More sheet. */
+export const allNavItems: NavItem[] = [
+  ...navGroups.flatMap((g) => g.items),
+  ...footerItems,
+];
