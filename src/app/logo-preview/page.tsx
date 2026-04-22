@@ -109,10 +109,11 @@ export default function LogoPreview() {
             </div>
           </Variant>
 
-          {/* V5 — "A!H" monogram: rod shared between A (right leg) and H (left leg), ring = the ! dot */}
+          {/* V5 — Minimalist AH monogram (ligature) with a small ring below.
+              Editorial, aligned with landing's soft-minimalist voice. */}
           <Variant
-            label='V5 · "A!H" Monogram'
-            desc="中间竖条同时是 A 的右腿 + H 的左腿 + ! 主体；底部环 = 感叹号的点 + 婚戒意象"
+            label="V5 · AH Ligature"
+            desc="极简 serif AH 合字（紧密 interlock）· 下方一个小 ring 作 V3 致敬 + 婚戒意象 · editorial minimalist"
             bg="#F5EFE4"
           >
             <AHMonogram color="#C97A65" />
@@ -204,96 +205,39 @@ function AHMonogram({
   color: string;
   size?: number;
 }) {
-  // --- V3 core (unchanged) ---
-  // Rod: 34w × 170h; Ring: 36 dia, 6 stroke; 28 gap between them (as in V3).
-  // Centered in a 400×400 viewBox.
-  const rodWidth = 34;
-  const rodHeight = 170;
-  const rodGap = 28;
-  const ringDiameter = 36;
-  const ringStroke = 6;
-
-  const rodCenterX = 200;
-  const totalHeight = rodHeight + rodGap + ringDiameter;
-  const rodTop = (400 - totalHeight) / 2; // ≈ 83
-  const rodBottom = rodTop + rodHeight;
-  const ringCy = rodBottom + rodGap + ringDiameter / 2;
-  const rodLeft = rodCenterX - rodWidth / 2;
-
-  // --- A and H additions (flanking the rod) ---
-  const letterStroke = 16; // thinner than rod → visual hierarchy
-  const aLeftFoot = 82;
-  const hRightLegX = 300;
-  const hRightLegWidth = 18;
-  const crossbarY = rodTop + rodHeight / 2 + 8;
+  // Minimalist composition: AH ligature (tight kerning so the letters interlock)
+  // + a small ring below as a quiet nod to V3 + wedding-ring symbolism.
+  // Geometrically centred because there are no right-side decorations to compensate for.
+  const cx = 200;
 
   return (
     <svg
       viewBox="0 0 400 400"
       width={size}
       height={size}
-      aria-label='Ah-Ha! logo — A · H flanking the V3 "!" rod'
+      aria-label="Ah-Ha! logo — AH ligature monogram with a ring"
     >
-      {/* A · left diagonal — from bottom-left foot up to rod top */}
-      <line
-        x1={aLeftFoot}
-        y1={rodBottom}
-        x2={rodCenterX}
-        y2={rodTop}
-        stroke={color}
-        strokeWidth={letterStroke}
-        strokeLinecap="round"
-      />
-
-      {/* A · crossbar (stops at the rod's left edge) */}
-      <line
-        x1={aLeftFoot + 42}
-        y1={crossbarY}
-        x2={rodLeft}
-        y2={crossbarY}
-        stroke={color}
-        strokeWidth={letterStroke - 2}
-        strokeLinecap="round"
-      />
-
-      {/* H · crossbar (starts at the rod's right edge) */}
-      <line
-        x1={rodLeft + rodWidth}
-        y1={crossbarY}
-        x2={hRightLegX + hRightLegWidth / 2}
-        y2={crossbarY}
-        stroke={color}
-        strokeWidth={letterStroke - 2}
-        strokeLinecap="round"
-      />
-
-      {/* H · right leg */}
-      <rect
-        x={hRightLegX - hRightLegWidth / 2}
-        y={rodTop}
-        width={hRightLegWidth}
-        height={rodHeight}
+      {/* AH ligature — Playfair Display, very tight letter-spacing so A and H interlock */}
+      <text
+        x={cx}
+        y={260}
+        fontFamily="var(--font-heading), 'Playfair Display', Georgia, serif"
+        fontSize="240"
+        fontWeight="700"
+        textAnchor="middle"
         fill={color}
-        rx={3}
-      />
+        style={{ letterSpacing: "-0.22em" }}
+      >
+        AH
+      </text>
 
-      {/* V3 rod (unchanged) — A's right leg + H's left leg + ! body */}
-      <rect
-        x={rodLeft}
-        y={rodTop}
-        width={rodWidth}
-        height={rodHeight}
-        fill={color}
-        rx={4}
-      />
-
-      {/* V3 ring (unchanged) — ! period + wedding ring */}
+      {/* Small ring below — understated V3 callback + wedding-ring signal */}
       <circle
-        cx={rodCenterX}
-        cy={ringCy}
-        r={ringDiameter / 2}
+        cx={cx}
+        cy={310}
+        r={14}
         stroke={color}
-        strokeWidth={ringStroke}
+        strokeWidth="4"
         fill="none"
       />
     </svg>
