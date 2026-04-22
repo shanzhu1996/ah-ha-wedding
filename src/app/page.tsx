@@ -19,6 +19,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PreviewCarousel } from "./preview-carousel";
 
 const featureGroups = [
   {
@@ -163,13 +164,13 @@ export default function LandingPage() {
       </header>
 
       {/* Hero */}
-      <section className="min-h-[85vh] flex items-center py-16 sm:py-24 px-4">
+      <section className="sm:min-h-[85vh] flex items-center py-14 sm:py-24 px-4">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
-            <Heart className="h-3.5 w-3.5 fill-primary" />
+          <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-primary/10 text-primary text-xs sm:text-sm font-medium mb-6">
+            <Heart className="h-3 w-3 sm:h-3.5 sm:w-3.5 fill-primary" />
             Built by someone who survived their own wedding
           </div>
-          <h1 className="text-5xl sm:text-7xl font-bold font-[family-name:var(--font-heading)] tracking-tight leading-tight mb-6">
+          <h1 className="text-4xl sm:text-7xl font-bold font-[family-name:var(--font-heading)] tracking-tight leading-tight mb-6">
             Wedding planning is simpler
             <br />
             <span className="text-primary">than they said.</span>
@@ -209,9 +210,9 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-10 max-w-5xl mx-auto">
+          <PreviewCarousel>
             {/* Pre-wedding Timeline mockup — auto-seeded checklist from today until the wedding */}
-            <div className="flex flex-col items-center">
+            <div className="flex flex-col items-center w-[82vw] shrink-0 md:w-auto snap-start">
               <div className="aspect-[3/4] w-full rounded-md border bg-white shadow-md p-5 flex flex-col relative">
                 <div className="border-b pb-3 mb-3">
                   <p className="text-[10px] uppercase tracking-[0.2em] text-primary font-semibold mb-1">
@@ -305,7 +306,7 @@ export default function LandingPage() {
             </div>
 
             {/* Vendor Booklet mockup — DJ copy shown; caption + page marker convey per-vendor variants */}
-            <div className="flex flex-col items-center">
+            <div className="flex flex-col items-center w-[82vw] shrink-0 md:w-auto snap-start">
               <div className="aspect-[3/4] w-full rounded-md border bg-gradient-to-br from-[#F5EFE4] to-[#EDE4D3] shadow-md p-5 flex flex-col relative">
                 <div className="border-b border-foreground/15 pb-3 mb-3">
                   <p className="text-[10px] uppercase tracking-[0.2em] text-primary font-semibold mb-1">
@@ -375,7 +376,7 @@ export default function LandingPage() {
             </div>
 
             {/* Handouts mockup — one per wedding-party member, with tasks + cues */}
-            <div className="flex flex-col items-center">
+            <div className="flex flex-col items-center w-[82vw] shrink-0 md:w-auto snap-start">
               <div className="aspect-[3/4] w-full rounded-md border bg-white shadow-md p-5 flex flex-col relative">
                 <div className="border-b pb-3 mb-3">
                   <p className="text-[10px] uppercase tracking-[0.2em] text-primary font-semibold mb-1">
@@ -457,7 +458,7 @@ export default function LandingPage() {
                 </p>
               </div>
             </div>
-          </div>
+          </PreviewCarousel>
         </div>
       </section>
 
@@ -495,7 +496,7 @@ export default function LandingPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-10">
               {featureGroups.slice(0, 2).map((group) => (
                 <div key={group.title}>
-                  <div className="mb-5 flex items-baseline gap-3 border-b pb-3">
+                  <div className="mb-4 sm:mb-5 flex flex-col sm:flex-row sm:items-baseline sm:gap-3 border-b pb-3">
                     <h3 className="text-lg sm:text-xl font-semibold font-[family-name:var(--font-heading)]">
                       {group.title}
                     </h3>
@@ -503,19 +504,19 @@ export default function LandingPage() {
                       {group.tagline}
                     </p>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
                     {group.features.map((feature) => (
                       <div
                         key={feature.title}
-                        className="bg-card rounded-lg border p-4 hover:shadow-sm transition-shadow"
+                        className="bg-card rounded-lg border p-4 hover:shadow-sm transition-shadow flex items-center gap-3 sm:block"
                       >
-                        <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center mb-3">
+                        <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0 sm:mb-3">
                           <feature.icon className="h-4 w-4 text-primary" />
                         </div>
-                        <h4 className="font-semibold text-sm mb-1">
+                        <h4 className="font-semibold text-sm sm:mb-1">
                           {feature.title}
                         </h4>
-                        <p className="text-muted-foreground text-xs leading-relaxed">
+                        <p className="hidden sm:block text-muted-foreground text-xs leading-relaxed">
                           {feature.description}
                         </p>
                       </div>
@@ -528,7 +529,7 @@ export default function LandingPage() {
             {/* Larger groups — full-width 4-col grid */}
             {featureGroups.slice(2).map((group) => (
               <div key={group.title}>
-                <div className="mb-5 flex items-baseline gap-3 border-b pb-3">
+                <div className="mb-4 sm:mb-5 flex flex-col sm:flex-row sm:items-baseline sm:gap-3 border-b pb-3">
                   <h3 className="text-lg sm:text-xl font-semibold font-[family-name:var(--font-heading)]">
                     {group.title}
                   </h3>
@@ -536,19 +537,19 @@ export default function LandingPage() {
                     {group.tagline}
                   </p>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                   {group.features.map((feature) => (
                     <div
                       key={feature.title}
-                      className="bg-card rounded-lg border p-4 hover:shadow-sm transition-shadow"
+                      className="bg-card rounded-lg border p-4 hover:shadow-sm transition-shadow flex items-center gap-3 sm:block"
                     >
-                      <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center mb-3">
+                      <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0 sm:mb-3">
                         <feature.icon className="h-4 w-4 text-primary" />
                       </div>
-                      <h4 className="font-semibold text-sm mb-1">
+                      <h4 className="font-semibold text-sm sm:mb-1">
                         {feature.title}
                       </h4>
-                      <p className="text-muted-foreground text-xs leading-relaxed">
+                      <p className="hidden sm:block text-muted-foreground text-xs leading-relaxed">
                         {feature.description}
                       </p>
                     </div>
