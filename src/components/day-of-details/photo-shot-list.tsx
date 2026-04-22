@@ -75,7 +75,7 @@ function ShotRow({
   const showNoteInput = noteOpen || hasNote;
 
   return (
-    <div className="flex items-center gap-2 py-0.5">
+    <div className="flex items-center gap-2 py-0.5 flex-wrap sm:flex-nowrap">
       <Checkbox
         checked={shot.included}
         onCheckedChange={(checked) => onUpdate({ included: checked === true })}
@@ -89,18 +89,7 @@ function ShotRow({
         )}
         placeholder="Shot description"
       />
-      {showNoteInput ? (
-        <Input
-          autoFocus={noteOpen && !hasNote}
-          value={shot.notes}
-          onChange={(e) => onUpdate({ notes: e.target.value })}
-          onBlur={() => {
-            if (!shot.notes?.trim()) setNoteOpen(false);
-          }}
-          className="text-xs text-muted-foreground w-40 sm:w-56 shrink-0"
-          placeholder="Note — e.g., wide angle"
-        />
-      ) : (
+      {!showNoteInput && (
         <button
           type="button"
           onClick={() => setNoteOpen(true)}
@@ -110,6 +99,19 @@ function ShotRow({
           <StickyNote className="h-3 w-3" />
           Note
         </button>
+      )}
+      {/* Note input: inline on desktop, wraps to row 2 on mobile via order-last + w-full */}
+      {showNoteInput && (
+        <Input
+          autoFocus={noteOpen && !hasNote}
+          value={shot.notes}
+          onChange={(e) => onUpdate({ notes: e.target.value })}
+          onBlur={() => {
+            if (!shot.notes?.trim()) setNoteOpen(false);
+          }}
+          className="text-xs text-muted-foreground w-full order-last sm:order-none sm:w-56 shrink-0"
+          placeholder="Note — e.g., wide angle"
+        />
       )}
       {onDelete ? (
         <DropdownMenu>

@@ -949,14 +949,14 @@ export function ReceptionSection({
           >
             <div className="space-y-2">
               {(data.parent_dances || []).map((d) => (
-                <div key={d.id} className="flex items-center gap-2">
+                <div key={d.id} className="flex flex-col sm:flex-row sm:items-center gap-2">
                   <Input
                     placeholder="Who (e.g., Bride & Father)"
                     value={d.who}
                     onChange={(e) =>
                       updateParentDance(d.id, { who: e.target.value })
                     }
-                    className="flex-1 h-9 text-sm"
+                    className="h-9 text-sm sm:flex-1"
                   />
                   <Input
                     placeholder="Song"
@@ -964,22 +964,24 @@ export function ReceptionSection({
                     onChange={(e) =>
                       updateParentDance(d.id, { song: e.target.value })
                     }
-                    className="flex-1 h-9 text-sm"
+                    className="h-9 text-sm sm:flex-1"
                   />
-                  <Input
-                    placeholder="Artist"
-                    value={d.artist}
-                    onChange={(e) =>
-                      updateParentDance(d.id, { artist: e.target.value })
-                    }
-                    className="w-32 h-9 text-sm"
-                  />
-                  <button
-                    onClick={() => removeParentDance(d.id)}
-                    className="text-muted-foreground/40 hover:text-destructive transition-colors p-1 shrink-0"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Artist"
+                      value={d.artist}
+                      onChange={(e) =>
+                        updateParentDance(d.id, { artist: e.target.value })
+                      }
+                      className="flex-1 sm:flex-none sm:w-32 h-9 text-sm"
+                    />
+                    <button
+                      onClick={() => removeParentDance(d.id)}
+                      className="text-muted-foreground/40 hover:text-destructive transition-colors p-1 shrink-0"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1038,23 +1040,30 @@ export function ReceptionSection({
                 const isCustom = ![2, 3, 5].includes(minutes);
                 return (
                   <div key={s.id} className="rounded-md border border-border/40 bg-background p-2 space-y-1.5">
-                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                      <span className="text-xs text-muted-foreground/50 w-5 text-right shrink-0">
+                    {/* Mobile: 3-col grid so fields stack cleanly. Desktop: single flex row. */}
+                    <div className="grid grid-cols-[auto_1fr_auto] gap-2 sm:flex sm:items-center sm:flex-nowrap">
+                      <span className="text-xs text-muted-foreground/50 w-5 text-right self-center sm:shrink-0">
                         {i + 1}
                       </span>
                       <Input
                         placeholder="Speaker name"
                         value={s.speaker}
                         onChange={(e) => updateSpeech(s.id, { speaker: e.target.value })}
-                        className="flex-1 min-w-[140px] h-9 text-sm"
+                        className="h-9 text-sm sm:flex-1 sm:min-w-[140px]"
                       />
+                      <button
+                        onClick={() => removeSpeech(s.id)}
+                        className="self-center text-muted-foreground/40 hover:text-destructive transition-colors p-1 sm:order-[99] sm:shrink-0"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
                       <Input
                         placeholder="Role (e.g., Maid of Honor)"
                         value={s.role ?? ""}
                         onChange={(e) => updateSpeech(s.id, { role: e.target.value })}
-                        className="flex-1 min-w-[140px] h-9 text-sm"
+                        className="col-span-3 h-9 text-sm sm:col-auto sm:flex-1 sm:min-w-[140px]"
                       />
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="col-span-3 flex items-center gap-1 sm:col-auto sm:shrink-0">
                         {[2, 3, 5].map((n) => (
                           <button
                             key={n}
@@ -1083,9 +1092,6 @@ export function ReceptionSection({
                           className={cn("h-7 w-14 text-xs tabular-nums px-1.5", isCustom && "ring-1 ring-primary")}
                         />
                       </div>
-                      <button onClick={() => removeSpeech(s.id)} className="text-muted-foreground/40 hover:text-destructive transition-colors p-1 shrink-0">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
                     </div>
                     <Input
                       placeholder={`MC intro (optional — default: "Please welcome to the mic, ${s.speaker || "…"}${s.role ? ", " + s.role : ""}.")`}

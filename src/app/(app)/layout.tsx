@@ -5,12 +5,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="flex-1 overflow-auto pb-20 md:pb-0">
+      <main className="flex-1 overflow-auto md:pb-0 pb-[calc(5rem+env(safe-area-inset-bottom))]">
         <div className="max-w-6xl mx-auto p-6 sm:p-8 animate-page-enter">
           {children}
         </div>
-        {/* Mobile nav spacer */}
-        <div className="h-20 md:hidden" />
       </main>
       <MobileNav />
     </div>

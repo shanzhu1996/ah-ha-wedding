@@ -3,83 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  CalendarDays,
-  CheckSquare,
-  ClipboardList,
   Heart,
-  Layout,
-  Music,
-  Package,
-  Users,
-  Wallet,
-  BookOpen,
-  FileText,
-  Globe,
-  Sparkles,
-  Settings,
   LayoutDashboard,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  PartyPopper,
-  Palette,
-  LayoutGrid,
-  ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-
-interface NavItem {
-  href: string;
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-}
-
-interface NavGroup {
-  title: string;
-  items: NavItem[];
-}
-
-// 4 groups align with the 4 questions on the Dashboard Planning Map.
-// If you rename a group, update planning-map.tsx so mental models stay in sync.
-const navGroups: NavGroup[] = [
-  {
-    title: "The People",
-    items: [
-      { href: "/vendors", icon: Users, label: "Vendors" },
-      { href: "/guests", icon: ClipboardList, label: "Guests" },
-    ],
-  },
-  {
-    title: "Your Vision",
-    items: [
-      { href: "/moodboard", icon: Palette, label: "Moodboard" },
-      { href: "/music", icon: Music, label: "Music" },
-    ],
-  },
-  {
-    title: "Making It Happen",
-    items: [
-      { href: "/timeline", icon: CalendarDays, label: "Timeline" },
-      { href: "/budget", icon: Wallet, label: "Budget" },
-      { href: "/day-of-details", icon: ClipboardCheck, label: "Day-of Details" },
-      { href: "/shopping", icon: CheckSquare, label: "Shopping" },
-      { href: "/layout-guide", icon: LayoutGrid, label: "Layout Guide" },
-      { href: "/seating", icon: Layout, label: "Seating" },
-      { href: "/website", icon: Globe, label: "Website" },
-    ],
-  },
-  {
-    title: "Wrapping Up",
-    items: [
-      { href: "/tips", icon: Sparkles, label: "Tips" },
-      { href: "/booklets", icon: BookOpen, label: "Booklets" },
-      { href: "/packing", icon: Package, label: "Packing" },
-      { href: "/handouts", icon: FileText, label: "Handouts" },
-    ],
-  },
-];
+import { navGroups, footerItems } from "@/lib/nav-config";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -222,30 +155,24 @@ export function Sidebar() {
 
       {/* Bottom — standalone links */}
       <div className="border-t p-2 space-y-0.5">
-        <Link
-          href="/postwedding"
-          className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
-            pathname === "/postwedding"
-              ? "bg-primary/10 text-primary font-medium"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
-          )}
-        >
-          <PartyPopper className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>Post-Wedding</span>}
-        </Link>
-        <Link
-          href="/settings"
-          className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
-            pathname === "/settings"
-              ? "bg-primary/10 text-primary font-medium"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
-          )}
-        >
-          <Settings className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>Settings</span>}
-        </Link>
+        {footerItems.map((item) => {
+          const isActive = pathname === item.href;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+                isActive
+                  ? "bg-primary/10 text-primary font-medium"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <item.icon className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>{item.label}</span>}
+            </Link>
+          );
+        })}
         <Button
           variant="ghost"
           size="sm"

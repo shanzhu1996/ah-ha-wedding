@@ -139,94 +139,145 @@ export function MomentCard({
           <GripVertical className="h-3.5 w-3.5" />
         </button>
 
-        {/* Pill body — toggles open, or holds title editor */}
-        <div
-          className={cn(
-            "flex-1 flex items-center gap-3 px-2 py-2.5 min-w-0"
-          )}
-        >
-          {/* Time slot — always reserved; clickable when derived from Schedule */}
-          {time ? (
-            timeFromSchedule && onNavigateToSchedule ? (
+        {/* Pill body — stacks chips below title on mobile, keeps inline on desktop */}
+        <div className="flex-1 min-w-0 flex flex-col px-2 py-2.5">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Time slot — always reserved; clickable when derived from Schedule */}
+            {time ? (
+              timeFromSchedule && onNavigateToSchedule ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigateToSchedule();
+                  }}
+                  title="From Schedule — click to edit"
+                  className="text-xs tabular-nums shrink-0 w-16 font-medium text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-0.5 group/time"
+                >
+                  <span>{time}</span>
+                  <ArrowUpRight className="h-3 w-3 opacity-0 group-hover/time:opacity-70 transition-opacity" />
+                </button>
+              ) : (
+                <span className="text-xs tabular-nums shrink-0 w-16 font-medium text-muted-foreground">
+                  {time}
+                </span>
+              )
+            ) : (
+              <span
+                aria-hidden
+                className="text-xs tabular-nums shrink-0 w-16 invisible"
+              >
+                0:00 PM
+              </span>
+            )}
+
+            {/* Title — inline editable when onRename is provided */}
+            {editingTitle && onRename ? (
+              <input
+                ref={inputRef}
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitRename();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancelRename();
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="text-sm font-medium shrink-0 bg-transparent border-b border-primary/40 outline-none focus:border-primary min-w-[8rem]"
+                placeholder="Moment title"
+              />
+            ) : onRename ? (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onNavigateToSchedule();
+                  setEditingTitle(true);
                 }}
-                title="From Schedule — click to edit"
-                className="text-xs tabular-nums shrink-0 w-16 font-medium text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-0.5 group/time"
+                title="Rename"
+                className="text-sm font-medium shrink-0 inline-flex items-center gap-1 hover:text-primary transition-colors"
               >
-                <span>{time}</span>
-                <ArrowUpRight className="h-3 w-3 opacity-0 group-hover/time:opacity-70 transition-opacity" />
+                <span>{title}</span>
+                <Pencil className="h-3 w-3 text-muted-foreground/0 group-hover/moment:text-muted-foreground/40 transition-colors" />
               </button>
             ) : (
-              <span className="text-xs tabular-nums shrink-0 w-16 font-medium text-muted-foreground">
-                {time}
-              </span>
-            )
-          ) : (
-            <span
-              aria-hidden
-              className="text-xs tabular-nums shrink-0 w-16 invisible"
-            >
-              0:00 PM
-            </span>
-          )}
+              <span className="text-sm font-medium shrink-0">{title}</span>
+            )}
 
-          {/* Title — inline editable when onRename is provided */}
-          {editingTitle && onRename ? (
-            <input
-              ref={inputRef}
-              value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={commitRename}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  commitRename();
-                } else if (e.key === "Escape") {
-                  e.preventDefault();
-                  cancelRename();
-                }
-              }}
-              onClick={(e) => e.stopPropagation()}
-              className="text-sm font-medium shrink-0 bg-transparent border-b border-primary/40 outline-none focus:border-primary min-w-[8rem]"
-              placeholder="Moment title"
-            />
-          ) : onRename ? (
+            {/* Desktop: chips inline in the middle */}
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setEditingTitle(true);
-              }}
-              title="Rename"
-              className="text-sm font-medium shrink-0 inline-flex items-center gap-1 hover:text-primary transition-colors"
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+              className={cn(
+                "hidden sm:flex flex-1 items-center gap-1.5 flex-wrap overflow-hidden text-left min-w-0",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-md py-0.5"
+              )}
             >
-              <span>{title}</span>
-              <Pencil className="h-3 w-3 text-muted-foreground/0 group-hover/moment:text-muted-foreground/40 transition-colors" />
+              {hasChips ? (
+                summaryChips!.map((c, i) => (
+                  <span
+                    key={i}
+                    className={cn(
+                      "text-[11px] px-1.5 py-0.5 rounded-md truncate max-w-[220px]",
+                      c.tone === "accent" &&
+                        "bg-primary/10 text-primary font-medium",
+                      c.tone === "muted" &&
+                        "bg-muted text-muted-foreground/70",
+                      (!c.tone || c.tone === "neutral") &&
+                        "bg-muted/60 text-foreground/70"
+                    )}
+                    title={c.label}
+                  >
+                    {c.label}
+                  </span>
+                ))
+              ) : (
+                <span className="text-[11px] text-muted-foreground/50 italic">
+                  Not planned yet
+                </span>
+              )}
             </button>
-          ) : (
-            <span className="text-sm font-medium shrink-0">{title}</span>
-          )}
 
-          {/* Summary chips fill the middle — clicking opens/closes */}
+            {/* Mobile: spacer pushes chevron right */}
+            <span className="sm:hidden flex-1" aria-hidden />
+
+            {/* Chevron is also a toggle */}
+            <button
+              type="button"
+              onClick={() => setOpen((o) => !o)}
+              aria-label={open ? "Collapse" : "Expand"}
+              className="shrink-0 rounded-md p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 text-muted-foreground/60 transition-transform motion-reduce:transition-none",
+                  open && "rotate-180"
+                )}
+              />
+            </button>
+          </div>
+
+          {/* Mobile: chips drop to row 2, indented to align under title */}
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
             aria-expanded={open}
             className={cn(
-              "flex-1 flex items-center gap-1.5 flex-wrap overflow-hidden text-left min-w-0",
+              "sm:hidden mt-1 pl-[calc(4rem+0.75rem)] flex items-center gap-1.5 flex-wrap overflow-hidden text-left min-w-0",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-md py-0.5"
             )}
           >
             {hasChips ? (
               summaryChips!.map((c, i) => (
                 <span
-                  key={i}
+                  key={`mobile-${i}`}
                   className={cn(
-                    "text-[11px] px-1.5 py-0.5 rounded-md truncate max-w-[220px]",
+                    "text-[11px] px-1.5 py-0.5 rounded-md truncate max-w-[180px]",
                     c.tone === "accent" &&
                       "bg-primary/10 text-primary font-medium",
                     c.tone === "muted" &&
@@ -244,21 +295,6 @@ export function MomentCard({
                 Not planned yet
               </span>
             )}
-          </button>
-
-          {/* Chevron is also a toggle */}
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-label={open ? "Collapse" : "Expand"}
-            className="shrink-0 rounded-md p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-          >
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 text-muted-foreground/60 transition-transform motion-reduce:transition-none",
-                open && "rotate-180"
-              )}
-            />
           </button>
         </div>
 

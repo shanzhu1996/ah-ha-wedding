@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Playfair_Display } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -38,6 +38,12 @@ export const metadata: Metadata = {
     // images auto-inherited from opengraph-image.tsx
   },
   // favicon + apple-icon auto-registered (apple-icon.tsx). Explicit icons config removed.
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
