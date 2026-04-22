@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   MoreHorizontal,
   Search,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -30,7 +31,12 @@ const primaryTabs = [
   { href: "/day-of-details", icon: ClipboardCheck, label: "Day-of" },
 ];
 
-export function MobileNav() {
+interface MobileNavProps {
+  /** Map of toolHref → ISO first-visit timestamp. Used for progress indicators. */
+  visits?: Record<string, string>;
+}
+
+export function MobileNav({ visits = {} }: MobileNavProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -49,6 +55,35 @@ export function MobileNav() {
   function handleSheetOpenChange(next: boolean) {
     setOpen(next);
     if (!next) setQuery("");
+  }
+
+  function renderToolCard(item: (typeof allNavItems)[number]) {
+    const isActive = pathname === item.href;
+    const visited = !!visits[item.href];
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        onClick={() => handleSheetOpenChange(false)}
+        className={cn(
+          "relative flex flex-col items-center gap-2 rounded-lg p-3 text-center transition-colors",
+          isActive
+            ? "bg-primary/10 text-primary"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+        )}
+      >
+        {visited && !isActive && (
+          <span
+            aria-label="Visited"
+            className="absolute top-1.5 right-1.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary/15 text-primary"
+          >
+            <Check className="h-2.5 w-2.5" strokeWidth={3} />
+          </span>
+        )}
+        <item.icon className="h-5 w-5" />
+        <span className="text-xs font-medium leading-tight">{item.label}</span>
+      </Link>
+    );
   }
 
   return (
@@ -109,27 +144,7 @@ export function MobileNav() {
               {searching ? (
                 matches.length > 0 ? (
                   <div className="grid grid-cols-3 gap-2">
-                    {matches.map((item) => {
-                      const isActive = pathname === item.href;
-                      return (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          onClick={() => handleSheetOpenChange(false)}
-                          className={cn(
-                            "flex flex-col items-center gap-2 rounded-lg p-3 text-center transition-colors",
-                            isActive
-                              ? "bg-primary/10 text-primary"
-                              : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                          )}
-                        >
-                          <item.icon className="h-5 w-5" />
-                          <span className="text-xs font-medium leading-tight">
-                            {item.label}
-                          </span>
-                        </Link>
-                      );
-                    })}
+                    {matches.map(renderToolCard)}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground/70 text-center py-8">
@@ -138,61 +153,41 @@ export function MobileNav() {
                 )
               ) : (
                 <div className="space-y-5">
-                  {navGroups.map((group) => (
-                    <div key={group.title}>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2 px-1">
-                        {group.title}
-                      </p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {group.items.map((item) => {
-                          const isActive = pathname === item.href;
-                          return (
-                            <Link
-                              key={item.href}
-                              href={item.href}
-                              onClick={() => handleSheetOpenChange(false)}
-                              className={cn(
-                                "flex flex-col items-center gap-2 rounded-lg p-3 text-center transition-colors",
-                                isActive
-                                  ? "bg-primary/10 text-primary"
-                                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                              )}
-                            >
-                              <item.icon className="h-5 w-5" />
-                              <span className="text-xs font-medium leading-tight">
-                                {item.label}
-                              </span>
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Footer items — post-wedding + settings */}
-                  <div className="border-t pt-4">
-                    <div className="grid grid-cols-3 gap-2">
-                      {footerItems.map((item) => {
-                        const isActive = pathname === item.href;
-                        return (
-                          <Link
-                            key={item.href}
-                            href={item.href}
-                            onClick={() => handleSheetOpenChange(false)}
+                  {navGroups.map((group) => {
+                    const exploredCount = group.items.filter(
+                      (it) => visits[it.href]
+                    ).length;
+                    const total = group.items.length;
+                    const allExplored = exploredCount === total;
+                    return (
+                      <div key={group.title}>
+                        <div className="flex items-baseline justify-between mb-2 px-1">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                            {group.title}
+                          </p>
+                          <p
                             className={cn(
-                              "flex flex-col items-center gap-2 rounded-lg p-3 text-center transition-colors",
-                              isActive
-                                ? "bg-primary/10 text-primary"
-                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                              "text-[10px] tabular-nums",
+                              allExplored
+                                ? "text-primary font-medium"
+                                : "text-muted-foreground/50"
                             )}
                           >
-                            <item.icon className="h-5 w-5" />
-                            <span className="text-xs font-medium leading-tight">
-                              {item.label}
-                            </span>
-                          </Link>
-                        );
-                      })}
+                            {exploredCount}/{total}
+                            {allExplored && " ✓"}
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {group.items.map(renderToolCard)}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Footer items — post-wedding + settings (no progress) */}
+                  <div className="border-t pt-4">
+                    <div className="grid grid-cols-3 gap-2">
+                      {footerItems.map(renderToolCard)}
                     </div>
                   </div>
                 </div>

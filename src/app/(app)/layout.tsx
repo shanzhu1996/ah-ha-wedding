@@ -2,6 +2,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { MobileTopBar } from "@/components/layout/mobile-top-bar";
 import { MobileBreadcrumb } from "@/components/layout/mobile-breadcrumb";
+import { TrackVisit } from "@/components/layout/track-visit";
 import { getCurrentWedding } from "@/lib/supabase/queries";
 
 export default async function AppLayout({
@@ -10,6 +11,8 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const wedding = await getCurrentWedding();
+  const visits: Record<string, string> =
+    (wedding?.tool_visits as Record<string, string>) ?? {};
 
   return (
     <div className="flex min-h-screen">
@@ -21,7 +24,8 @@ export default async function AppLayout({
           {children}
         </div>
       </main>
-      <MobileNav />
+      <MobileNav visits={visits} />
+      <TrackVisit />
     </div>
   );
 }

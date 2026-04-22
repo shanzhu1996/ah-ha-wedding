@@ -10,6 +10,8 @@ export default async function DashboardPage() {
   if (!wedding) return redirect("/onboarding");
 
   const stats = await getWeddingStats(wedding.id);
+  const visits: Record<string, string> =
+    (wedding.tool_visits as Record<string, string>) ?? {};
 
   const weddingDate = wedding.wedding_date
     ? new Date(wedding.wedding_date + "T00:00:00")
@@ -70,7 +72,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* The 4-step planning map */}
-      <PlanningMap weddingDate={wedding.wedding_date} />
+      <PlanningMap weddingDate={wedding.wedding_date} visits={visits} />
     </div>
   );
 }

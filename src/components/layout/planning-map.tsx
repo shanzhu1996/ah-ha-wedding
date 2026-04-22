@@ -21,6 +21,7 @@ import {
   ArrowRight,
   LayoutGrid,
   ClipboardCheck,
+  Check,
 } from "lucide-react";
 
 interface Tool {
@@ -91,6 +92,8 @@ const STEPS: Step[] = [
 interface PlanningMapProps {
   weddingDate: string | null;
   completedFeatures?: string[];
+  /** Map of toolHref → ISO first-visit timestamp. Drives mobile-only progress chips. */
+  visits?: Record<string, string>;
 }
 
 function StepSection({
@@ -99,13 +102,18 @@ function StepSection({
   isActive,
   onActivate,
   isLast,
+  visits,
 }: {
   step: Step;
   index: number;
   isActive: boolean;
   onActivate: () => void;
   isLast: boolean;
+  visits: Record<string, string>;
 }) {
+  const exploredCount = step.tools.filter((t) => visits[t.href]).length;
+  const total = step.tools.length;
+  const allExplored = exploredCount === total;
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
 
@@ -160,14 +168,37 @@ function StepSection({
         <h3 className="text-xl sm:text-2xl font-[family-name:var(--font-heading)] tracking-tight mb-2 text-foreground">
           {step.question}
         </h3>
-        <p className="text-sm text-muted-foreground leading-relaxed mb-5 max-w-lg">
+        <p className="text-sm text-muted-foreground leading-relaxed mb-3 max-w-lg">
           {step.description}
         </p>
+
+        {/* Mobile-only: progress chip under description */}
+        <div className="md:hidden mb-4">
+          <span
+            className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full tabular-nums ${
+              allExplored
+                ? "bg-primary/10 text-primary font-medium"
+                : "bg-muted text-muted-foreground/70"
+            }`}
+          >
+            {allExplored ? (
+              <>
+                <Check className="h-3 w-3" strokeWidth={3} />
+                All {total} explored
+              </>
+            ) : (
+              <>
+                {exploredCount}/{total} explored
+              </>
+            )}
+          </span>
+        </div>
 
         {/* Tool cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           {step.tools.map((tool) => {
             const Icon = tool.icon;
+            const visited = !!visits[tool.href];
             return (
               <Link
                 key={tool.href}
@@ -178,6 +209,15 @@ function StepSection({
                     : "border-border hover:border-primary/40"
                 }`}
               >
+                {/* Mobile-only visited check — never shown on desktop to keep the card visual unchanged */}
+                {visited && (
+                  <span
+                    aria-label="Visited"
+                    className="md:hidden absolute top-2 right-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary/15 text-primary"
+                  >
+                    <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                  </span>
+                )}
                 <div className="relative flex items-start justify-between mb-2.5">
                   <Icon className="h-4 w-4 text-primary/70 group-hover:text-primary transition-colors duration-300" />
                   <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-all duration-300 -translate-x-1 group-hover:translate-x-0" />
@@ -197,7 +237,10 @@ function StepSection({
   );
 }
 
-export function PlanningMap({ weddingDate }: PlanningMapProps) {
+export function PlanningMap({
+  weddingDate,
+  visits = {},
+}: PlanningMapProps) {
   const endRef = useRef<HTMLDivElement>(null);
   const [endVisible, setEndVisible] = useState(false);
   const [activeStep, setActiveStep] = useState<number | null>(null);
@@ -240,6 +283,7 @@ export function PlanningMap({ weddingDate }: PlanningMapProps) {
           isActive={activeStep === i}
           onActivate={() => setActiveStep(i)}
           isLast={i === STEPS.length - 1}
+          visits={visits}
         />
       ))}
 
