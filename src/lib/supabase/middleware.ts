@@ -40,7 +40,9 @@ export async function updateSession(request: NextRequest) {
   const isPublicRoute =
     publicRoutes.some(
       (route) => path === route || path.startsWith("/callback")
-    ) || path.startsWith("/w/");
+    ) ||
+    path.startsWith("/w/") ||
+    path.startsWith("/preview/");
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();

@@ -11,8 +11,6 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const wedding = await getCurrentWedding();
-  const visits: Record<string, string> =
-    (wedding?.tool_visits as Record<string, string>) ?? {};
 
   return (
     <div className="flex min-h-screen">
@@ -24,7 +22,7 @@ export default async function AppLayout({
           {children}
         </div>
       </main>
-      <MobileNav visits={visits} />
+      <MobileNav />
       <TrackVisit />
     </div>
   );

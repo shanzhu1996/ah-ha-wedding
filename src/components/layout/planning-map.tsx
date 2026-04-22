@@ -3,91 +3,26 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  Users,
-  ClipboardList,
-  Palette,
-  CalendarDays,
-  Music,
-  Layout,
-  Globe,
-  Wallet,
-  CheckSquare,
-  Sparkles,
-  BookOpen,
-  Package,
-  FileText,
   Heart,
   PartyPopper,
   ArrowRight,
-  LayoutGrid,
-  ClipboardCheck,
   Check,
 } from "lucide-react";
+import { sections, type Section, type NavItem } from "@/lib/nav-config";
 
-interface Tool {
-  label: string;
-  tagline: string;
-  href: string;
-  icon: React.ComponentType<{ className?: string }>;
-  highlight?: boolean;
-}
-
-interface Step {
-  number: number;
-  question: string;
-  description: string;
+// Local step shape — shim so the rest of this file keeps working after the
+// move to the shared sections[] config. Only `tools` is renamed.
+type Tool = NavItem;
+type Step = Pick<Section, "number" | "question" | "description"> & {
   tools: Tool[];
-}
+};
 
-const STEPS: Step[] = [
-  {
-    number: 1,
-    question: "Who's involved?",
-    description:
-      "Before you plan anything, know two things: who's helping you and who's celebrating with you.",
-    tools: [
-      { label: "Vendors", tagline: "Who's helping you?", href: "/vendors", icon: Users },
-      { label: "Guests", tagline: "Who's coming?", href: "/guests", icon: ClipboardList },
-    ],
-  },
-  {
-    number: 2,
-    question: "What's your vision?",
-    description:
-      "What does it look like, feel like, sound like? Don't worry about logistics yet — just dream.",
-    tools: [
-      { label: "Moodboard", tagline: "What does it feel like?", href: "/moodboard", icon: Palette },
-      { label: "Music", tagline: "What does it sound like?", href: "/music", icon: Music },
-    ],
-  },
-  {
-    number: 3,
-    question: "How does it all come together?",
-    description:
-      "You have a vision — now make it real. The timeline is your master checklist.",
-    tools: [
-      { label: "Timeline", tagline: "Your planning to-do list", href: "/timeline", icon: CalendarDays },
-      { label: "Budget", tagline: "Where is the money going?", href: "/budget", icon: Wallet },
-      { label: "Day-of Details", tagline: "Ceremony, reception, photos & logistics", href: "/day-of-details", icon: ClipboardCheck, highlight: true },
-      { label: "Shopping", tagline: "What do you need?", href: "/shopping", icon: CheckSquare },
-      { label: "Layout Guide", tagline: "Where does everything go?", href: "/layout-guide", icon: LayoutGrid },
-      { label: "Seating", tagline: "Who sits where?", href: "/seating", icon: Layout },
-      { label: "Website", tagline: "Where do guests find info?", href: "/website", icon: Globe },
-    ],
-  },
-  {
-    number: 4,
-    question: "Is everything ready?",
-    description:
-      "Last few weeks. Make sure everyone knows the plan.",
-    tools: [
-      { label: "Tips", tagline: "Advice from experience", href: "/tips", icon: Sparkles },
-      { label: "Booklets", tagline: "Brief your vendors", href: "/booklets", icon: BookOpen },
-      { label: "Packing", tagline: "What goes where?", href: "/packing", icon: Package },
-      { label: "Handouts", tagline: "Brief your party", href: "/handouts", icon: FileText },
-    ],
-  },
-];
+const STEPS: Step[] = sections.map((s) => ({
+  number: s.number,
+  question: s.question,
+  description: s.description,
+  tools: s.items,
+}));
 
 interface PlanningMapProps {
   weddingDate: string | null;

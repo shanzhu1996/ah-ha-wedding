@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Heart } from "lucide-react";
 import { differenceInDays } from "date-fns";
+import { MobileTopBarMenu } from "./mobile-top-bar-menu";
 
 interface Props {
   weddingDate: string | null;
@@ -32,21 +33,24 @@ export function MobileTopBar({ weddingDate }: Props) {
           </span>
         </Link>
 
-        {daysUntil !== null && daysUntil > 0 && (
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full bg-primary/10 text-primary font-medium tabular-nums"
-          >
-            <Heart className="h-2.5 w-2.5 fill-primary text-primary animate-heartbeat" />
-            {daysUntil} days
-          </Link>
-        )}
-        {daysUntil === 0 && (
-          <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full bg-primary text-primary-foreground font-medium">
-            <Heart className="h-2.5 w-2.5 fill-primary-foreground text-primary-foreground" />
-            Today
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {daysUntil !== null && daysUntil > 0 && (
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full bg-primary/10 text-primary font-medium tabular-nums"
+            >
+              <Heart className="h-2.5 w-2.5 fill-primary text-primary animate-heartbeat" />
+              {daysUntil} days
+            </Link>
+          )}
+          {daysUntil === 0 && (
+            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full bg-primary text-primary-foreground font-medium">
+              <Heart className="h-2.5 w-2.5 fill-primary-foreground text-primary-foreground" />
+              Today
+            </span>
+          )}
+          <MobileTopBarMenu />
+        </div>
       </div>
     </header>
   );
