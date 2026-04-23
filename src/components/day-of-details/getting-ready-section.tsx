@@ -637,9 +637,15 @@ function StationCard({
           )}
         </div>
 
-        {/* Controls column — chevron + kebab, stays at top-right in both
-            collapsed and expanded states so there's no wasted header row. */}
-        <div className="flex items-start shrink-0 pt-1.5 pr-1">
+        {/* Controls column — chevron + kebab. Stack vertically on mobile
+            when expanded so the body inputs get back ~24px horizontal
+            room (otherwise "Location, e.g., Hotel suite" truncates). */}
+        <div
+          className={cn(
+            "flex items-start shrink-0 pt-1.5 pr-1",
+            open && "max-sm:flex-col max-sm:items-end"
+          )}
+        >
           <button
             type="button"
             onClick={onToggle}

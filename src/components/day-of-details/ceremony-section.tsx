@@ -574,7 +574,12 @@ function AisleWalkPill({
           )}
         </div>
 
-        <div className="flex items-start shrink-0 pt-1.5 pr-1">
+        <div
+          className={cn(
+            "flex items-start shrink-0 pt-1.5 pr-1",
+            open && "max-sm:flex-col max-sm:items-end"
+          )}
+        >
           <button
             type="button"
             onClick={onToggle}

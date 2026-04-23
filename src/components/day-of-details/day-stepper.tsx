@@ -181,21 +181,20 @@ export function DayStepper({ weddingId, initialData, songs: initialSongs }: DayS
             title="Open a printable day-of brief"
           >
             <Printer className="h-3.5 w-3.5" />
-            Print brief
+            Print
           </Link>
         </div>
       </div>
 
       {/* Stepper pill bar */}
       <div className="relative">
-        {/* Left fade */}
-        <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none sm:hidden" />
-        {/* Right fade */}
-        <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none sm:hidden" />
+        {/* Fade overlays only needed when the bar actually scrolls (sm+) */}
+        <div className="hidden sm:block absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none" />
+        <div className="hidden sm:block absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none" />
 
         <div
           ref={pillBarRef}
-          className="flex gap-1.5 overflow-x-auto scrollbar-hide px-1 py-1 -mx-1 snap-x"
+          className="flex flex-wrap gap-1.5 px-1 py-1 -mx-1 sm:flex-nowrap sm:overflow-x-auto sm:scrollbar-hide sm:snap-x"
         >
           {PILL_KEYS.map((pill) => {
             const isActive = pill === activePill;
@@ -220,8 +219,10 @@ export function DayStepper({ weddingId, initialData, songs: initialSongs }: DayS
           })}
         </div>
 
-        {/* Section indicator — always visible so couples know where they are */}
-        <p className="text-xs text-muted-foreground/70 mt-2">
+        {/* Section indicator — hidden on mobile (the active pill already
+            signals position, and "Step X of Y" creates a pressure-y
+            "quiz" feel. Desktop keeps it for wider-canvas orientation. */}
+        <p className="hidden sm:block text-xs text-muted-foreground/70 mt-2">
           Step {activeIndex + 1} of {PILL_KEYS.length} · {PILL_META[activePill].label}
         </p>
       </div>

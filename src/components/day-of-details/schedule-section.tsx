@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { X, Plus, Sparkles, Clock, Pencil, RefreshCw } from "lucide-react";
+import { X, Plus, Sparkles, Clock, Pencil, RefreshCw, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,6 +11,12 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import {
   type ScheduleData,
@@ -383,7 +389,8 @@ export function ScheduleSection({ data, onChange, enrichment }: ScheduleSectionP
                 {` · ${entries.length} moments`}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            {/* Desktop: 3 inline action links (unchanged) */}
+            <div className="hidden sm:flex items-center gap-2">
               <button
                 onClick={() => setEditingCeremonyTime(true)}
                 className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
@@ -406,6 +413,33 @@ export function ScheduleSection({ data, onChange, enrichment }: ScheduleSectionP
                 <Sparkles className="h-3 w-3" />
                 Preview…
               </button>
+            </div>
+
+            {/* Mobile: collapse 3 actions into a ⋯ dropdown so the
+                "Ceremony at X:XX" header breathes. */}
+            <div className="sm:hidden shrink-0">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  className="h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  aria-label="Schedule actions"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setEditingCeremonyTime(true)}>
+                    <Pencil className="h-3.5 w-3.5 mr-2" />
+                    Change time
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={doRefresh}>
+                    <RefreshCw className="h-3.5 w-3.5 mr-2" />
+                    Refresh
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setPreviewOpen(true)}>
+                    <Sparkles className="h-3.5 w-3.5 mr-2" />
+                    Preview…
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
@@ -525,17 +559,19 @@ export function ScheduleSection({ data, onChange, enrichment }: ScheduleSectionP
                         {/* Entry */}
                         <div
                           className={`group relative flex gap-3 py-2 pl-5 pr-2 -ml-px rounded-r-lg transition-colors cursor-pointer ${
-                            isEditing ? "bg-primary/[0.03]" : "hover:bg-muted/20"
+                            isEditing
+                              ? "flex-col max-sm:items-stretch sm:flex-row bg-primary/[0.03]"
+                              : "hover:bg-muted/20"
                           }`}
                           onClick={() => setEditingId(isEditing ? null : entry.id)}
                         >
                           {/* Timeline dot */}
                           <div className="absolute left-[-5px] top-4 h-2 w-2 rounded-full bg-primary/30" />
 
-                          {/* Time column */}
+                          {/* Time column — narrower on mobile only when editing to let title/notes breathe */}
                           {isEditing ? (
                             <Input
-                              className="w-24 h-8 text-sm shrink-0"
+                              className="w-full max-sm:max-w-[120px] sm:w-24 h-8 text-sm shrink-0"
                               value={entry.time}
                               onChange={(e) => updateEntry(entry.id, "time", e.target.value)}
                               onBlur={(e) => handleTimeBlur(entry.id, e.target.value)}
