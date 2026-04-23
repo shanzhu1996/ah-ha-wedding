@@ -166,19 +166,18 @@ export default function LandingPage() {
       {/* Hero */}
       <section className="sm:min-h-[85vh] flex items-center py-14 sm:py-24 px-4">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-primary/10 text-primary text-xs sm:text-sm font-medium mb-6">
+          <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-primary/10 text-primary text-xs sm:text-sm font-medium mb-8">
             <Heart className="h-3 w-3 sm:h-3.5 sm:w-3.5 fill-primary" />
             Built by someone who survived their own wedding
           </div>
-          <h1 className="text-4xl sm:text-7xl font-bold font-[family-name:var(--font-heading)] tracking-tight leading-tight mb-6">
-            Wedding planning is simpler
-            <br />
+          <h1 className="text-4xl sm:text-7xl font-medium sm:font-bold font-[family-name:var(--font-heading)] tracking-tight leading-snug mb-8">
+            <span className="block sm:inline">Wedding planning</span>{" "}
+            <span className="block sm:inline">is simpler</span>
+            <br className="hidden sm:block" />
             <span className="text-primary">than they said.</span>
           </h1>
-          <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed">
-            From the first vendor call to the last dance —
-            <br className="hidden sm:block" />
-            everything they forgot to mention, we didn&apos;t.
+          <p className="text-base sm:text-xl text-muted-foreground max-w-2xl mx-auto mb-12 leading-relaxed">
+            Every detail no one else told you.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link href="/login?signup=true">
@@ -192,22 +191,17 @@ export default function LandingPage() {
       </section>
 
       {/* Preview Showcase — editorial proof of real printed + mobile outputs */}
-      <section className="py-20 sm:py-28 px-4 border-y bg-card">
+      <section className="py-12 sm:py-28 px-4 border-y bg-card">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14 max-w-2xl mx-auto">
             <p className="text-xs font-semibold text-primary uppercase tracking-[0.2em] mb-4">
               Real outputs · not just a dashboard
             </p>
-            <h2 className="text-3xl sm:text-4xl font-bold font-[family-name:var(--font-heading)] mb-4 tracking-tight">
+            <h2 className="text-2xl sm:text-4xl font-bold font-[family-name:var(--font-heading)] tracking-tight">
               From your first checklist
               <br />
               to your last dance.
             </h2>
-            <p className="text-muted-foreground text-lg leading-relaxed">
-              A 51-step plan from today to the wedding, a booklet tailored to
-              each vendor, and a personalized handout for everyone helping you
-              pull it off.
-            </p>
           </div>
 
           <PreviewCarousel>
@@ -382,7 +376,7 @@ export default function LandingPage() {
                   <p className="text-[10px] uppercase tracking-[0.2em] text-primary font-semibold mb-1">
                     For the Maid of Honor
                   </p>
-                  <p className="font-[family-name:var(--font-heading)] text-lg leading-tight">
+                  <p className="font-[family-name:var(--font-heading)] text-base leading-tight">
                     Jessica Chen
                   </p>
                 </div>
@@ -462,36 +456,66 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Social Proof — beta tester quote + honest founder note */}
-      <section className="py-14 sm:py-20 px-4">
-        <div className="max-w-3xl mx-auto text-center">
-          <blockquote>
-            <p className="font-[family-name:var(--font-heading)] text-xl sm:text-2xl leading-relaxed text-foreground/90 mb-5">
-              &ldquo;I really wish I&rsquo;d had this when I planned my
-              wedding&nbsp;— so detailed and considerate.&rdquo;
-            </p>
-            <footer className="font-[family-name:var(--font-heading)] italic text-base sm:text-lg text-foreground/55 mt-5">
-              — Lily
-            </footer>
-          </blockquote>
-          <p className="mt-10 text-xs uppercase tracking-[0.25em] text-muted-foreground/70">
-            From one beloved couple — to every couple planning theirs.
-          </p>
-        </div>
-      </section>
-
       {/* Features Grid */}
-      <section className="py-16 sm:py-20 bg-muted/50 px-4">
+      <section className="py-12 sm:py-20 bg-muted/50 px-4">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold font-[family-name:var(--font-heading)] mb-4">
+            <h2 className="text-2xl sm:text-4xl font-bold font-[family-name:var(--font-heading)] mb-4">
               Everything you actually need
             </h2>
-            <p className="text-muted-foreground text-lg max-w-xl mx-auto">
+            <p className="text-muted-foreground text-base sm:text-lg max-w-xl mx-auto">
               Not a spreadsheet. Not a group chat. Just one plan.
             </p>
           </div>
-          <div className="space-y-10">
+          {/* Mobile-only: 4 compact section cards with tool chips.
+              Reduces the 15-card inventory to one card per section so the
+              page reads as "4 areas of focus" instead of "long checklist".
+              Desktop (≥md) keeps the full structured grid below. */}
+          <div className="md:hidden space-y-3">
+            {featureGroups.map((group) => {
+              const isSmall = group.features.length <= 2;
+              return (
+                <div
+                  key={group.title}
+                  className={`bg-card rounded-xl border ${isSmall ? "p-4" : "p-5"}`}
+                >
+                  <div>
+                    <h3
+                      className={`font-semibold font-[family-name:var(--font-heading)] leading-tight ${
+                        isSmall ? "text-base" : "text-lg"
+                      }`}
+                    >
+                      {group.title}
+                    </h3>
+                    <p
+                      className={`text-muted-foreground mt-0.5 ${
+                        isSmall ? "text-xs" : "text-sm"
+                      }`}
+                    >
+                      {group.tagline}
+                    </p>
+                  </div>
+                  <div
+                    className={`flex flex-wrap gap-1.5 border-t ${
+                      isSmall ? "mt-3 pt-3" : "mt-4 pt-4"
+                    }`}
+                  >
+                    {group.features.map((feature) => (
+                      <span
+                        key={feature.title}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/85 bg-primary/5 border border-primary/15 px-2.5 py-1 rounded-full"
+                      >
+                        <feature.icon className="h-3 w-3 text-primary" />
+                        {feature.title}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="hidden md:block space-y-10">
             {/* First two groups (The People + Your Vision) — paired side-by-side on desktop */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-10">
               {featureGroups.slice(0, 2).map((group) => (
@@ -562,12 +586,12 @@ export default function LandingPage() {
       </section>
 
       {/* CTA */}
-      <section className="py-14 sm:py-20 px-4">
+      <section className="py-10 sm:py-20 px-4">
         <div className="max-w-2xl mx-auto text-center">
-          <h2 className="text-3xl sm:text-4xl font-bold font-[family-name:var(--font-heading)] mb-4">
+          <h2 className="text-2xl sm:text-4xl font-bold font-[family-name:var(--font-heading)] mb-4">
             Less planning. More wedding.
           </h2>
-          <p className="text-muted-foreground text-lg mb-8">
+          <p className="text-muted-foreground text-base sm:text-lg mb-8">
             Everything you need — plus everything no one told you you&rsquo;d
             need.
           </p>
