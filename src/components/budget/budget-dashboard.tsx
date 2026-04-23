@@ -364,32 +364,38 @@ export function BudgetDashboard({
         <p className="text-sm text-muted-foreground mt-2">
           {budget > 0 ? (
             <>
-              <button
-                onClick={() => setShowBudgetDialog(true)}
-                className="font-medium text-foreground/80 hover:text-primary transition-colors inline-flex items-center gap-1 group"
-                title="Click to edit budget"
-              >
-                {formatCurrency(budget)}
-                <Pencil className="h-3 w-3 opacity-40 group-hover:opacity-100 transition-opacity" />
-              </button>
-              {" "}budget
+              <span className="whitespace-nowrap">
+                <button
+                  onClick={() => setShowBudgetDialog(true)}
+                  className="font-medium text-foreground/80 hover:text-primary transition-colors inline-flex items-center gap-1 group align-baseline"
+                  title="Click to edit budget"
+                >
+                  {formatCurrency(budget)}
+                  <Pencil className="h-3 w-3 opacity-40 group-hover:opacity-100 transition-opacity" />
+                </button>
+                {" "}budget
+              </span>
               <span className="text-muted-foreground/50"> · </span>
-              <span className="font-medium text-emerald-700">{formatCurrency(totalPaid)}</span> paid
+              <span className="whitespace-nowrap">
+                <span className="font-medium text-emerald-700">{formatCurrency(totalPaid)}</span> paid
+              </span>
               {totalScheduled > 0 && (
                 <>
                   <span className="text-muted-foreground/50"> · </span>
-                  <span className="font-medium text-foreground/80">{formatCurrency(totalScheduled)}</span> scheduled
+                  <span className="whitespace-nowrap">
+                    <span className="font-medium text-foreground/80">{formatCurrency(totalScheduled)}</span> scheduled
+                  </span>
                 </>
               )}
               <span className="text-muted-foreground/50"> · </span>
               {unallocated >= 0 ? (
-                <>
+                <span className="whitespace-nowrap">
                   <span className="font-medium text-foreground/80">{formatCurrency(unallocated)}</span> unallocated
-                </>
+                </span>
               ) : (
-                <>
+                <span className="whitespace-nowrap">
                   <span className="font-medium text-red-700">{formatCurrency(Math.abs(unallocated))}</span> over budget
-                </>
+                </span>
               )}
             </>
           ) : (

@@ -283,7 +283,7 @@ export function PaymentSchedule({
               );
             })}
           </span>
-          <span>
+          <span className="whitespace-nowrap">
             {paidCount} of {items.length} paid
             {nextDue?.due_date && (
               <> · next {formatDate(nextDue.due_date)}</>
