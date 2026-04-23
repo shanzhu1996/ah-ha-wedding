@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Save, LogOut, Trash2 } from "lucide-react";
+import { Save, LogOut, Trash2, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -58,6 +58,18 @@ export function SettingsManager({ wedding, userEmail }: SettingsManagerProps) {
   const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  // Date-shift dialog state — pops after save when wedding_date changed,
+  // so the couple can ask us to move all pre-wedding tasks by the same delta
+  // instead of leaving them anchored to the old date.
+  const [shiftDialogOpen, setShiftDialogOpen] = useState(false);
+  const [shiftContext, setShiftContext] = useState<{
+    deltaDays: number;
+    oldDate: string;
+    newDate: string;
+    affectedCount: number;
+  } | null>(null);
+  const [shifting, setShifting] = useState(false);
 
   // Wedding form state
   const [partner1Name, setPartner1Name] = useState(wedding.partner1_name);
@@ -150,7 +162,67 @@ export function SettingsManager({ wedding, userEmail }: SettingsManagerProps) {
       setSaved(true);
       router.refresh();
       setTimeout(() => setSaved(false), 3000);
+
+      // If the wedding date changed, offer to shift pre-wedding timeline
+      // tasks by the same delta. We only prompt when there are actually
+      // tasks that would be affected — no point showing an empty dialog.
+      const oldDate = wedding.wedding_date;
+      const newDate = weddingDate || null;
+      if (oldDate && newDate && oldDate !== newDate) {
+        const { data: preTasks } = await supabase
+          .from("timeline_events")
+          .select("id")
+          .eq("wedding_id", wedding.id)
+          .eq("type", "pre_wedding")
+          .not("event_date", "is", null);
+        const affected = preTasks?.length ?? 0;
+        if (affected > 0) {
+          const oldMs = new Date(oldDate + "T00:00:00").getTime();
+          const newMs = new Date(newDate + "T00:00:00").getTime();
+          const deltaDays = Math.round((newMs - oldMs) / 86_400_000);
+          if (deltaDays !== 0) {
+            setShiftContext({ deltaDays, oldDate, newDate, affectedCount: affected });
+            setShiftDialogOpen(true);
+          }
+        }
+      }
     }
+  }
+
+  async function handleShiftTimeline() {
+    if (!shiftContext) return;
+    setShifting(true);
+    const supabase = createClient();
+
+    // Pull dates, shift in JS, write back. (Postgres' date arithmetic would
+    // be faster, but this keeps us on the client SDK we already use here.)
+    const { data: tasks } = await supabase
+      .from("timeline_events")
+      .select("id, event_date")
+      .eq("wedding_id", wedding.id)
+      .eq("type", "pre_wedding")
+      .not("event_date", "is", null);
+
+    if (tasks && tasks.length > 0) {
+      const ms = 86_400_000 * shiftContext.deltaDays;
+      await Promise.all(
+        tasks.map((t) => {
+          if (!t.event_date) return Promise.resolve();
+          const shifted = new Date(new Date(t.event_date + "T00:00:00").getTime() + ms)
+            .toISOString()
+            .slice(0, 10);
+          return supabase
+            .from("timeline_events")
+            .update({ event_date: shifted })
+            .eq("id", t.id);
+        })
+      );
+    }
+
+    setShifting(false);
+    setShiftDialogOpen(false);
+    setShiftContext(null);
+    router.refresh();
   }
 
   async function handleSignOut() {
@@ -539,6 +611,43 @@ export function SettingsManager({ wedding, userEmail }: SettingsManagerProps) {
           </Dialog>
         </CardContent>
       </Card>
+
+      {/* Timeline-shift prompt — shown after save when wedding date changed
+          and there are pre-wedding tasks that would benefit from moving. */}
+      <Dialog open={shiftDialogOpen} onOpenChange={setShiftDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-primary" />
+              Move your timeline with the new date?
+            </DialogTitle>
+            <DialogDescription>
+              {shiftContext && (
+                <>
+                  You moved the wedding{" "}
+                  <span className="font-medium text-foreground/80">
+                    {shiftContext.deltaDays > 0
+                      ? `+${shiftContext.deltaDays}`
+                      : shiftContext.deltaDays}{" "}
+                    {Math.abs(shiftContext.deltaDays) === 1 ? "day" : "days"}
+                  </span>
+                  . We can shift all {shiftContext.affectedCount} pre-wedding
+                  task{shiftContext.affectedCount === 1 ? "" : "s"} by the same
+                  amount so deadlines stay relative to the new date.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>
+              Keep dates as-is
+            </DialogClose>
+            <Button onClick={handleShiftTimeline} disabled={shifting}>
+              {shifting ? "Shifting..." : "Shift timeline"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
