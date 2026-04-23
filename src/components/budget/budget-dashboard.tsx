@@ -38,6 +38,7 @@ import {
   PaymentSchedule,
   type PaymentItem,
 } from "@/components/budget/payment-schedule";
+import { TipPlanner } from "@/components/budget/tip-planner";
 import { VENDOR_TYPE_TO_CATEGORY as CATEGORY_MAP } from "@/lib/vendor-categories";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -646,6 +647,25 @@ export function BudgetDashboard({
             </>
           )}
         </section>
+
+      {/* Tip Planner — surfaces the tipping bill before the couple forgets */}
+      <TipPlanner
+        vendors={vendors.map((v) => ({
+          id: v.id,
+          type: v.type,
+          company_name: v.company_name,
+          contract_amount: v.contract_amount,
+        }))}
+        budgetItems={budgetItems.map((b) => ({
+          id: b.id,
+          vendor_id: b.vendor_id,
+          item_type: b.item_type,
+          amount: b.amount,
+        }))}
+        weddingId={weddingId}
+        expanded={expandedSections.has("tips")}
+        onToggle={() => toggleSection("tips")}
+      />
 
 
       {/* Add/Edit Custom Item Dialog */}
