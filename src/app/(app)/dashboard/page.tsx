@@ -4,6 +4,7 @@ import { format, differenceInDays, isAfter, addDays } from "date-fns";
 import { Heart, CalendarDays } from "lucide-react";
 import { getCurrentWedding, getWeddingStats } from "@/lib/supabase/queries";
 import { PlanningMap } from "@/components/layout/planning-map";
+import { NextUpStrip } from "@/components/dashboard/next-up-strip";
 
 export default async function DashboardPage() {
   const wedding = await getCurrentWedding();
@@ -63,6 +64,21 @@ export default async function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Next up — concrete actions based on what's missing / time-sensitive */}
+      <NextUpStrip
+        wedding={{
+          budget_total: wedding.budget_total,
+          wedding_date: wedding.wedding_date,
+          venue_name: wedding.venue_name,
+        }}
+        stats={{
+          vendorCount: stats.vendorCount,
+          rsvpCounts: stats.rsvpCounts,
+          upcomingTasks: stats.upcomingTasks,
+        }}
+        daysUntil={daysUntil}
+      />
 
       {/* THE hero statement */}
       <div>
