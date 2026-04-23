@@ -88,6 +88,7 @@ const ICONS: Record<string, React.ElementType> = {
   FileText,
   Plane,
   ShieldAlert,
+  Package,
 };
 
 interface TipsContentProps {
