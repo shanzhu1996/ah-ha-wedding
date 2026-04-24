@@ -103,14 +103,20 @@ export default function OnboardingPage() {
       return;
     }
 
-    // Save sub-event preferences
-    localStorage.setItem(`ahha-sub-events-${weddingId}`, JSON.stringify({
-      engagementParty: hasEngagementParty,
-      rehearsalDinner: hasRehearsalDinner,
-      bridalShower: hasBridalShower,
-      bachelorBachelorette: hasBachelorBachelorette,
-      honeymoon: hasHoneymoon,
-    }));
+    // Persist sub-event flags to the weddings row so downstream tools
+    // (Tips / Timeline / Day-of Details) can react. These used to live
+    // in localStorage, which never reached the DB and left the flags
+    // unusable outside the browser that ran onboarding.
+    await supabase
+      .from("weddings")
+      .update({
+        has_engagement_party: hasEngagementParty,
+        has_rehearsal_dinner: hasRehearsalDinner,
+        has_bridal_shower: hasBridalShower,
+        has_bachelor_bachelorette: hasBachelorBachelorette,
+        has_honeymoon: hasHoneymoon,
+      })
+      .eq("id", weddingId);
 
     setShowCelebration(true);
     setTimeout(() => {

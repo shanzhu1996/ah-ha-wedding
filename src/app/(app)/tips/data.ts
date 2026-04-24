@@ -154,6 +154,15 @@ export const THINGS_TO_PREPARE: PreparationEntry[] = [
     timeframe: "weeks_out",
     offsetWeeks: 2,
   },
+  {
+    id: "prep-rehearsal-dinner",
+    title: "Rehearsal dinner",
+    lead: "Book 4–6 months out. Keep under 30–40% of your guest count. Groom's parents traditionally host — ask early.",
+    body: "Invite list: immediate families + the entire wedding party (plus-ones if they're close) + your officiant. If space allows, add out-of-town guests as a thank-you for traveling. Typical size is 20–50 attendees, capped around 30–40% of your wedding guest count. Venue: a restaurant near your wedding venue is the easy choice — book 4–6 months out. Send informal invites 4–6 weeks before. Tone is conversational and low-key; this is where toasts get workshopped, not delivered. Groom's parents traditionally host but either side (or the couple) can — agree on this early to avoid surprises.",
+    iconName: "Utensils",
+    timeframe: "weeks_out",
+    offsetWeeks: 20,
+  },
 
   // ── Week of: final stretch ───────────────────────────────────────────
   {

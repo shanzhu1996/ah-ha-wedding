@@ -70,6 +70,11 @@ export interface Database {
           rehearsal_dinner_date: string | null;
           rehearsal_dinner_location: string | null;
           honeymoon_departure: string | null;
+          has_engagement_party: boolean;
+          has_rehearsal_dinner: boolean;
+          has_bridal_shower: boolean;
+          has_bachelor_bachelorette: boolean;
+          has_honeymoon: boolean;
           onboarding_completed: boolean;
         };
         Insert: Omit<Database["public"]["Tables"]["weddings"]["Row"], "id" | "created_at" | "updated_at">;
