@@ -5,9 +5,6 @@ import {
   Users,
   ClipboardList,
   Clock,
-  Palette,
-  Music,
-  CheckCircle,
   CalendarDays,
   MapPin,
 } from "lucide-react";
@@ -37,13 +34,14 @@ interface Props {
 }
 
 /**
- * "Next up for you" — 1-3 concrete suggestions based on which foundations
- * are still missing or which time-sensitive nudges apply. Falls back to an
- * "on track" callout linking to Timeline when there's nothing to flag.
+ * "Next up for you" — concrete suggestions when foundations are missing
+ * or a time-sensitive window is open. If neither applies, we render
+ * nothing and let the "X tasks due this week" line under the header
+ * carry the load. Aspirational nudges (moodboard / music picks in
+ * mid-planning) were removed after user feedback — they overlapped
+ * with Timeline tasks and added noise to the dashboard.
  *
- * Order is deliberate: foundations (budget/vendors/guests/date/venue) first,
- * then timing-pressured actions (RSVP chase near the wedding date). We cap
- * at 3 so the strip stays scannable.
+ * Cap at 3 so the strip stays scannable.
  */
 export function NextUpStrip({ wedding, stats, daysUntil }: Props) {
   const items: NextUpItem[] = [];
@@ -95,18 +93,7 @@ export function NextUpStrip({ wedding, stats, daysUntil }: Props) {
     });
   }
 
-  // Once foundations are in, surface vision-setting next
-  if (items.length === 0 && stats.vendorCount >= 1 && daysUntil !== null && daysUntil > 120) {
-    items.push({
-      key: "moodboard",
-      label: "Build a moodboard",
-      hint: "Pin inspiration so vendors see your vibe in one shot.",
-      href: "/moodboard",
-      icon: Palette,
-    });
-  }
-
-  // Timing-pressured nudges — only once foundations are in.
+  // Timing-pressured nudges — only when the window is actually open.
   if (daysUntil !== null) {
     if (daysUntil <= 60 && daysUntil > 7 && stats.rsvpCounts.pending > 10) {
       items.push({
@@ -115,15 +102,6 @@ export function NextUpStrip({ wedding, stats, daysUntil }: Props) {
         hint: "Final headcount drives catering + seating.",
         href: "/guests",
         icon: Users,
-      });
-    }
-    if (daysUntil <= 90 && daysUntil > 30) {
-      items.push({
-        key: "music",
-        label: "Pick your key songs",
-        hint: "First dance, processional, parent dance — decide now, tweak later.",
-        href: "/music",
-        icon: Music,
       });
     }
     if (daysUntil <= 30 && daysUntil > 7) {
@@ -139,31 +117,9 @@ export function NextUpStrip({ wedding, stats, daysUntil }: Props) {
 
   const show = items.slice(0, 3);
 
-  // "On track" fallback when nothing is pending.
-  if (show.length === 0) {
-    const taskCount = stats.upcomingTasks.length;
-    return (
-      <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-center gap-3">
-        <CheckCircle className="h-5 w-5 text-primary shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground">
-            You&apos;re on track.
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {taskCount > 0
-              ? `${taskCount} upcoming task${taskCount === 1 ? "" : "s"} on your timeline.`
-              : "Review your timeline to stay ahead."}
-          </p>
-        </div>
-        <Link
-          href="/timeline"
-          className="text-xs font-medium text-primary hover:underline shrink-0"
-        >
-          Review
-        </Link>
-      </div>
-    );
-  }
+  // No real gap or pressure → render nothing. The "X tasks due this week"
+  // line already hangs under the header for active work.
+  if (show.length === 0) return null;
 
   return (
     <div>

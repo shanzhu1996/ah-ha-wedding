@@ -47,6 +47,7 @@ import {
   CalendarPlus,
 } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { EmergencyKitChecklist } from "./emergency-kit";
 import {
@@ -380,6 +381,13 @@ export function TipsContent({
       >
         <PrepareTimeline
           entries={prepareVisible}
+          daysUntil={(() => {
+            if (!weddingDate) return null;
+            const wd = new Date(weddingDate + "T00:00:00");
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            return Math.round((wd.getTime() - today.getTime()) / 86_400_000);
+          })()}
           onDismiss={(tip) => dismiss(tip.id, tip.title)}
           onAddToTimeline={(tip) =>
             addToTimeline(
@@ -636,10 +644,12 @@ function TipCard({
 
 function PrepareTimeline({
   entries,
+  daysUntil,
   onDismiss,
   onAddToTimeline,
 }: {
   entries: PreparationEntry[];
+  daysUntil: number | null;
   onDismiss: (entry: PreparationEntry) => void;
   onAddToTimeline: (entry: PreparationEntry) => void;
 }) {
@@ -674,6 +684,7 @@ function PrepareTimeline({
                 <PrepareCard
                   key={entry.id}
                   entry={entry}
+                  daysUntil={daysUntil}
                   onDismiss={() => onDismiss(entry)}
                   onAddToTimeline={() => onAddToTimeline(entry)}
                 />
@@ -730,17 +741,26 @@ function PrepareGroup({
 
 function PrepareCard({
   entry,
+  daysUntil,
   onDismiss,
   onAddToTimeline,
 }: {
   entry: PreparationEntry;
+  daysUntil: number | null;
   onDismiss: () => void;
   onAddToTimeline: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const Icon = ICONS[entry.iconName] ?? AlertTriangle;
+  // Time-based dim: if the offset week has already passed (e.g., "book
+  // venue 12mo out" when you're only 2mo from the date), visually demote
+  // the card so focus lands on tips that are still actionable.
+  const isPastDue =
+    daysUntil !== null &&
+    entry.offsetWeeks !== undefined &&
+    entry.offsetWeeks * 7 > daysUntil;
   return (
-    <Card className="group relative">
+    <Card className={cn("group relative", isPastDue && "opacity-55")}>
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -752,9 +772,16 @@ function PrepareCard({
             <Icon className="size-4" />
           </div>
           <div className="flex-1 min-w-0 space-y-1">
-            <p className="font-medium leading-snug pr-6 text-sm">
-              {entry.title}
-            </p>
+            <div className="flex items-baseline gap-2">
+              <p className="font-medium leading-snug pr-6 text-sm flex-1 min-w-0">
+                {entry.title}
+              </p>
+              {isPastDue && (
+                <span className="text-[9px] uppercase tracking-wider text-muted-foreground/70 shrink-0 pr-6">
+                  past due
+                </span>
+              )}
+            </div>
             <p
               className={`text-xs text-muted-foreground leading-relaxed ${
                 expanded ? "" : "line-clamp-1"
@@ -779,10 +806,13 @@ function TipActions({
   onDismiss: () => void;
   onAddToTimeline: () => void;
 }) {
+  // Mobile has no hover state, so the opacity-0 default hides the menu
+  // entirely. Keep it subtly visible (opacity-40) on mobile; desktop
+  // keeps the hover-to-reveal polish.
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 aria-expanded:opacity-100 data-[state=open]:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted"
+        className="absolute top-2 right-2 opacity-40 sm:opacity-0 sm:group-hover:opacity-100 aria-expanded:opacity-100 data-[state=open]:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted"
         aria-label="Tip actions"
       >
         <MoreHorizontal className="h-3.5 w-3.5" />

@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Sparkles, Check } from "lucide-react";
+import { ChevronRight, Sparkles, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
@@ -24,6 +24,11 @@ interface BudgetItem {
   id: string;
   vendor_id: string | null;
   item_type: "deposit" | "balance" | "tip" | "purchase";
+  amount: number;
+}
+
+interface TipRow {
+  itemId: string;
   amount: number;
 }
 
@@ -65,12 +70,15 @@ export function TipPlanner({
   const [, startTransition] = useTransition();
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  // Existing tip amount per vendor (from budget_items).
+  // Existing tip rows per vendor (from budget_items). We track the
+  // underlying item ids so the inline Remove button can delete them
+  // without sending the couple to the payment schedule.
   const tipsByVendor = useMemo(() => {
-    const m: Record<string, number> = {};
+    const m: Record<string, TipRow[]> = {};
     for (const item of budgetItems) {
       if (item.item_type !== "tip" || !item.vendor_id) continue;
-      m[item.vendor_id] = (m[item.vendor_id] || 0) + item.amount;
+      if (!m[item.vendor_id]) m[item.vendor_id] = [];
+      m[item.vendor_id].push({ itemId: item.id, amount: item.amount });
     }
     return m;
   }, [budgetItems]);
@@ -81,12 +89,14 @@ export function TipPlanner({
       vendors.map((v) => {
         const suggestion = TIP_SUGGESTIONS[v.type];
         const defaultTip = computeDefaultTip(v.type, v.contract_amount);
-        const existing = tipsByVendor[v.id] || 0;
+        const applied = tipsByVendor[v.id] || [];
+        const appliedTotal = applied.reduce((sum, r) => sum + r.amount, 0);
         return {
           vendor: v,
           suggestion,
           defaultTip,
-          existing,
+          applied,
+          appliedTotal,
           rangeLabel: formatTipRange(v.type),
         };
       }),
@@ -94,7 +104,7 @@ export function TipPlanner({
   );
 
   const totalSuggested = rows.reduce((sum, r) => sum + r.defaultTip, 0);
-  const totalApplied = rows.reduce((sum, r) => sum + r.existing, 0);
+  const totalApplied = rows.reduce((sum, r) => sum + r.appliedTotal, 0);
 
   async function applyTip(vendorId: string, amount: number, vendorName: string) {
     if (amount <= 0) return;
@@ -103,7 +113,7 @@ export function TipPlanner({
     const { error } = await supabase.from("budget_items").insert({
       wedding_id: weddingId,
       category: "Tips",
-      description: `Tip · ${vendorName}`,
+      description: "Tip",
       amount,
       due_date: null,
       paid: false,
@@ -120,15 +130,32 @@ export function TipPlanner({
     startTransition(() => router.refresh());
   }
 
+  async function removeTip(vendorId: string, vendorName: string, itemIds: string[]) {
+    if (itemIds.length === 0) return;
+    setSavingId(vendorId);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("budget_items")
+      .delete()
+      .in("id", itemIds);
+    setSavingId(null);
+    if (error) {
+      toast.error("Could not remove tip", { description: error.message });
+      return;
+    }
+    toast.success(`Removed tip for ${vendorName}`);
+    startTransition(() => router.refresh());
+  }
+
   async function applyAll() {
-    const pending = rows.filter((r) => r.existing === 0 && r.defaultTip > 0);
+    const pending = rows.filter((r) => r.appliedTotal === 0 && r.defaultTip > 0);
     if (pending.length === 0) return;
     const supabase = createClient();
     const { error } = await supabase.from("budget_items").insert(
       pending.map((r) => ({
         wedding_id: weddingId,
         category: "Tips",
-        description: `Tip · ${r.vendor.company_name}`,
+        description: "Tip",
         amount: r.defaultTip,
         due_date: null,
         paid: false,
@@ -181,8 +208,8 @@ export function TipPlanner({
           </p>
 
           <ul className="divide-y divide-border/40">
-            {rows.map(({ vendor, suggestion, defaultTip, existing, rangeLabel }) => {
-              const isApplied = existing > 0;
+            {rows.map(({ vendor, suggestion, defaultTip, applied, appliedTotal, rangeLabel }) => {
+              const isApplied = appliedTotal > 0;
               const isNotTipped = suggestion.kind === "none";
               const needsContract =
                 suggestion.kind === "percent" &&
@@ -211,12 +238,30 @@ export function TipPlanner({
                       )}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     {isApplied ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-emerald-700 tabular-nums">
-                        <Check className="h-3.5 w-3.5" />
-                        {formatCurrency(existing)} applied
-                      </span>
+                      <>
+                        <span className="inline-flex items-center gap-1 text-xs text-emerald-700 tabular-nums">
+                          <Check className="h-3.5 w-3.5" />
+                          {formatCurrency(appliedTotal)} applied
+                        </span>
+                        <button
+                          type="button"
+                          disabled={savingId === vendor.id}
+                          onClick={() =>
+                            removeTip(
+                              vendor.id,
+                              vendor.company_name,
+                              applied.map((r) => r.itemId)
+                            )
+                          }
+                          aria-label={`Remove tip for ${vendor.company_name}`}
+                          title="Remove tip"
+                          className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-muted transition-colors disabled:opacity-40"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </>
                     ) : isNotTipped ? (
                       <span className="text-xs text-muted-foreground italic">
                         Not tipped
@@ -241,7 +286,7 @@ export function TipPlanner({
             })}
           </ul>
 
-          {rows.some((r) => r.existing === 0 && r.defaultTip > 0) && (
+          {rows.some((r) => r.appliedTotal === 0 && r.defaultTip > 0) && (
             <div className="pt-1">
               <button
                 type="button"
