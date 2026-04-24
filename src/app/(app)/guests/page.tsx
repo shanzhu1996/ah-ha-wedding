@@ -8,13 +8,35 @@ export default async function GuestsPage() {
   if (!wedding) redirect("/onboarding");
 
   const supabase = await createClient();
-  const { data: guests } = await supabase
-    .from("guests")
-    .select("*")
-    .eq("wedding_id", wedding.id)
-    .order("last_name", { ascending: true });
+  const [guestsRes, vendorsRes] = await Promise.all([
+    supabase
+      .from("guests")
+      .select("*")
+      .eq("wedding_id", wedding.id)
+      .order("last_name", { ascending: true }),
+    supabase
+      .from("vendors")
+      .select("meals_needed")
+      .eq("wedding_id", wedding.id),
+  ]);
+
+  // Compute catering roll-up on the server to keep GuestManager lean.
+  const vendors = vendorsRes.data || [];
+  const vendorMealsTotal = vendors.reduce(
+    (sum, v) => sum + (v.meals_needed || 0),
+    0
+  );
+  const vendorsWithoutMeals = vendors.filter(
+    (v) => v.meals_needed == null
+  ).length;
 
   return (
-    <GuestManager guests={guests || []} weddingId={wedding.id} receptionFormat={wedding.reception_format} />
+    <GuestManager
+      guests={guestsRes.data || []}
+      weddingId={wedding.id}
+      receptionFormat={wedding.reception_format}
+      vendorMealsTotal={vendorMealsTotal}
+      vendorsWithoutMeals={vendorsWithoutMeals}
+    />
   );
 }

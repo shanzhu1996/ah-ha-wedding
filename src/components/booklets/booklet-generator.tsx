@@ -74,6 +74,7 @@ interface Vendor {
   setup_location: string | null;
   breakdown_time: string | null;
   meals_needed: number | null;
+  dietary_notes: string | null;
   notes: string | null;
   extra_details: unknown;
 }
@@ -1742,6 +1743,17 @@ export function BookletGenerator({
         const kidsCount = confirmedGuests.filter(
           (g) => g.meal_choice === "kids"
         ).length;
+        // Aggregate vendor meal counts across all vendors (caterer excluded —
+        // their own meal count is shown separately above). This is the total
+        // number of extra plates the caterer needs to prep for staff on-site.
+        const otherVendors = vendors.filter((v) => v.id !== vendor.id);
+        const otherVendorMealsTotal = otherVendors.reduce(
+          (sum, v) => sum + (v.meals_needed || 0),
+          0
+        );
+        const vendorsWithDietary = otherVendors.filter(
+          (v) => v.dietary_notes && v.dietary_notes.trim()
+        );
         // Pull service style from vendor.extra_details if present.
         const extra = (vendor.extra_details as { service_style?: string } | null) || {};
         const serviceStyle = extra.service_style;
@@ -1823,6 +1835,31 @@ export function BookletGenerator({
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {(otherVendorMealsTotal > 0 || vendorsWithDietary.length > 0) && (
+              <div className="avoid-break">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+                  Other Vendors On-Site
+                </p>
+                {otherVendorMealsTotal > 0 && (
+                  <p className="text-sm mb-2">
+                    Additional staff plates:{" "}
+                    <strong>{otherVendorMealsTotal}</strong> (beyond guest count).
+                  </p>
+                )}
+                {vendorsWithDietary.length > 0 && (
+                  <ul className="text-sm space-y-1">
+                    {vendorsWithDietary.map((v) => (
+                      <li key={v.id}>
+                        <strong>{v.company_name}</strong>
+                        {v.meals_needed ? ` (${v.meals_needed} meal${v.meals_needed === 1 ? "" : "s"})` : ""}
+                        : {v.dietary_notes}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
 

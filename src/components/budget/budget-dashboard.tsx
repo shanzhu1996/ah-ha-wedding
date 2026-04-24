@@ -70,6 +70,7 @@ interface Vendor {
   deposit_amount: number | null;
   deposit_paid: boolean;
   balance_due_date: string | null;
+  meals_needed: number | null;
   notes: string | null;
 }
 
@@ -231,6 +232,7 @@ export function BudgetDashboard({
   const totalAllocated = totalPaid + totalScheduled;
   const budget = budgetTotal || 0;
   const unallocated = budget - totalAllocated;
+
 
 
   // Upcoming payments (vendor balances + custom items with due dates + unpaid)
@@ -445,6 +447,7 @@ export function BudgetDashboard({
           Your budget fills in automatically from vendors and shopping. Add vendor contracts or custom items to get started.
         </p>
       )}
+
 
       {/* From Vendors section — collapsible */}
       <section>

@@ -74,6 +74,8 @@ interface GuestManagerProps {
   guests: Guest[];
   weddingId: string;
   receptionFormat: string | null;
+  vendorMealsTotal: number;
+  vendorsWithoutMeals: number;
 }
 
 const rsvpColors: Record<string, string> = {
@@ -92,7 +94,7 @@ const rsvpCycle: Record<string, string> = {
 
 const NON_PLATED_FORMATS = ["buffet", "cocktail", "family-style"];
 
-export function GuestManager({ guests: initialGuests, weddingId, receptionFormat }: GuestManagerProps) {
+export function GuestManager({ guests: initialGuests, weddingId, receptionFormat, vendorMealsTotal, vendorsWithoutMeals }: GuestManagerProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [filterRsvp, setFilterRsvp] = useState<string>("all");
@@ -142,10 +144,13 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
     (g) => g.rsvp_status === "pending" || g.rsvp_status === "no_response"
   ).length;
 
-  // Caterer count: confirmed guests + their plus-ones
+  // Caterer count: confirmed guests + their plus-ones + vendor meals.
+  // Vendors eating on-site (photographer, DJ, videographer) need plates too,
+  // and couples routinely forget to add them to the caterer's final count.
   const confirmedGuests = initialGuests.filter((g) => g.rsvp_status === "confirmed");
   const confirmedPlusOnes = confirmedGuests.filter((g) => g.plus_one).length;
-  const catererCount = confirmed + confirmedPlusOnes;
+  const catererGuestHeadcount = confirmed + confirmedPlusOnes;
+  const catererCount = catererGuestHeadcount + vendorMealsTotal;
 
   // Count of guests with dietary restrictions
   const dietaryCount = initialGuests.filter((g) => g.dietary_restrictions && g.dietary_restrictions.trim()).length;
@@ -389,32 +394,47 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
           Guests
         </h1>
         {initialGuests.length > 0 ? (
-          <p className="text-sm text-muted-foreground mt-2">
-            <span className="font-medium text-foreground/80">{initialGuests.length}</span> invited
-            <span className="text-muted-foreground/50"> · </span>
-            <span className="font-medium text-emerald-700">{confirmed}</span> confirmed
-            {pending > 0 && (
-              <>
-                <span className="text-muted-foreground/50"> · </span>
-                <span className="font-medium text-amber-700">{pending}</span> pending
-              </>
+          <>
+            <p className="text-sm text-muted-foreground mt-2">
+              <span className="font-medium text-foreground/80">{initialGuests.length}</span> invited
+              <span className="text-muted-foreground/50"> · </span>
+              <span className="font-medium text-emerald-700">{confirmed}</span> confirmed
+              {pending > 0 && (
+                <>
+                  <span className="text-muted-foreground/50"> · </span>
+                  <span className="font-medium text-amber-700">{pending}</span> pending
+                </>
+              )}
+              {declined > 0 && (
+                <>
+                  <span className="text-muted-foreground/50"> · </span>
+                  <span className="font-medium text-red-700">{declined}</span> declined
+                </>
+              )}
+              {catererCount > 0 && (
+                <>
+                  <span className="text-muted-foreground/50"> · </span>
+                  <span className="inline-flex items-center gap-1">
+                    <UtensilsCrossed className="h-3 w-3" />
+                    <span className="font-medium text-foreground/80">{catererCount}</span> for caterer
+                    {vendorMealsTotal > 0 && (
+                      <span className="text-muted-foreground/70 text-xs">
+                        (incl. {vendorMealsTotal} vendor)
+                      </span>
+                    )}
+                  </span>
+                </>
+              )}
+            </p>
+            {vendorsWithoutMeals > 0 && (
+              <Link
+                href="/vendors"
+                className="mt-2 inline-flex items-center gap-1 text-xs text-amber-700 hover:underline"
+              >
+                {vendorsWithoutMeals} vendor{vendorsWithoutMeals === 1 ? "" : "s"} missing meal count &rarr;
+              </Link>
             )}
-            {declined > 0 && (
-              <>
-                <span className="text-muted-foreground/50"> · </span>
-                <span className="font-medium text-red-700">{declined}</span> declined
-              </>
-            )}
-            {confirmed > 0 && (
-              <>
-                <span className="text-muted-foreground/50"> · </span>
-                <span className="inline-flex items-center gap-1">
-                  <UtensilsCrossed className="h-3 w-3" />
-                  <span className="font-medium text-foreground/80">{catererCount}</span> for caterer
-                </span>
-              </>
-            )}
-          </p>
+          </>
         ) : (
           <p className="text-sm text-muted-foreground mt-2">
             Build your guest list. It feeds seating, catering, and thank-you cards.

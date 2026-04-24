@@ -76,6 +76,7 @@ interface VendorData {
   setup_location: string | null;
   breakdown_time: string | null;
   meals_needed: number | null;
+  dietary_notes: string | null;
   notes: string | null;
   extra_details: Record<string, unknown> | null;
 }
@@ -495,6 +496,7 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initi
   const [mealsNeeded, setMealsNeeded] = useState(
     vendor?.meals_needed != null ? String(vendor.meals_needed) : ""
   );
+  const [dietaryNotes, setDietaryNotes] = useState(vendor?.dietary_notes ?? "");
   const [notes, setNotes] = useState(vendor?.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -518,6 +520,7 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initi
       setup_location: setupLocation || null,
       breakdown_time: breakdownTime || null,
       meals_needed: mealsNeeded ? parseInt(mealsNeeded) : null,
+      dietary_notes: dietaryNotes || null,
       notes: notes || null,
     };
 
@@ -814,6 +817,19 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initi
                     onChange={(e) => setMealsNeeded(e.target.value)}
                     placeholder="0"
                     min="0"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Tell the caterer how many staff plates this vendor needs.
+                  </p>
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="dietaryNotes">Dietary notes for vendor meals</Label>
+                  <Textarea
+                    id="dietaryNotes"
+                    value={dietaryNotes}
+                    onChange={(e) => setDietaryNotes(e.target.value)}
+                    placeholder="e.g., photographer is gluten-free, DJ is vegetarian"
+                    rows={2}
                   />
                 </div>
               </div>

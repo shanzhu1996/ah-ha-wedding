@@ -104,6 +104,7 @@ export interface Database {
           setup_location: string | null;
           breakdown_time: string | null;
           meals_needed: number | null;
+          dietary_notes: string | null;
           notes: string | null;
           extra_details: Json | null;
           created_at: string;
