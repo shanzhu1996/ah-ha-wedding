@@ -138,9 +138,9 @@ export const THINGS_TO_PREPARE: PreparationEntry[] = [
   },
   {
     id: "prep-vendor-tips",
-    title: "Vendor tipping budget",
-    lead: "Tips often surprise couples — budget $500–$1,500 depending on vendor count.",
-    body: "Typical ranges: photographer $50–200 flat, DJ $50–150 (or 10–15%), caterer 15–20% of bill (check if gratuity is already in the contract), officiant $50–100 or donation, hair/makeup 15–20%, transportation 15–20%, florist not typical unless they deliver/setup. Prepare sealed envelopes the day before, and delegate hand-off to someone else so you're not walking around with envelopes on your wedding day.",
+    title: "Vendor tipping — judge after, not before",
+    lead: "Pre-budget a cushion, but hand out tips after the wedding when you've seen how each vendor actually performed.",
+    body: "Tipping is your vote on service quality — save the call for after the day. Typical ranges (adjust based on performance): photographer $50–200 flat, DJ $50–150 (or 10–15%), caterer 15–20% of bill (check if gratuity is already in the contract), officiant $50–100 or donation, hair/makeup 15–20% per stylist, transportation 15–20%, florist not typical unless they deliver/setup. If you want to plan ahead, pre-budget a total cushion ($500–$1,500 depending on vendor count) as a Custom Item in Budget. Send Zelle/Venmo with a thank-you note in the week after — or skip anyone whose service fell short.",
     iconName: "CreditCard",
     timeframe: "weeks_out",
     offsetWeeks: 2,

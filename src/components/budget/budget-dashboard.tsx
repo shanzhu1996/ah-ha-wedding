@@ -38,7 +38,6 @@ import {
   PaymentSchedule,
   type PaymentItem,
 } from "@/components/budget/payment-schedule";
-import { TipPlanner } from "@/components/budget/tip-planner";
 import { VENDOR_TYPE_TO_CATEGORY as CATEGORY_MAP } from "@/lib/vendor-categories";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -362,42 +361,72 @@ export function BudgetDashboard({
         <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
           Budget
         </h1>
-        <p className="text-sm text-muted-foreground mt-2">
+        <div className="text-sm text-muted-foreground mt-2">
           {budget > 0 ? (
             <>
-              <span className="whitespace-nowrap">
-                <button
-                  onClick={() => setShowBudgetDialog(true)}
-                  className="font-medium text-foreground/80 hover:text-primary transition-colors inline-flex items-center gap-1 group align-baseline"
-                  title="Click to edit budget"
-                >
-                  {formatCurrency(budget)}
-                  <Pencil className="h-3 w-3 opacity-40 group-hover:opacity-100 transition-opacity" />
-                </button>
-                {" "}budget
-              </span>
-              <span className="text-muted-foreground/50"> · </span>
-              <span className="whitespace-nowrap">
-                <span className="font-medium text-emerald-700">{formatCurrency(totalPaid)}</span> paid
-              </span>
-              {totalScheduled > 0 && (
-                <>
-                  <span className="text-muted-foreground/50"> · </span>
+              {/* Mobile: simplified to budget + what's left. Paid vs
+                  scheduled lives in the section breakdowns below; showing
+                  all four numbers up top was noise. */}
+              <p className="sm:hidden">
+                <span className="whitespace-nowrap">
+                  <button
+                    onClick={() => setShowBudgetDialog(true)}
+                    className="font-medium text-foreground/80 hover:text-primary transition-colors inline-flex items-center gap-1 group align-baseline"
+                    title="Click to edit budget"
+                  >
+                    {formatCurrency(budget)}
+                    <Pencil className="h-3 w-3 opacity-40 group-hover:opacity-100 transition-opacity" />
+                  </button>
+                  {" "}budget
+                </span>
+                <span className="text-muted-foreground/50"> · </span>
+                {unallocated >= 0 ? (
                   <span className="whitespace-nowrap">
-                    <span className="font-medium text-foreground/80">{formatCurrency(totalScheduled)}</span> scheduled
+                    <span className="font-medium text-foreground/80">{formatCurrency(unallocated)}</span> left
                   </span>
-                </>
-              )}
-              <span className="text-muted-foreground/50"> · </span>
-              {unallocated >= 0 ? (
+                ) : (
+                  <span className="whitespace-nowrap">
+                    <span className="font-medium text-red-700">{formatCurrency(Math.abs(unallocated))}</span> over
+                  </span>
+                )}
+              </p>
+
+              {/* Desktop: full 4-number inline sentence (unchanged) */}
+              <p className="hidden sm:block">
                 <span className="whitespace-nowrap">
-                  <span className="font-medium text-foreground/80">{formatCurrency(unallocated)}</span> unallocated
+                  <button
+                    onClick={() => setShowBudgetDialog(true)}
+                    className="font-medium text-foreground/80 hover:text-primary transition-colors inline-flex items-center gap-1 group align-baseline"
+                    title="Click to edit budget"
+                  >
+                    {formatCurrency(budget)}
+                    <Pencil className="h-3 w-3 opacity-40 group-hover:opacity-100 transition-opacity" />
+                  </button>
+                  {" "}budget
                 </span>
-              ) : (
+                <span className="text-muted-foreground/50"> · </span>
                 <span className="whitespace-nowrap">
-                  <span className="font-medium text-red-700">{formatCurrency(Math.abs(unallocated))}</span> over budget
+                  <span className="font-medium text-emerald-700">{formatCurrency(totalPaid)}</span> paid
                 </span>
-              )}
+                {totalScheduled > 0 && (
+                  <>
+                    <span className="text-muted-foreground/50"> · </span>
+                    <span className="whitespace-nowrap">
+                      <span className="font-medium text-foreground/80">{formatCurrency(totalScheduled)}</span> scheduled
+                    </span>
+                  </>
+                )}
+                <span className="text-muted-foreground/50"> · </span>
+                {unallocated >= 0 ? (
+                  <span className="whitespace-nowrap">
+                    <span className="font-medium text-foreground/80">{formatCurrency(unallocated)}</span> unallocated
+                  </span>
+                ) : (
+                  <span className="whitespace-nowrap">
+                    <span className="font-medium text-red-700">{formatCurrency(Math.abs(unallocated))}</span> over budget
+                  </span>
+                )}
+              </p>
             </>
           ) : (
             <button
@@ -407,7 +436,7 @@ export function BudgetDashboard({
               Set your budget →
             </button>
           )}
-        </p>
+        </div>
       </div>
 
       {/* Intro when page is completely empty */}
@@ -647,25 +676,6 @@ export function BudgetDashboard({
             </>
           )}
         </section>
-
-      {/* Tip Planner — surfaces the tipping bill before the couple forgets */}
-      <TipPlanner
-        vendors={vendors.map((v) => ({
-          id: v.id,
-          type: v.type,
-          company_name: v.company_name,
-          contract_amount: v.contract_amount,
-        }))}
-        budgetItems={budgetItems.map((b) => ({
-          id: b.id,
-          vendor_id: b.vendor_id,
-          item_type: b.item_type,
-          amount: b.amount,
-        }))}
-        weddingId={weddingId}
-        expanded={expandedSections.has("tips")}
-        onToggle={() => toggleSection("tips")}
-      />
 
 
       {/* Add/Edit Custom Item Dialog */}
