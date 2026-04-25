@@ -55,10 +55,12 @@ export function SectionHub({ section, visits }: SectionHubProps) {
         </span>
       </header>
 
+      {/* Per-card visited ✓ removed — visiting a tool ≠ completing the work
+          there. The "X/Y explored" chip above keeps the honest at-a-glance
+          signal. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
         {section.items.map((tool) => {
           const Icon = tool.icon;
-          const visited = !!visits[tool.href];
           return (
             <Link
               key={tool.href}
@@ -70,14 +72,6 @@ export function SectionHub({ section, visits }: SectionHubProps) {
                   : "border-border hover:border-primary/40"
               )}
             >
-              {visited && (
-                <span
-                  aria-label="Visited"
-                  className="absolute top-2 right-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary/15 text-primary"
-                >
-                  <Check className="h-2.5 w-2.5" strokeWidth={3} />
-                </span>
-              )}
               <div className="flex items-start justify-between mb-2.5">
                 <Icon className="h-4 w-4 text-primary/70 group-hover:text-primary transition-colors duration-300" />
                 <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-all duration-300 -translate-x-1 group-hover:translate-x-0" />

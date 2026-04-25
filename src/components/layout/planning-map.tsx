@@ -129,11 +129,13 @@ function StepSection({
           </span>
         </div>
 
-        {/* Tool cards */}
+        {/* Tool cards. Per-card visited ✓ was removed — visiting a tool ≠
+            completing the work there, and a card-level checkmark misled
+            couples into feeling done. The "X/Y explored" chip above keeps
+            the honest signal. */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           {step.tools.map((tool) => {
             const Icon = tool.icon;
-            const visited = !!visits[tool.href];
             return (
               <Link
                 key={tool.href}
@@ -144,15 +146,6 @@ function StepSection({
                     : "border-border hover:border-primary/40"
                 }`}
               >
-                {/* Mobile-only visited check — never shown on desktop to keep the card visual unchanged */}
-                {visited && (
-                  <span
-                    aria-label="Visited"
-                    className="md:hidden absolute top-2 right-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary/15 text-primary"
-                  >
-                    <Check className="h-2.5 w-2.5" strokeWidth={3} />
-                  </span>
-                )}
                 <div className="relative flex items-start justify-between mb-2.5">
                   <Icon className="h-4 w-4 text-primary/70 group-hover:text-primary transition-colors duration-300" />
                   <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-all duration-300 -translate-x-1 group-hover:translate-x-0" />
