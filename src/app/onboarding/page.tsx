@@ -60,6 +60,7 @@ export default function OnboardingPage() {
   const [hasBridalShower, setHasBridalShower] = useState(false);
   const [hasBachelorBachelorette, setHasBachelorBachelorette] = useState(false);
   const [hasHoneymoon, setHasHoneymoon] = useState(false);
+  const [hasTeaCeremony, setHasTeaCeremony] = useState(false);
 
   async function handleFinish() {
     setLoading(true);
@@ -115,6 +116,7 @@ export default function OnboardingPage() {
         has_bridal_shower: hasBridalShower,
         has_bachelor_bachelorette: hasBachelorBachelorette,
         has_honeymoon: hasHoneymoon,
+        has_tea_ceremony: hasTeaCeremony,
       })
       .eq("id", weddingId);
 
@@ -369,6 +371,12 @@ export default function OnboardingPage() {
                   <div className="flex items-center gap-2">
                     <Checkbox id="honeymoonPlan" checked={hasHoneymoon} onCheckedChange={(v) => setHasHoneymoon(!!v)} />
                     <Label htmlFor="honeymoonPlan" className="font-normal text-sm">Honeymoon</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox id="teaCeremony" checked={hasTeaCeremony} onCheckedChange={(v) => setHasTeaCeremony(!!v)} />
+                    <Label htmlFor="teaCeremony" className="font-normal text-sm">
+                      🍵 Chinese tea ceremony 敬茶
+                    </Label>
                   </div>
                 </div>
               </div>

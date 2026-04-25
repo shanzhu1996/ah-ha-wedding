@@ -6,6 +6,7 @@ import {
   HANDOUT_ROLE_RE,
   parseHandoutsSettings,
 } from "@/app/(app)/handouts/page";
+import type { TeaCeremonyData } from "@/components/day-of-details/types";
 
 export const metadata = { title: "Handouts — Printable" };
 
@@ -62,6 +63,7 @@ export default async function HandoutsPrintPage() {
     { data: delegationTasks },
     { data: guests },
     { data: settingsRow },
+    { data: teaCeremonyRow },
   ] = await Promise.all([
     supabase
       .from("timeline_events")
@@ -84,11 +86,30 @@ export default async function HandoutsPrintPage() {
       .eq("wedding_id", wedding.id)
       .eq("section", "handouts")
       .maybeSingle(),
+    // Tea ceremony details — fetched only to surface on parents' handouts.
+    // The block is fully gated on weddings.has_tea_ceremony below.
+    supabase
+      .from("wedding_day_details")
+      .select("data")
+      .eq("wedding_id", wedding.id)
+      .eq("section", "tea_ceremony")
+      .maybeSingle(),
   ]);
 
   const settings = parseHandoutsSettings(settingsRow?.data);
   const events: TimelineEvent[] = timelineEvents || [];
   const tasks: DelegationTask[] = delegationTasks || [];
+
+  // Tea ceremony block — shown on handouts ONLY when:
+  //   1. weddings.has_tea_ceremony is on, AND
+  //   2. the recipient's relationship_tag matches a parent role
+  // Parents are directly involved (being served, doing the bowing) so
+  // they need the elder serving order at hand. Other party members can
+  // get the time from the day-of timeline; no need to clutter their sheets.
+  const hasTeaCeremony = wedding.has_tea_ceremony ?? false;
+  const teaCeremony =
+    (teaCeremonyRow?.data as TeaCeremonyData | null) ?? null;
+  const PARENT_ROLE_RE = /\bmother\b|\bfather\b|\bmom\b|\bdad\b|\bparent\b/i;
 
   const partyMembers = (guests || [])
     .filter(
@@ -200,6 +221,63 @@ export default async function HandoutsPrintPage() {
                     </ul>
                   </div>
                 )}
+
+                {/* Tea Ceremony — gated on the cultural flag AND the
+                    recipient being a parent. Envelope amounts are
+                    intentionally not rendered. */}
+                {hasTeaCeremony &&
+                  teaCeremony &&
+                  PARENT_ROLE_RE.test(m.role) && (
+                    <div className="mb-6 break-inside-avoid">
+                      <h2 className="text-xs uppercase tracking-widest text-gray-500 mb-2">
+                        Tea Ceremony · 茶礼
+                      </h2>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm mb-2">
+                        {teaCeremony.location?.trim() && (
+                          <div>
+                            <span className="text-[11px] uppercase tracking-wider text-gray-500 mr-1">
+                              Location:
+                            </span>
+                            {teaCeremony.location}
+                          </div>
+                        )}
+                        {teaCeremony.host?.trim() && (
+                          <div>
+                            <span className="text-[11px] uppercase tracking-wider text-gray-500 mr-1">
+                              Host:
+                            </span>
+                            {teaCeremony.host}
+                          </div>
+                        )}
+                      </div>
+                      {(teaCeremony.elders || []).filter(
+                        (e) => e.relation?.trim() || e.name?.trim()
+                      ).length > 0 && (
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wider text-gray-500 mb-1">
+                            Serving order
+                          </p>
+                          <ol className="list-decimal list-inside space-y-0.5 text-sm">
+                            {teaCeremony.elders
+                              .filter(
+                                (e) => e.relation?.trim() || e.name?.trim()
+                              )
+                              .map((e) => (
+                                <li key={e.id}>
+                                  {e.relation || "(relation)"}
+                                  {e.name?.trim() && (
+                                    <span className="text-gray-600">
+                                      {" "}
+                                      — {e.name}
+                                    </span>
+                                  )}
+                                </li>
+                              ))}
+                          </ol>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                 <div className="mb-6 break-inside-avoid">
                   <h2 className="text-xs uppercase tracking-widest text-gray-500 mb-2">
