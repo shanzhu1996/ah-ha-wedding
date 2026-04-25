@@ -97,12 +97,12 @@ export const sections: Section[] = [
     tabLabel: "Plan",
     question: "How does it all come together?",
     description:
-      "You have a vision — now make it real. The timeline is your master checklist.",
+      "Every detail that turns a dream into your wedding day.",
     icon: CalendarDays,
     items: [
-      { href: "/timeline", icon: CalendarDays, label: "Timeline", tagline: "Your planning to-do list" },
+      { href: "/timeline", icon: CalendarDays, label: "Timeline", tagline: "Your planning calendar" },
       { href: "/budget", icon: Wallet, label: "Budget", tagline: "Where is the money going?" },
-      { href: "/day-of-details", icon: ClipboardCheck, label: "Day-of Details", tagline: "Ceremony, reception, photos & logistics", highlight: true },
+      { href: "/day-of-details", icon: ClipboardCheck, label: "Day-of Details", tagline: "The hour-by-hour playbook", highlight: true },
       { href: "/shopping", icon: CheckSquare, label: "Shopping", tagline: "What do you need?" },
       { href: "/layout-guide", icon: LayoutGrid, label: "Layout Guide", tagline: "Where does everything go?" },
       { href: "/seating", icon: Layout, label: "Seating", tagline: "Who sits where?" },
