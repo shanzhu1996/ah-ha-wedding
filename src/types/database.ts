@@ -75,6 +75,8 @@ export interface Database {
           has_bridal_shower: boolean;
           has_bachelor_bachelorette: boolean;
           has_honeymoon: boolean;
+          has_tea_ceremony: boolean;
+          tea_ceremony_seeded_at: string | null;
           onboarding_completed: boolean;
         };
         Insert: Omit<Database["public"]["Tables"]["weddings"]["Row"], "id" | "created_at" | "updated_at">;
@@ -175,6 +177,7 @@ export interface Database {
           assigned_to: string | null;
           sort_order: number;
           completed: boolean;
+          category: string | null;
           created_at: string;
           updated_at: string;
         };

@@ -9,7 +9,6 @@ import {
   SECTION_KEYS,
   SECTION_META,
   type SectionKey,
-  type AllSectionData,
 } from "./types";
 
 // ── Pill bar ─────────────────────────────────────────────────────────
@@ -62,11 +61,14 @@ interface DayStepperProps {
   weddingId: string;
   initialData: Record<string, unknown>;
   songs: WeddingSong[];
+  /** Flag-gated cultural moment (A4). When true, CeremonySection renders
+   *  the Tea Ceremony card and ScheduleSection shows a suggestion chip. */
+  hasTeaCeremony: boolean;
 }
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export function DayStepper({ weddingId, initialData, songs: initialSongs }: DayStepperProps) {
+export function DayStepper({ weddingId, initialData, songs: initialSongs, hasTeaCeremony }: DayStepperProps) {
   const [activePill, setActivePill] = useState<PillKey>("schedule");
   const activeSection = sectionKeyForPill(activePill);
   const [data, setData] = useState<Record<string, unknown>>(initialData);
@@ -186,15 +188,14 @@ export function DayStepper({ weddingId, initialData, songs: initialSongs }: DayS
         </div>
       </div>
 
-      {/* Stepper pill bar */}
+      {/* Stepper pill bar — uniform 4×2 grid at every viewport. The 4×2
+          shape gives each pill equal width (no more 3-3-2 raggedness) and
+          fits inside the side-nav layout at desktop without horizontal
+          scrolling. xl+ flips to 8×1 once there's room for everyone. */}
       <div className="relative">
-        {/* Fade overlays only needed when the bar actually scrolls (sm+) */}
-        <div className="hidden sm:block absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none" />
-        <div className="hidden sm:block absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none" />
-
         <div
           ref={pillBarRef}
-          className="flex flex-wrap gap-1.5 px-1 py-1 -mx-1 sm:flex-nowrap sm:overflow-x-auto sm:scrollbar-hide sm:snap-x"
+          className="grid grid-cols-4 gap-1.5 xl:grid-cols-8"
         >
           {PILL_KEYS.map((pill) => {
             const isActive = pill === activePill;
@@ -205,15 +206,18 @@ export function DayStepper({ weddingId, initialData, songs: initialSongs }: DayS
                 id={`pill-${pill}`}
                 onClick={() => handlePillClick(pill)}
                 className={cn(
-                  "shrink-0 snap-start px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 inline-flex items-center",
+                  "w-full rounded-full font-medium transition-all duration-200 inline-flex items-center justify-center",
+                  "px-2 py-2 text-xs sm:px-4 sm:text-sm",
                   isActive
                     ? "bg-primary text-primary-foreground shadow-[0_2px_10px_rgba(196,168,130,0.25)]"
                     : "bg-primary/8 text-muted-foreground hover:bg-primary/15 hover:text-foreground"
                 )}
                 title={meta.label}
               >
-                <span className="hidden sm:inline">{meta.label}</span>
-                <span className="sm:hidden">{meta.shortLabel}</span>
+                {/* Always shortLabel — full label shown in the section
+                    indicator below + on hover (title). Keeps every pill
+                    on a single line at every viewport. */}
+                <span className="whitespace-nowrap">{meta.shortLabel}</span>
               </button>
             );
           })}
@@ -255,6 +259,7 @@ export function DayStepper({ weddingId, initialData, songs: initialSongs }: DayS
               ceremony: (data.ceremony || undefined) as any,
               getting_ready: (data.getting_ready || undefined) as any,
             }}
+            hasTeaCeremony={hasTeaCeremony}
           />
         )}
         {activeSection === "getting_ready" && (
@@ -270,6 +275,9 @@ export function DayStepper({ weddingId, initialData, songs: initialSongs }: DayS
             data={(data.ceremony || {}) as any}
             onChange={(d) => handleChange("ceremony", d)}
             songs={songs}
+            hasTeaCeremony={hasTeaCeremony}
+            teaCeremonyData={(data.tea_ceremony || undefined) as any}
+            onTeaCeremonyChange={(d) => handleChange("tea_ceremony", d)}
           />
         )}
         {activeSection === "cocktail" && (

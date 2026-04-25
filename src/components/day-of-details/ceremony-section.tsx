@@ -33,13 +33,20 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import type { CeremonyData, ProcessionalEntry, ReadingEntry } from "./types";
+import type {
+  CeremonyData,
+  ProcessionalEntry,
+  ReadingEntry,
+  TeaCeremonyData,
+} from "./types";
+import { getDefaultTeaCeremonyData } from "./types";
 import {
   CollapsibleSection,
   type SectionSummaryChip,
 } from "./collapsible-section";
 import { MusicLink, summarizeSongs } from "./music-link";
 import { AutosaveIndicator } from "./save-indicator";
+import { TeaCeremonyCard } from "./tea-ceremony-card";
 import type { WeddingSong } from "./day-stepper";
 
 // Non-destructive presets — only fill empty fields.
@@ -78,12 +85,20 @@ interface CeremonySectionProps {
   data: CeremonyData;
   onChange: (data: CeremonyData) => void;
   songs?: WeddingSong[];
+  /** Flag-gated cultural card (A4). When true, the Tea Ceremony card is
+   *  rendered above the "Cultural or religious traditions" section. */
+  hasTeaCeremony?: boolean;
+  teaCeremonyData?: TeaCeremonyData;
+  onTeaCeremonyChange?: (data: TeaCeremonyData) => void;
 }
 
 export function CeremonySection({
   data,
   onChange,
   songs = [],
+  hasTeaCeremony = false,
+  teaCeremonyData,
+  onTeaCeremonyChange,
 }: CeremonySectionProps) {
   function update(patch: Partial<CeremonyData>) {
     onChange({ ...data, ...patch });
@@ -346,11 +361,21 @@ export function CeremonySection({
         />
       </CollapsibleSection>
 
+      {/* Tea Ceremony — flag-gated cultural card (A4). Rendered above the
+          generic "Cultural traditions" textarea since it IS a cultural
+          tradition and deserves structured fields. */}
+      {hasTeaCeremony && onTeaCeremonyChange && (
+        <TeaCeremonyCard
+          data={teaCeremonyData ?? getDefaultTeaCeremonyData()}
+          onChange={onTeaCeremonyChange}
+        />
+      )}
+
       {/* 7. Cultural or religious traditions */}
       <CollapsibleSection
         icon={<Flame />}
-        title="Cultural or religious traditions"
-        hint="breaking of the glass, tea ceremony, jumping the broom…"
+        title="Other cultural / religious traditions"
+        hint="anything not already structured above — breaking of the glass, jumping the broom, etc."
         summaryChips={culturalChips}
         emptyLabel="None — skip if not applicable"
       >

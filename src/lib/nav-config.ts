@@ -112,7 +112,7 @@ export const sections: Section[] = [
   {
     key: "ready",
     number: 4,
-    sidebarTitle: "Wrapping Up",
+    sidebarTitle: "The Final Stretch",
     tabLabel: "Ready",
     question: "Is everything ready?",
     description: "Last few weeks. Make sure everyone knows the plan.",

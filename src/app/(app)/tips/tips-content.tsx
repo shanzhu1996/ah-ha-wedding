@@ -45,6 +45,8 @@ import {
   MoreHorizontal,
   Undo2,
   CalendarPlus,
+  Coffee,
+  Gift,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -90,12 +92,16 @@ const ICONS: Record<string, React.ElementType> = {
   Plane,
   ShieldAlert,
   Package,
+  Coffee,
+  Gift,
 };
 
 interface TipsContentProps {
   weddingId: string;
   weddingDate: string | null;
   venueIndoorOutdoor: string | null;
+  /** Flag-gated cultural tips (A4). When true, tea-ceremony prep cards show. */
+  hasTeaCeremony: boolean;
   initialKitState: EmergencyKitState;
   initialInteractions: TipsInteractions;
 }
@@ -128,10 +134,105 @@ function formatShortDate(iso: string | null): string | null {
 
 type SectionKey = "budget" | "dayof" | "kit" | "prepare";
 
+// ── Cluster definitions ──────────────────────────────────────────────────
+// Each top-level section is broken into 2-4 collapsible sub-clusters so
+// users can scan structure (cluster labels + counts) before drilling into
+// long lists. All clusters default-collapsed.
+
+type ClusterMeta = { label: string; hint: string };
+
+type PrepCluster = "plan_ahead" | "coming_up" | "final_weeks" | "backup";
+const PREP_CLUSTERS: Record<PrepCluster, ClusterMeta> = {
+  plan_ahead: { label: "Plan ahead", hint: "3+ months out" },
+  coming_up: { label: "Coming up", hint: "1–3 months out" },
+  final_weeks: { label: "Final weeks", hint: "≤ 4 weeks" },
+  backup: { label: "Backup plans", hint: "if things go sideways" },
+};
+
+function prepClusterFor(p: PreparationEntry): PrepCluster {
+  if (p.offsetWeeks == null) return "backup";
+  if (p.offsetWeeks >= 12) return "plan_ahead";
+  if (p.offsetWeeks >= 4) return "coming_up";
+  return "final_weeks";
+}
+
+type DayofCluster = "care_for_you" | "brief_team" | "lock_down";
+const DAYOF_CLUSTERS: Record<DayofCluster, ClusterMeta> = {
+  care_for_you: { label: "Self-care", hint: "" },
+  brief_team: { label: "Your team", hint: "" },
+  lock_down: { label: "Logistics", hint: "" },
+};
+
+const DAYOF_TO_CLUSTER: Record<string, DayofCluster> = {
+  "dayof-10min-alone": "care_for_you",
+  "dayof-eat": "care_for_you",
+  "dayof-phone-away": "care_for_you",
+  "dayof-people-wrangler": "brief_team",
+  "dayof-dj-transitions": "brief_team",
+  "dayof-mic-for-vows": "brief_team",
+  "dayof-timeline-cards": "brief_team",
+  "dayof-lock-cardbox": "lock_down",
+  "dayof-someone-pays-vendors": "lock_down",
+  "dayof-outfit-weights": "lock_down",
+};
+
+type BudgetCluster = "florals_decor" | "smart_shopping";
+const BUDGET_CLUSTERS: Record<BudgetCluster, ClusterMeta> = {
+  florals_decor: { label: "Florals & decor", hint: "" },
+  smart_shopping: { label: "Smart shopping", hint: "" },
+};
+
+const BUDGET_TO_CLUSTER: Record<string, BudgetCluster> = {
+  "budget-flower-cake": "florals_decor",
+  "budget-repurpose-ceremony-flowers": "florals_decor",
+  "budget-seasonal-flowers": "florals_decor",
+  "budget-greenery": "florals_decor",
+  "budget-display-plus-sheet": "smart_shopping",
+  "budget-bulk-amazon": "smart_shopping",
+  "budget-striking-venue": "smart_shopping",
+  "budget-skip-wedding-label": "smart_shopping",
+};
+
+// Generic group + sort helper.
+function groupBy<T, K extends string>(
+  items: T[],
+  classify: (item: T) => K,
+  order: K[],
+  sortWithin?: (a: T, b: T) => number
+): { cluster: K; items: T[] }[] {
+  const map = new Map<K, T[]>();
+  for (const it of items) {
+    const k = classify(it);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(it);
+  }
+  if (sortWithin) {
+    for (const arr of map.values()) arr.sort(sortWithin);
+  }
+  return order
+    .map((k) => ({ cluster: k, items: map.get(k) ?? [] }))
+    .filter((g) => g.items.length > 0);
+}
+
+function prepSortWithin(a: PreparationEntry, b: PreparationEntry): number {
+  const aw = a.offsetWeeks ?? -1;
+  const bw = b.offsetWeeks ?? -1;
+  if (aw !== bw) return bw - aw;
+  return a.title.localeCompare(b.title);
+}
+
+function timeframeBadge(p: PreparationEntry): string {
+  if (p.offsetWeeks == null) return "";
+  const w = p.offsetWeeks;
+  if (w >= 8) return `${Math.round(w / 4)}mo out`;
+  return `${w}w out`;
+}
+
 export function TipsContent({
   weddingId,
   weddingDate,
   venueIndoorOutdoor,
+  hasTeaCeremony,
   initialKitState,
   initialInteractions,
 }: TipsContentProps) {
@@ -147,6 +248,11 @@ export function TipsContent({
     kit: false,
     prepare: false,
   });
+  // Cluster open state — flat string keys "<section>:<cluster>".
+  // All clusters default-collapsed; users drill in via 2 clicks.
+  const [clusterOpen, setClusterOpen] = useState<Record<string, boolean>>({});
+  const toggleCluster = (key: string) =>
+    setClusterOpen((prev) => ({ ...prev, [key]: !prev[key] }));
 
   // Kit counts for the accordion header — "packed / total" reflects
   // current state (visible defaults + custom items) so the badge updates
@@ -280,73 +386,157 @@ export function TipsContent({
   // Dismissed tips also filter out. All hidden tips are surfaced in the
   // bottom drawer so nothing silently disappears.
   const prepareVisible = THINGS_TO_PREPARE.filter(
-    (t) => !dismissed.has(t.id) && !(isIndoorOnly && t.hideWhenIndoor)
+    (t) =>
+      !dismissed.has(t.id) &&
+      !(isIndoorOnly && t.hideWhenIndoor) &&
+      !(t.requiresTeaCeremony && !hasTeaCeremony)
   );
 
   const toggle = (key: SectionKey) =>
     setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
 
+  // Days-until for time-based "past due" demotion in prep cards.
+  const daysUntil = useMemo(() => {
+    if (!weddingDate) return null;
+    const wd = new Date(weddingDate + "T00:00:00");
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.round((wd.getTime() - today.getTime()) / 86_400_000);
+  }, [weddingDate]);
+
+  // Pre-compute cluster groupings.
+  const prepGroups = useMemo(
+    () =>
+      groupBy<PreparationEntry, PrepCluster>(
+        prepareVisible,
+        prepClusterFor,
+        ["plan_ahead", "coming_up", "final_weeks", "backup"],
+        prepSortWithin
+      ),
+    [prepareVisible]
+  );
+  const dayofGroups = useMemo(
+    () =>
+      groupBy<TipEntry, DayofCluster>(
+        dayofVisible,
+        (t) => DAYOF_TO_CLUSTER[t.id] ?? "lock_down",
+        ["care_for_you", "brief_team", "lock_down"]
+      ),
+    [dayofVisible]
+  );
+  const budgetGroups = useMemo(
+    () =>
+      groupBy<TipEntry, BudgetCluster>(
+        budgetVisible,
+        (t) => BUDGET_TO_CLUSTER[t.id] ?? "smart_shopping",
+        ["florals_decor", "smart_shopping"]
+      ),
+    [budgetVisible]
+  );
+
   return (
     <div className="space-y-3">
-      {/* Budget */}
+      {/* 1. Things to Prepare — most actionable, time-anchored content */}
       <SectionShell
-        isOpen={open.budget}
-        onToggle={() => toggle("budget")}
+        isOpen={open.prepare}
+        onToggle={() => toggle("prepare")}
         icon={
-          <DollarSign className="size-4 text-green-700 dark:text-green-400" />
+          <AlertTriangle className="size-4 text-amber-700 dark:text-amber-400" />
         }
-        iconBg="bg-green-100 dark:bg-green-900/30"
-        title="Budget Hacks"
-        subtitle="Small moves that add up to real savings"
-        count={budgetVisible.length}
+        iconBg="bg-amber-100 dark:bg-amber-900/30"
+        title="Things to Prepare"
+        count={prepareVisible.length}
       >
-        <div className="grid gap-3 sm:grid-cols-2">
-          {budgetVisible.map((tip) => (
-            <TipCard
-              key={tip.id}
-              tip={tip}
-              iconSlot={
-                <DollarSign className="size-3.5 text-green-700 dark:text-green-400" />
-              }
-              iconBg="bg-green-100 dark:bg-green-900/30"
-              showMetaAsSubtitle
-              onDismiss={() => dismiss(tip.id, tip.title)}
-              onAddToTimeline={() => addToTimeline(tip.id, tip.title, tip.meta)}
-            />
-          ))}
-        </div>
-      </SectionShell>
-
-      {/* Day-of tips */}
-      <SectionShell
-        isOpen={open.dayof}
-        onToggle={() => toggle("dayof")}
-        icon={<Clock className="size-4 text-blue-700 dark:text-blue-400" />}
-        iconBg="bg-blue-100 dark:bg-blue-900/30"
-        title="Day-of Tips"
-        subtitle="Field-tested reminders from couples who wished they'd known"
-        count={dayofVisible.length}
-      >
-        <div className="grid gap-3 sm:grid-cols-2">
-          {dayofVisible.map((tip) => {
-            const Icon = tip.iconName ? ICONS[tip.iconName] : Clock;
+        <div className="space-y-1.5">
+          {prepGroups.map(({ cluster, items }) => {
+            const meta = PREP_CLUSTERS[cluster];
+            const key = `prepare:${cluster}`;
+            const tone: ClusterTone =
+              cluster === "backup"
+                ? "rose"
+                : cluster === "final_weeks"
+                  ? "amber"
+                  : "neutral";
             return (
-              <TipCard
-                key={tip.id}
-                tip={tip}
-                iconSlot={
-                  <Icon className="size-3.5 text-blue-700 dark:text-blue-400" />
-                }
-                iconBg="bg-blue-100 dark:bg-blue-900/30"
-                onDismiss={() => dismiss(tip.id, tip.title)}
-                onAddToTimeline={() => addToTimeline(tip.id, tip.title)}
-              />
+              <ClusterRow
+                key={key}
+                isOpen={!!clusterOpen[key]}
+                onToggle={() => toggleCluster(key)}
+                label={meta.label}
+                hint={meta.hint}
+                count={items.length}
+                tone={tone}
+              >
+                <ul className="divide-y divide-border/40">
+                  {items.map((entry) => (
+                    <PrepRow
+                      key={entry.id}
+                      entry={entry}
+                      tone={tone}
+                      daysUntil={daysUntil}
+                      onDismiss={() => dismiss(entry.id, entry.title)}
+                      onAddToTimeline={() =>
+                        addToTimeline(
+                          entry.id,
+                          entry.title,
+                          entry.body,
+                          computeOffsetDate(weddingDate, entry.offsetWeeks)
+                        )
+                      }
+                    />
+                  ))}
+                </ul>
+              </ClusterRow>
             );
           })}
         </div>
       </SectionShell>
 
-      {/* Emergency Kit */}
+      {/* 2. Day-of Reminders (renamed from "Day-of Tips" — no clash with /day-of-details) */}
+      <SectionShell
+        isOpen={open.dayof}
+        onToggle={() => toggle("dayof")}
+        icon={<Clock className="size-4 text-blue-700 dark:text-blue-400" />}
+        iconBg="bg-blue-100 dark:bg-blue-900/30"
+        title="Day-of Reminders"
+        count={dayofVisible.length}
+      >
+        <div className="space-y-1.5">
+          {dayofGroups.map(({ cluster, items }) => {
+            const meta = DAYOF_CLUSTERS[cluster];
+            const key = `dayof:${cluster}`;
+            return (
+              <ClusterRow
+                key={key}
+                isOpen={!!clusterOpen[key]}
+                onToggle={() => toggleCluster(key)}
+                label={meta.label}
+                hint={meta.hint}
+                count={items.length}
+                tone="blue"
+              >
+                <ul className="divide-y divide-border/40">
+                  {items.map((tip) => {
+                    const Icon = tip.iconName ? ICONS[tip.iconName] : Clock;
+                    return (
+                      <TipRow
+                        key={tip.id}
+                        tip={tip}
+                        Icon={Icon}
+                        tone="blue"
+                        onDismiss={() => dismiss(tip.id, tip.title)}
+                        onAddToTimeline={() => addToTimeline(tip.id, tip.title)}
+                      />
+                    );
+                  })}
+                </ul>
+              </ClusterRow>
+            );
+          })}
+        </div>
+      </SectionShell>
+
+      {/* 3. Emergency Kit — interactive packing checklist (own component) */}
       <SectionShell
         isOpen={open.kit}
         onToggle={() => toggle("kit")}
@@ -355,7 +545,6 @@ export function TipsContent({
         }
         iconBg="bg-purple-100 dark:bg-purple-900/30"
         title="Emergency Kit"
-        subtitle="A small portable bag for the unexpected during the event"
         count={`${kitCounts.packedCount}/${kitCounts.total}`}
       >
         <EmergencyKitChecklist
@@ -367,37 +556,50 @@ export function TipsContent({
         />
       </SectionShell>
 
-      {/* Things to prepare for (merged What-If + Pitfalls + Legal/Honeymoon) */}
+      {/* 4. Budget Hacks — ambient browse, last in priority order */}
       <SectionShell
-        isOpen={open.prepare}
-        onToggle={() => toggle("prepare")}
+        isOpen={open.budget}
+        onToggle={() => toggle("budget")}
         icon={
-          <AlertTriangle className="size-4 text-amber-700 dark:text-amber-400" />
+          <DollarSign className="size-4 text-green-700 dark:text-green-400" />
         }
-        iconBg="bg-amber-100 dark:bg-amber-900/30"
-        title="Things to Prepare For"
-        subtitle="Plan ahead so small problems don't become big ones"
-        count={prepareVisible.length}
+        iconBg="bg-green-100 dark:bg-green-900/30"
+        title="Budget Hacks"
+        count={budgetVisible.length}
       >
-        <PrepareTimeline
-          entries={prepareVisible}
-          daysUntil={(() => {
-            if (!weddingDate) return null;
-            const wd = new Date(weddingDate + "T00:00:00");
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            return Math.round((wd.getTime() - today.getTime()) / 86_400_000);
-          })()}
-          onDismiss={(tip) => dismiss(tip.id, tip.title)}
-          onAddToTimeline={(tip) =>
-            addToTimeline(
-              tip.id,
-              tip.title,
-              tip.body,
-              computeOffsetDate(weddingDate, tip.offsetWeeks)
-            )
-          }
-        />
+        <div className="space-y-1.5">
+          {budgetGroups.map(({ cluster, items }) => {
+            const meta = BUDGET_CLUSTERS[cluster];
+            const key = `budget:${cluster}`;
+            return (
+              <ClusterRow
+                key={key}
+                isOpen={!!clusterOpen[key]}
+                onToggle={() => toggleCluster(key)}
+                label={meta.label}
+                hint={meta.hint}
+                count={items.length}
+                tone="green"
+              >
+                <ul className="divide-y divide-border/40">
+                  {items.map((tip) => (
+                    <TipRow
+                      key={tip.id}
+                      tip={tip}
+                      Icon={DollarSign}
+                      tone="green"
+                      showMeta
+                      onDismiss={() => dismiss(tip.id, tip.title)}
+                      onAddToTimeline={() =>
+                        addToTimeline(tip.id, tip.title, tip.meta)
+                      }
+                    />
+                  ))}
+                </ul>
+              </ClusterRow>
+            );
+          })}
+        </div>
       </SectionShell>
 
       {/* Hidden drawer: both auto-filtered (e.g. indoor) and user-dismissed
@@ -558,7 +760,7 @@ function SectionShell({
   icon: React.ReactNode;
   iconBg: string;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   count?: number | string;
   children: React.ReactNode;
 }) {
@@ -581,9 +783,11 @@ function SectionShell({
                   </Badge>
                 ) : null}
               </div>
-              <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                {subtitle}
-              </p>
+              {subtitle && (
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  {subtitle}
+                </p>
+              )}
             </div>
             <ChevronDown
               className={`size-4 text-muted-foreground transition-transform ${
@@ -600,200 +804,201 @@ function SectionShell({
   );
 }
 
-// ── Tip card (budget / day-of) ──────────────────────────────────────────
+// ── Cluster + row components ────────────────────────────────────────────
 
-function TipCard({
-  tip,
-  iconSlot,
-  iconBg,
-  showMetaAsSubtitle,
-  onDismiss,
-  onAddToTimeline,
+type ClusterTone = "neutral" | "amber" | "rose" | "blue" | "green" | "purple";
+
+const TONE_BG: Record<ClusterTone, string> = {
+  neutral: "bg-muted",
+  amber: "bg-amber-100 dark:bg-amber-900/30",
+  rose: "bg-rose-100 dark:bg-rose-900/30",
+  blue: "bg-blue-100 dark:bg-blue-900/30",
+  green: "bg-green-100 dark:bg-green-900/30",
+  purple: "bg-purple-100 dark:bg-purple-900/30",
+};
+
+const TONE_FG: Record<ClusterTone, string> = {
+  neutral: "text-muted-foreground",
+  amber: "text-amber-700 dark:text-amber-400",
+  rose: "text-rose-700 dark:text-rose-400",
+  blue: "text-blue-700 dark:text-blue-400",
+  green: "text-green-700 dark:text-green-400",
+  purple: "text-purple-700 dark:text-purple-400",
+};
+
+function ItemIcon({
+  Icon,
+  tone,
 }: {
-  tip: TipEntry;
-  iconSlot: React.ReactNode;
-  iconBg: string;
-  showMetaAsSubtitle?: boolean;
-  onDismiss: () => void;
-  onAddToTimeline: () => void;
+  Icon: React.ElementType;
+  tone: ClusterTone;
 }) {
   return (
-    <Card size="sm" className="group relative">
-      <CardContent className="flex items-start gap-3">
-        <div
-          className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full ${iconBg}`}
-        >
-          {iconSlot}
-        </div>
-        <div className="space-y-1 flex-1 min-w-0">
-          <p className="font-medium leading-snug pr-6">{tip.title}</p>
-          {showMetaAsSubtitle && tip.meta ? (
-            <p className="text-xs text-muted-foreground">{tip.meta}</p>
-          ) : null}
-        </div>
-        <TipActions
-          onDismiss={onDismiss}
-          onAddToTimeline={onAddToTimeline}
-        />
-      </CardContent>
-    </Card>
-  );
-}
-
-// ── Timeline-grouped "Things to prepare for" ─────────────────────────────
-
-function PrepareTimeline({
-  entries,
-  daysUntil,
-  onDismiss,
-  onAddToTimeline,
-}: {
-  entries: PreparationEntry[];
-  daysUntil: number | null;
-  onDismiss: (entry: PreparationEntry) => void;
-  onAddToTimeline: (entry: PreparationEntry) => void;
-}) {
-  const groups: {
-    id: PreparationEntry["timeframe"];
-    label: string;
-    note: string;
-    // Only the "now-actionable" group opens by default. The rest stay
-    // collapsed so the page isn't a wall of text on first visit.
-    defaultOpen: boolean;
-  }[] = [
-    { id: "weeks_out", label: "Weeks out", note: "Plan + prevent", defaultOpen: true },
-    { id: "week_of", label: "Week of", note: "Final buffer", defaultOpen: false },
-    { id: "day_of", label: "Day of", note: "Acute issues", defaultOpen: false },
-  ];
-
-  return (
-    <div className="space-y-3">
-      {groups.map((group) => {
-        const groupEntries = entries.filter((e) => e.timeframe === group.id);
-        if (groupEntries.length === 0) return null;
-        return (
-          <PrepareGroup
-            key={group.id}
-            label={group.label}
-            note={group.note}
-            count={groupEntries.length}
-            defaultOpen={group.defaultOpen}
-          >
-            <div className="grid gap-2.5 sm:grid-cols-2 pt-2">
-              {groupEntries.map((entry) => (
-                <PrepareCard
-                  key={entry.id}
-                  entry={entry}
-                  daysUntil={daysUntil}
-                  onDismiss={() => onDismiss(entry)}
-                  onAddToTimeline={() => onAddToTimeline(entry)}
-                />
-              ))}
-            </div>
-          </PrepareGroup>
-        );
-      })}
+    <div
+      className={cn(
+        "flex size-7 shrink-0 items-center justify-center rounded-full",
+        TONE_BG[tone]
+      )}
+    >
+      <Icon className={cn("size-3.5", TONE_FG[tone])} />
     </div>
   );
 }
 
-function PrepareGroup({
+function ClusterRow({
+  isOpen,
+  onToggle,
   label,
-  note,
+  hint,
   count,
-  defaultOpen,
+  tone,
   children,
 }: {
+  isOpen: boolean;
+  onToggle: () => void;
   label: string;
-  note: string;
+  hint: string;
   count: number;
-  defaultOpen: boolean;
+  tone: ClusterTone;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
+    <Collapsible open={isOpen} onOpenChange={onToggle}>
       <CollapsibleTrigger className="w-full text-left">
-        <div className="flex items-center gap-2 py-1.5 border-b border-border/50 group">
-          <ChevronDown
-            className={`size-3.5 text-muted-foreground transition-transform ${
-              open ? "rotate-180" : ""
-            }`}
-          />
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <div
+          className={cn(
+            "flex items-center gap-2 py-2 px-2 -mx-2 rounded-md hover:bg-muted/40 transition-colors",
+            isOpen && "bg-muted/20"
+          )}
+        >
+          <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
             {label}
-          </h3>
-          <span className="text-[10px] text-muted-foreground/70">
-            · {note}
           </span>
+          {hint && (
+            <span className="text-[10px] text-muted-foreground/60">
+              {hint}
+            </span>
+          )}
           <Badge
             variant="secondary"
-            className="ml-auto text-[10px] h-4 px-1.5"
+            className={cn(
+              "text-[10px] tabular-nums ml-auto",
+              tone === "rose" &&
+                "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400",
+              tone === "amber" &&
+                "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+            )}
           >
             {count}
           </Badge>
+          <ChevronDown
+            className={cn(
+              "size-3.5 text-muted-foreground/50 transition-transform shrink-0",
+              isOpen && "rotate-180"
+            )}
+          />
         </div>
       </CollapsibleTrigger>
-      <CollapsibleContent>{children}</CollapsibleContent>
+      <CollapsibleContent>
+        <div className="pl-2 pr-1 pt-1">{children}</div>
+      </CollapsibleContent>
     </Collapsible>
   );
 }
 
-function PrepareCard({
+// Prep row — prepare item with expand-to-body, past-due demotion, kebab.
+function PrepRow({
   entry,
+  tone,
   daysUntil,
   onDismiss,
   onAddToTimeline,
 }: {
   entry: PreparationEntry;
+  tone: ClusterTone;
   daysUntil: number | null;
   onDismiss: () => void;
   onAddToTimeline: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const Icon = ICONS[entry.iconName] ?? AlertTriangle;
-  // Time-based dim: if the offset week has already passed (e.g., "book
-  // venue 12mo out" when you're only 2mo from the date), visually demote
-  // the card so focus lands on tips that are still actionable.
+  // Time-based dim: if the offset week has already passed, demote.
   const isPastDue =
     daysUntil !== null &&
     entry.offsetWeeks !== undefined &&
     entry.offsetWeeks * 7 > daysUntil;
+  const badge = timeframeBadge(entry);
   return (
-    <Card className={cn("group relative", isPastDue && "opacity-55")}>
+    <li
+      className={cn(
+        "group relative flex gap-3 py-2.5",
+        isPastDue && "opacity-55"
+      )}
+    >
+      <ItemIcon Icon={Icon} tone={tone} />
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full text-left"
+        className="flex-1 min-w-0 text-left pr-7"
         aria-expanded={expanded}
       >
-        <CardContent className="flex gap-3">
-          <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-            <Icon className="size-4" />
-          </div>
-          <div className="flex-1 min-w-0 space-y-1">
-            <div className="flex items-baseline gap-2">
-              <p className="font-medium leading-snug pr-6 text-sm flex-1 min-w-0">
-                {entry.title}
-              </p>
-              {isPastDue && (
-                <span className="text-[9px] uppercase tracking-wider text-muted-foreground/70 shrink-0 pr-6">
-                  past due
-                </span>
-              )}
-            </div>
-            <p
-              className={`text-xs text-muted-foreground leading-relaxed ${
-                expanded ? "" : "line-clamp-1"
-              }`}
-            >
-              {expanded ? entry.body : entry.lead}
-            </p>
-          </div>
-        </CardContent>
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <span className="font-medium text-sm">{entry.title}</span>
+          {badge && (
+            <span className="text-[10px] text-muted-foreground/70 tabular-nums">
+              {badge}
+            </span>
+          )}
+          {isPastDue && (
+            <span className="text-[9px] uppercase tracking-wider text-muted-foreground/70">
+              past due
+            </span>
+          )}
+        </div>
+        <p
+          className={cn(
+            "text-xs text-muted-foreground mt-0.5 leading-relaxed",
+            !expanded && "line-clamp-1"
+          )}
+        >
+          {expanded ? entry.body : entry.lead}
+        </p>
       </button>
       <TipActions onDismiss={onDismiss} onAddToTimeline={onAddToTimeline} />
-    </Card>
+    </li>
+  );
+}
+
+// Generic tip row — used by Day-of Reminders and Budget Hacks. Shorter
+// content (no expandable body), optional `meta` line for budget hints.
+function TipRow({
+  tip,
+  Icon,
+  tone,
+  showMeta,
+  onDismiss,
+  onAddToTimeline,
+}: {
+  tip: TipEntry;
+  Icon: React.ElementType;
+  tone: ClusterTone;
+  showMeta?: boolean;
+  onDismiss: () => void;
+  onAddToTimeline: () => void;
+}) {
+  return (
+    <li className="group relative flex gap-3 py-2.5">
+      <ItemIcon Icon={Icon} tone={tone} />
+      <div className="flex-1 min-w-0 pr-7">
+        <div className="text-sm leading-snug">{tip.title}</div>
+        {showMeta && tip.meta && (
+          <div className="text-[11px] text-muted-foreground mt-0.5">
+            {tip.meta}
+          </div>
+        )}
+      </div>
+      <TipActions onDismiss={onDismiss} onAddToTimeline={onAddToTimeline} />
+    </li>
   );
 }
 

@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
 import { getCurrentWedding } from "@/lib/supabase/queries";
 import { createClient } from "@/lib/supabase/server";
 import { TipsContent } from "./tips-content";
@@ -96,14 +95,11 @@ export default async function TipsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <div className="flex items-center gap-3">
-          <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
-            Tips
-          </h1>
-          <Badge variant="secondary">Reference</Badge>
-        </div>
+        <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
+          Tips
+        </h1>
         <p className="text-sm text-muted-foreground mt-2">
-          Budget hacks, day-of advice, an emergency kit checklist, and what to prepare for. Hide the ones that don&apos;t apply, or turn any of them into a timeline task.
+          What couples wish they&apos;d known earlier.
         </p>
       </div>
 
@@ -111,6 +107,7 @@ export default async function TipsPage() {
         weddingId={wedding.id}
         weddingDate={wedding.wedding_date}
         venueIndoorOutdoor={wedding.venue_indoor_outdoor}
+        hasTeaCeremony={wedding.has_tea_ceremony ?? false}
         initialKitState={parseKitState(kitRow?.data)}
         initialInteractions={parseInteractions(interactionsRow?.data)}
       />

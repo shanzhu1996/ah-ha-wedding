@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X, Plus, Sparkles, Clock, Pencil, RefreshCw, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,48 +29,10 @@ import {
   enrichScheduleEntry,
   type ScheduleEnrichmentContext,
 } from "./schedule-enrichment";
+import { getPhaseBlocks, type PhaseBlock } from "@/lib/day-of/phase";
 
-// ── Phase detection ────────────────────────────────────────────────────
-
-function getPhase(entry: ScheduleEntry): string {
-  const t = entry.title.toLowerCase();
-  const s = entry.linkedSection;
-  if (s === "getting_ready" || t.includes("hair") || t.includes("makeup") || t.includes("detail shot") || t.includes("first look") || t.includes("photographer arrive") || t.includes("portrait") || (t.includes("photo") && !t.includes("ceremony") && !t.includes("formal")))
-    return "getting ready";
-  if (s === "ceremony" || t.includes("ceremony") || t.includes("guests arrive") || t.includes("family formal") || t.includes("private moment"))
-    return "ceremony";
-  if (s === "cocktail" || t.includes("cocktail"))
-    return "cocktail hour";
-  if (t.includes("open danc") || t.includes("last dance") || t.includes("exit") || t.includes("send-off") || t.includes("send off"))
-    return "dancing & send-off";
-  if (s === "reception" || t.includes("dinner") || t.includes("speech") || t.includes("toast") || t.includes("entrance") || t.includes("cake") || t.includes("dance"))
-    return "reception";
-  return "";
-}
-
-/** Group entries into phase sections with start/end indices */
-interface PhaseBlock {
-  label: string;
-  startIndex: number;
-  endIndex: number; // inclusive
-}
-
-function getPhaseBlocks(entries: ScheduleEntry[]): PhaseBlock[] {
-  const blocks: PhaseBlock[] = [];
-  let current: PhaseBlock | null = null;
-
-  for (let i = 0; i < entries.length; i++) {
-    const phase = getPhase(entries[i]);
-    if (!current || phase !== current.label) {
-      if (current) blocks.push(current);
-      current = { label: phase || "other", startIndex: i, endIndex: i };
-    } else {
-      current.endIndex = i;
-    }
-  }
-  if (current) blocks.push(current);
-  return blocks;
-}
+// Phase detection + grouping moved to lib/day-of/phase.ts so the print
+// brief can apply the exact same chronological structure.
 
 // ── Duration helper ────────────────────────────────────────────────────
 
@@ -213,9 +175,18 @@ interface ScheduleSectionProps {
   onNavigate?: (section: SectionKey) => void;
   /** Data from other sections — used to show enriched subtitles under entries. */
   enrichment?: ScheduleEnrichmentContext;
+  /** Flag-gated cultural suggestion chips (A4). When true, shows a bottom
+   *  chip strip for inserting a Tea Ceremony block. */
+  hasTeaCeremony?: boolean;
 }
 
-export function ScheduleSection({ data, onChange, enrichment }: ScheduleSectionProps) {
+export function ScheduleSection({
+  data,
+  onChange,
+  onNavigate,
+  enrichment,
+  hasTeaCeremony = false,
+}: ScheduleSectionProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingPhase, setEditingPhase] = useState<string | null>(null);
   const [editingCeremonyTime, setEditingCeremonyTime] = useState(false);
@@ -223,6 +194,20 @@ export function ScheduleSection({ data, onChange, enrichment }: ScheduleSectionP
   const [refreshSummary, setRefreshSummary] = useState<string | null>(null);
   const entries = data.entries || [];
   const hasEntries = entries.length > 0;
+
+  // One-shot cleanup on mount: drop entries that have no title AND no
+  // time. These are abandoned drafts from earlier sessions where the
+  // couple clicked "+ Add here" and walked away without typing.
+  // Without this, they'd keep showing up as ghost "New entry" rows.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const cleaned = entries.filter(
+      (e) => e.title.trim() || e.time.trim()
+    );
+    if (cleaned.length < entries.length) {
+      onChange({ ...data, entries: cleaned });
+    }
+  }, []);
   const hasCeremonyTime = (data.ceremony_time || "").trim().length > 0;
   const phaseBlocks = hasEntries ? getPhaseBlocks(entries) : [];
 
@@ -372,6 +357,30 @@ export function ScheduleSection({ data, onChange, enrichment }: ScheduleSectionP
     setEditingId(newEntry.id);
   }
 
+  // Insert a pre-tagged Tea Ceremony block (A4). Title is pre-filled so it
+  // can't land as an empty "New entry" placeholder — linkedSection drives
+  // both the Schedule↔Ceremony tab link and the phase-block grouping.
+  // Default time = 9:00 AM (most common per North American practice;
+  // 9 also carries auspicious meaning 久 in Chinese). Re-sorts to the
+  // user's chosen time as soon as they edit it.
+  function insertTeaCeremony() {
+    const newEntry: ScheduleEntry = {
+      id: crypto.randomUUID(),
+      time: "9:00 AM",
+      title: "Tea Ceremony",
+      notes: "",
+      linkedSection: "tea_ceremony",
+      user_touched: true,
+    };
+    const updated = sortEntriesByTime([...entries, newEntry]);
+    onChange({ ...data, entries: updated });
+    setEditingId(newEntry.id);
+  }
+
+  const hasTeaCeremonyEntry = entries.some(
+    (e) => e.linkedSection === "tea_ceremony"
+  );
+
   return (
     <div className="space-y-6">
       {/* Ceremony time — smart summary or input */}
@@ -511,12 +520,27 @@ export function ScheduleSection({ data, onChange, enrichment }: ScheduleSectionP
       {/* Timeline by phase blocks */}
       {hasEntries && (
         <div className="space-y-6">
-          {phaseBlocks.map((block, bi) => {
+          {phaseBlocks
+            // Visual filter (#3): when has_tea_ceremony is off, hide the
+            // tea ceremony phase block. Entries stay in `entries` array
+            // (so save/edit indexes remain valid) — we just skip rendering.
+            // Also hide the "other" block label when its only contents
+            // are placeholder drafts; the entries still render under
+            // whatever phase block precedes them.
+            .filter((block) => hasTeaCeremony || block.label !== "tea ceremony")
+            .map((block, bi) => {
             const blockEntries = entries.slice(block.startIndex, block.endIndex + 1);
+
+            // "other" = catch-all phase for entries that don't match any
+            // recognized phase keyword. Suppress the header label entirely
+            // so the user doesn't see a stigmatizing "OTHER" tag — entries
+            // still render below the previous block.
+            const isOtherBlock = block.label === "other";
 
             return (
               <div key={`${block.label}-${bi}`}>
-                {/* Phase header — editable + removable */}
+                {/* Phase header — editable + removable. Hidden for "other" block. */}
+                {!isOtherBlock && (
                 <div className="flex items-center justify-between mb-2 group/phase">
                   {editingPhase === block.label ? (
                     <input
@@ -545,6 +569,7 @@ export function ScheduleSection({ data, onChange, enrichment }: ScheduleSectionP
                     Remove section
                   </button>
                 </div>
+                )}
 
                 {/* Entries in this phase */}
                 <div className="border-l-2 border-primary/10 ml-1">
@@ -666,7 +691,17 @@ export function ScheduleSection({ data, onChange, enrichment }: ScheduleSectionP
                           {isEditing ? (
                             <div className="flex items-center gap-1 shrink-0 self-start mt-1">
                               <button
-                                onClick={(e) => { e.stopPropagation(); setEditingId(null); }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // Auto-clean empty drafts: clicking Done with
+                                  // no title and no time removes the row instead
+                                  // of leaving a "New entry" placeholder behind.
+                                  if (!entry.title.trim() && !entry.time.trim()) {
+                                    removeEntry(entry.id);
+                                  } else {
+                                    setEditingId(null);
+                                  }
+                                }}
                                 className="text-xs text-primary/70 hover:text-primary transition-colors px-2 py-0.5 rounded"
                               >
                                 Done
@@ -728,6 +763,46 @@ export function ScheduleSection({ data, onChange, enrichment }: ScheduleSectionP
               Click any entry to edit. Build in 10–15 min buffers between transitions.
             </p>
           </div>
+
+          {/* Cultural traditions — suggestion chip (A4). Flag-gated. Shows
+              "[+] Tea ceremony" until a tea_ceremony entry exists; after
+              insert, becomes a link into the Ceremony tab where elder order
+              + envelopes live. */}
+          {hasTeaCeremony && (
+            <div className="mt-3 pt-3 border-t border-border/40">
+              {hasTeaCeremonyEntry ? (
+                <div className="text-[11px] inline-flex items-center gap-1 text-muted-foreground/70">
+                  <span>🍵</span>
+                  <span>Tea Ceremony added —</span>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate?.("ceremony")}
+                    className="text-primary hover:underline font-medium"
+                  >
+                    configure elder order in Ceremony tab →
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2">
+                    Based on your cultural traditions
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={insertTeaCeremony}
+                      className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-border/60 text-muted-foreground hover:text-foreground hover:border-primary hover:bg-primary/5 transition-colors"
+                      title="Insert a Tea Ceremony block in your schedule"
+                    >
+                      <span>🍵</span>
+                      <span>Tea ceremony</span>
+                      <Plus className="h-3 w-3" />
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 

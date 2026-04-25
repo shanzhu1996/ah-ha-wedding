@@ -36,6 +36,7 @@ export default async function DayOfDetailsPage() {
       weddingId={wedding.id}
       initialData={initialData}
       songs={songs || []}
+      hasTeaCeremony={wedding.has_tea_ceremony ?? false}
     />
   );
 }

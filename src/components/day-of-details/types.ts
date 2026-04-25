@@ -326,6 +326,56 @@ export function getDefaultCeremonyData(): CeremonyData {
   };
 }
 
+// ── Tea Ceremony (Chinese cultural moment — gated on weddings.has_tea_ceremony) ─
+
+/**
+ * One elder in the tea-serving order. Order is driven by array position —
+ * first entry served first. Convention: groom's side → bride's side, oldest
+ * within each side first, but the couple can reorder freely.
+ */
+export interface TeaElder {
+  id: string;
+  /** E.g., "Groom's father", "Maternal grandmother". Required for display. */
+  relation: string;
+  /** Optional personal name. */
+  name: string;
+  /** Optional red-envelope amount, free text ("$88", "$168"). Privacy
+   *  handled at print — couples choose whether to include amounts. */
+  envelope_amount: string;
+  /** Free-form notes — dietary ("no sweet tea"), seating preferences, etc. */
+  notes: string;
+}
+
+export interface TeaCeremonyData {
+  /** E.g., "Four Seasons bridal suite, Room 812". */
+  location: string;
+  /** Who conducts the ceremony — 大妗姐 / auntie / officiant. */
+  host: string;
+  /** Tea variety: "Long Jing", "龙凤呈祥", etc. */
+  tea_type: string;
+  tea_set_source: "bring_own" | "rental" | "venue_provided" | "";
+  /** Elders in serving order. */
+  elders: TeaElder[];
+  /** General notes — logistics, parents of the bride/groom absent, etc. */
+  notes: string;
+}
+
+export function getDefaultTeaCeremonyData(): TeaCeremonyData {
+  return {
+    location: "",
+    host: "",
+    tea_type: "",
+    tea_set_source: "",
+    elders: [
+      { id: crypto.randomUUID(), relation: "Groom's father", name: "", envelope_amount: "", notes: "" },
+      { id: crypto.randomUUID(), relation: "Groom's mother", name: "", envelope_amount: "", notes: "" },
+      { id: crypto.randomUUID(), relation: "Bride's father", name: "", envelope_amount: "", notes: "" },
+      { id: crypto.randomUUID(), relation: "Bride's mother", name: "", envelope_amount: "", notes: "" },
+    ],
+    notes: "",
+  };
+}
+
 // ── Cocktail Hour ──────────────────────────────────────────────────────
 
 export interface CocktailData {
@@ -917,6 +967,7 @@ export const SECTION_KEYS = [
   "reception",
   "photos",
   "logistics",
+  "tea_ceremony",
 ] as const;
 
 export type SectionKey = (typeof SECTION_KEYS)[number];
@@ -929,6 +980,9 @@ export const SECTION_META: Record<SectionKey, { label: string; shortLabel: strin
   reception: { label: "Reception", shortLabel: "Reception" },
   photos: { label: "Photo Shot List", shortLabel: "Photos" },
   logistics: { label: "Logistics", shortLabel: "Logistics" },
+  // tea_ceremony is NOT a pill — rendered as a card inside Ceremony section,
+  // gated on weddings.has_tea_ceremony. Meta kept for storage symmetry.
+  tea_ceremony: { label: "Tea Ceremony", shortLabel: "Tea" },
 };
 
 export type AllSectionData = {
@@ -939,6 +993,7 @@ export type AllSectionData = {
   reception: ReceptionData;
   photos: PhotoShotListData;
   logistics: LogisticsData;
+  tea_ceremony: TeaCeremonyData;
 };
 
 export function getDefaultSectionData(key: SectionKey): AllSectionData[typeof key] {
@@ -950,6 +1005,7 @@ export function getDefaultSectionData(key: SectionKey): AllSectionData[typeof ke
     reception: getDefaultReceptionData,
     photos: getDefaultPhotoShotListData,
     logistics: getDefaultLogisticsData,
+    tea_ceremony: getDefaultTeaCeremonyData,
   };
   return defaults[key]() as AllSectionData[typeof key];
 }
@@ -1042,6 +1098,7 @@ export function getSectionCompletion<K extends SectionKey>(
     case "reception": return isReceptionComplete(data as ReceptionData);
     case "photos": return "none";
     case "logistics": return isLogisticsComplete(data as LogisticsData);
+    case "tea_ceremony": return "none"; // conditional card, no completion signal
     default: return "empty";
   }
 }

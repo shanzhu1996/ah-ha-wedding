@@ -18,12 +18,14 @@ import {
   type PhotoShotListData,
   type LogisticsData,
   type MomentExtras,
+  type TeaCeremonyData,
 } from "@/components/day-of-details/types";
 import { enrichScheduleEntry } from "@/components/day-of-details/schedule-enrichment";
 import {
   resolveReceptionMoments,
   type ResolvedMoment,
 } from "@/components/day-of-details/reception-moments";
+import { getPhaseBlocks } from "@/lib/day-of/phase";
 
 // Small helpers kept local — this page is the only consumer.
 
@@ -369,6 +371,8 @@ export default async function DayOfPrintPage() {
   const reception = sections.reception as ReceptionData;
   const photos = sections.photos as PhotoShotListData;
   const logistics = sections.logistics as LogisticsData;
+  const teaCeremony = sections.tea_ceremony as TeaCeremonyData;
+  const hasTeaCeremony = wedding.has_tea_ceremony ?? false;
 
   const coupleNames =
     [wedding.partner1_name, wedding.partner2_name].filter(Boolean).join(" & ") ||
@@ -377,10 +381,46 @@ export default async function DayOfPrintPage() {
 
   return (
     <>
-      {/* Print-only CSS — only the `.print-root` prints. */}
+      {/*
+        Typography rules apply on screen (so the on-screen preview already
+        looks like the print) AND inside @media print. Page-layout rules
+        (visibility, positioning, page margins) only kick in when actually
+        printing.
+      */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
+            /* Section head — chapter-like heading. Upgraded from the original
+               9pt all-caps grey to a 1.05rem black serif with a hairline rule.
+               Generous top margin so each section reads as its own chapter
+               rather than a wall of text. */
+            .print-root .section-head {
+              border-bottom: 1px solid #333;
+              font-size: 1.05rem;
+              font-weight: 600;
+              font-family: Georgia, 'Times New Roman', serif;
+              padding-bottom: 4px;
+              margin-top: 28px;
+              margin-bottom: 10px;
+            }
+            .print-root section:first-of-type .section-head {
+              margin-top: 0;
+            }
+            /* Phase mini-heading inside Schedule — small uppercase grey,
+               distinct from section-head so the timeline structure scans
+               in a glance. */
+            .print-root .phase-head {
+              font-size: 0.7rem;
+              font-weight: 600;
+              letter-spacing: 0.12em;
+              text-transform: uppercase;
+              color: #555;
+              margin-top: 12px;
+              margin-bottom: 4px;
+            }
+            .print-root .phase-block:first-child .phase-head {
+              margin-top: 0;
+            }
             @media print {
               body > * { visibility: hidden !important; }
               .print-root, .print-root * { visibility: visible !important; }
@@ -398,14 +438,18 @@ export default async function DayOfPrintPage() {
               .print-root h1 { font-size: 20pt; }
               .print-root h2 { font-size: 13pt; margin-top: 14pt; }
               .print-root h3 { font-size: 11pt; font-weight: 600; }
-              .print-root section { break-inside: avoid; margin-bottom: 10pt; }
+              .print-root section { break-inside: avoid; margin-bottom: 18pt; }
               .print-root .section-head {
-                border-bottom: 1pt solid #999;
-                letter-spacing: 0.12em;
-                text-transform: uppercase;
+                font-size: 13pt;
+                margin-top: 24pt;
+                margin-bottom: 10pt;
+                padding-bottom: 4pt;
+                border-bottom: 0.5pt solid #333;
+              }
+              .print-root .phase-head {
                 font-size: 9pt;
-                padding-bottom: 2pt;
-                margin-bottom: 6pt;
+                margin-top: 10pt;
+                margin-bottom: 4pt;
               }
               @page { margin: 0.5in; }
             }
@@ -451,38 +495,71 @@ export default async function DayOfPrintPage() {
           </p>
         </header>
 
-        {/* Schedule */}
+        {/* Schedule — grouped by phase block (matches the on-screen
+            editor's structure). Tea ceremony entries are filtered out
+            visually when has_tea_ceremony is off — data stays in DB.
+            "other" block label is suppressed so unphased drafts don't
+            print under a stigmatizing OTHER tag. */}
         <section>
           <h2 className="section-head">Schedule</h2>
-          {schedule.entries?.length ? (
-            <ul className="space-y-1.5 mt-2">
-              {schedule.entries.map((e) => {
-                const enriched = enrichScheduleEntry(e, {
-                  reception,
-                  ceremony,
-                  getting_ready: gettingReady,
-                });
-                return (
-                  <li key={e.id} className="flex gap-3">
-                    <span className="w-20 text-sm font-medium tabular-nums shrink-0 text-neutral-700">
-                      {e.time || "—"}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm">{e.title || "(untitled)"}</div>
-                      {enriched && (
-                        <div className="text-xs text-neutral-500 italic">{enriched}</div>
+          {(() => {
+            const visibleScheduleEntries = (schedule.entries || []).filter(
+              (e) => hasTeaCeremony || e.linkedSection !== "tea_ceremony"
+            );
+            if (visibleScheduleEntries.length === 0) {
+              return <p className="mt-2 text-sm">{empty()}</p>;
+            }
+            const blocks = getPhaseBlocks(visibleScheduleEntries);
+            return (
+              <div className="mt-2 space-y-3">
+                {blocks.map((block, bi) => {
+                  const blockEntries = visibleScheduleEntries.slice(
+                    block.startIndex,
+                    block.endIndex + 1
+                  );
+                  const isOther = block.label === "other";
+                  return (
+                    <div key={`${block.label}-${bi}`} className="phase-block">
+                      {!isOther && (
+                        <h3 className="phase-head">{block.label}</h3>
                       )}
-                      {e.notes && (
-                        <div className="text-xs text-neutral-500">{e.notes}</div>
-                      )}
+                      <ul className="space-y-1.5">
+                        {blockEntries.map((e) => {
+                          const enriched = enrichScheduleEntry(e, {
+                            reception,
+                            ceremony,
+                            getting_ready: gettingReady,
+                          });
+                          return (
+                            <li key={e.id} className="flex gap-3">
+                              <span className="w-20 text-sm font-medium tabular-nums shrink-0 text-neutral-700">
+                                {e.time || "—"}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm">
+                                  {e.title || "(untitled)"}
+                                </div>
+                                {enriched && (
+                                  <div className="text-xs text-neutral-500 italic">
+                                    {enriched}
+                                  </div>
+                                )}
+                                {e.notes && (
+                                  <div className="text-xs text-neutral-500">
+                                    {e.notes}
+                                  </div>
+                                )}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
                     </div>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="mt-2 text-sm">{empty()}</p>
-          )}
+                  );
+                })}
+              </div>
+            );
+          })()}
         </section>
 
         {/* Getting Ready */}
@@ -629,6 +706,79 @@ export default async function DayOfPrintPage() {
             )}
           </div>
         </section>
+
+        {/* Tea Ceremony — flag-gated. Envelope amounts are intentionally
+            omitted: they're sensitive family info that shouldn't sit on
+            a sheet of paper passed around the venue. */}
+        {hasTeaCeremony && (
+          <section>
+            <h2 className="section-head">Tea Ceremony 茶礼</h2>
+            <div className="mt-2 space-y-2 text-sm">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
+                    Location:
+                  </span>
+                  {hasText(teaCeremony.location) ? teaCeremony.location : empty()}
+                </div>
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
+                    Host:
+                  </span>
+                  {hasText(teaCeremony.host) ? teaCeremony.host : empty()}
+                </div>
+                {hasText(teaCeremony.tea_type) && (
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
+                      Tea:
+                    </span>
+                    {teaCeremony.tea_type}
+                  </div>
+                )}
+                {teaCeremony.tea_set_source && (
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
+                      Tea set:
+                    </span>
+                    {titleCase(teaCeremony.tea_set_source)}
+                  </div>
+                )}
+              </div>
+              {(teaCeremony.elders || []).filter(
+                (e) => hasText(e.relation) || hasText(e.name)
+              ).length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                    Serving order
+                  </h3>
+                  <ol className="list-decimal list-inside mt-1 space-y-0.5">
+                    {teaCeremony.elders
+                      .filter((e) => hasText(e.relation) || hasText(e.name))
+                      .map((e) => (
+                        <li key={e.id}>
+                          {e.relation || "(relation)"}
+                          {hasText(e.name) && (
+                            <span className="text-neutral-600"> — {e.name}</span>
+                          )}
+                          {hasText(e.notes) && (
+                            <span className="text-neutral-500 italic"> · {e.notes}</span>
+                          )}
+                        </li>
+                      ))}
+                  </ol>
+                </div>
+              )}
+              {hasText(teaCeremony.notes) && (
+                <p>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mr-2">
+                    Notes:
+                  </span>
+                  {teaCeremony.notes}
+                </p>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Cocktail */}
         <section>

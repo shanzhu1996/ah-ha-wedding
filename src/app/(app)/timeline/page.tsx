@@ -3,6 +3,7 @@ import { getCurrentWedding } from "@/lib/supabase/queries";
 import { createClient } from "@/lib/supabase/server";
 import { TimelineManager } from "@/components/timeline/timeline-manager";
 import { generatePreWeddingTimeline } from "@/lib/timeline/pre-wedding-template";
+import { seedTeaCeremonyIfNeeded } from "@/lib/actions/seed-tea-ceremony";
 
 export default async function TimelinePage() {
   const wedding = await getCurrentWedding();
@@ -25,15 +26,28 @@ export default async function TimelinePage() {
       .eq("id", wedding.id);
   }
 
+  // Cultural seed (A4): runs the first time a tea-ceremony couple visits
+  // /timeline (lazy fallback). Settings save also calls this directly so
+  // tasks appear without needing a manual visit. Idempotent.
+  await seedTeaCeremonyIfNeeded(wedding.id);
+
   const { data: events } = await supabase
     .from("timeline_events")
     .select("*")
     .eq("wedding_id", wedding.id)
     .order("sort_order", { ascending: true });
 
+  // Visual filter (preserve, don't delete): when the couple turns the
+  // tea-ceremony cultural flag off, hide its 5 seeded tasks from the
+  // working list. Data stays in DB so re-enabling restores the same
+  // (potentially user-edited) tasks.
+  const visibleEvents = (events || []).filter(
+    (e) => e.category !== "tea_ceremony" || wedding.has_tea_ceremony
+  );
+
   return (
     <TimelineManager
-      events={events || []}
+      events={visibleEvents}
       weddingId={wedding.id}
       weddingDate={wedding.wedding_date}
       guestCount={wedding.guest_count_estimate}

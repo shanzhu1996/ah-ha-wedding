@@ -139,6 +139,10 @@ export interface GeneratedTask {
   sort_order: number;
   completed: false;
   priority: Priority;
+  /** Optional categorical tag — used by cultural seeds (e.g. tea ceremony)
+   *  to support visual filtering when the corresponding flag is toggled
+   *  off. NULL/absent for generic pre-wedding tasks. */
+  category?: string | null;
 }
 
 /**

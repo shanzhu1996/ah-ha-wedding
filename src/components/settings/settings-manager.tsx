@@ -32,6 +32,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
+import { seedTeaCeremonyIfNeeded } from "@/lib/actions/seed-tea-ceremony";
 import type { Database, WeddingStyle } from "@/types/database";
 
 type Wedding = Database["public"]["Tables"]["weddings"]["Row"];
@@ -110,6 +111,9 @@ export function SettingsManager({ wedding, userEmail }: SettingsManagerProps) {
   const [culturalElements, setCulturalElements] = useState(
     wedding.cultural_elements ?? ""
   );
+  const [hasTeaCeremony, setHasTeaCeremony] = useState(
+    wedding.has_tea_ceremony ?? false
+  );
   const [venueCurfew, setVenueCurfew] = useState(wedding.venue_curfew ?? "");
   const [honeymoonDeparture, setHoneymoonDeparture] = useState(
     wedding.honeymoon_departure ?? ""
@@ -151,6 +155,7 @@ export function SettingsManager({ wedding, userEmail }: SettingsManagerProps) {
         reception_format: receptionFormat || null,
         color_palette: colors.length > 0 ? colors : null,
         cultural_elements: culturalElements || null,
+        has_tea_ceremony: hasTeaCeremony,
         venue_curfew: venueCurfew || null,
         honeymoon_departure: honeymoonDeparture || null,
       })
@@ -160,6 +165,16 @@ export function SettingsManager({ wedding, userEmail }: SettingsManagerProps) {
 
     if (!error) {
       setSaved(true);
+
+      // Eager tea-ceremony seed: if the couple just turned the cultural
+      // flag on, fire the seed now so the 5 pre-wedding tasks appear
+      // without them needing to navigate to /timeline first. Idempotent —
+      // safe to call when the flag was already on. We await so router.refresh()
+      // below picks up the new tasks immediately.
+      if (hasTeaCeremony && !wedding.tea_ceremony_seeded_at) {
+        await seedTeaCeremonyIfNeeded(wedding.id);
+      }
+
       router.refresh();
       setTimeout(() => setSaved(false), 3000);
 
@@ -488,12 +503,46 @@ export function SettingsManager({ wedding, userEmail }: SettingsManagerProps) {
             />
           </div>
 
-          {/* Cultural Elements */}
+          {/* Cultural Traditions — toggles unlock matching Tips / Schedule / Day-of cards */}
+          <div className="space-y-3">
+            <div>
+              <Label>Cultural traditions</Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Turn on what you're planning. We'll add matching tips, schedule
+                suggestions, and detail cards.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setHasTeaCeremony((v) => !v)}
+                className={`border rounded-lg p-3 text-left transition-colors hover:border-primary ${
+                  hasTeaCeremony
+                    ? "border-primary bg-primary/5 ring-1 ring-primary"
+                    : ""
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-xl leading-none">🍵</span>
+                  <div>
+                    <div className="font-medium text-sm">
+                      Chinese tea ceremony
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      敬茶 · Honor elders with tea
+                    </div>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Cultural Elements — free-text notes for anything not captured above */}
           <div className="space-y-2">
-            <Label htmlFor="culturalElements">Cultural Elements</Label>
+            <Label htmlFor="culturalElements">Other traditions (notes)</Label>
             <Textarea
               id="culturalElements"
-              placeholder="Hora, tea ceremony, jumping the broom, etc."
+              placeholder="Hora, jumping the broom, handfasting, etc."
               value={culturalElements}
               onChange={(e) => setCulturalElements(e.target.value)}
               rows={3}

@@ -56,6 +56,9 @@ export interface PreparationEntry {
   // Auto-hide this tip for couples whose venue is fully indoor. They
   // don't need rain plans or heat mitigation.
   hideWhenIndoor?: boolean;
+  // Cultural gate (A4): only shown when the couple has turned on Chinese
+  // tea ceremony in Settings. Keeps generic Tips clean for everyone else.
+  requiresTeaCeremony?: boolean;
 }
 
 // Each entry has a `lead` — a one-line summary shown by default.
@@ -226,6 +229,28 @@ export const THINGS_TO_PREPARE: PreparationEntry[] = [
     body: "Have a grocery store backup option identified in advance. Or skip the cake cutting entirely — genuinely, no one notices.",
     iconName: "Cake",
     timeframe: "day_of",
+  },
+
+  // ── Chinese tea ceremony (A4) — gated on weddings.has_tea_ceremony ──
+  {
+    id: "prep-tea-ceremony-planning",
+    title: "Chinese tea ceremony 敬茶",
+    lead: "Pin the elder serving order 3 weeks out — groom's side first, then bride's, eldest within each.",
+    body: "Serving order goes: groom's parents → groom's paternal elders (by age) → groom's maternal elders → bride's parents → bride's elders. Have someone (traditionally 大妗姐 / an auntie) call names and guide the bow. Rehearse once the night before so names aren't fumbled on the day. Pre-pour enough tea for everyone; keep one spare cup in case one cracks. If a parent has passed, some couples include a photo and a moment of silence instead — decide this together before the day.",
+    iconName: "Coffee",
+    timeframe: "weeks_out",
+    offsetWeeks: 3,
+    requiresTeaCeremony: true,
+  },
+  {
+    id: "prep-red-envelope-etiquette",
+    title: "Red envelope amounts 红包",
+    lead: "Avoid the number 4. Lucky numbers: 6, 8, 88, 168, 888. Stick to new bills.",
+    body: "Typical ranges (North America): $50-200 from peers, $100-500 from parents/close elders, $500+ from very close family or cultural expectation. Amounts reflect relationship closeness AND what the elder can afford — there's no single 'right' number. Lucky numbers: 6 (smooth), 8 (wealth), 9 (longevity). Avoid 4 (sounds like 死 death) and odd-even mixing (2, 4). Use crisp new bills from the bank — wrinkled cash implies afterthought. Prepare 2-3 extras in case unexpected elders show up. Have someone hold a 'red envelope runner' role so nothing gets left at the altar.",
+    iconName: "Gift",
+    timeframe: "weeks_out",
+    offsetWeeks: 2,
+    requiresTeaCeremony: true,
   },
 ];
 
