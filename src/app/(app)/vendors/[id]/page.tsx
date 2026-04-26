@@ -5,7 +5,7 @@ import { VendorDetail } from "@/components/vendors/vendor-detail";
 
 // Valid vendor type slugs
 const VENDOR_TYPES = new Set([
-  "photographer", "videographer", "dj", "band", "caterer", "florist",
+  "photographer", "videographer", "dj", "band", "mc", "caterer", "florist",
   "baker", "hair_makeup", "officiant", "rentals", "venue",
   "transportation", "coordinator", "photo_booth", "other",
 ]);
