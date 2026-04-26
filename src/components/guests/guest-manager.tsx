@@ -98,7 +98,6 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [filterRsvp, setFilterRsvp] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<"default" | "last" | "first" | "rsvp">("default");
   const [filterDietary, setFilterDietary] = useState<boolean>(false);
   const [showDialog, setShowDialog] = useState(false);
   const [showBulkDialog, setShowBulkDialog] = useState(false);
@@ -155,6 +154,13 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
   // Count of guests with dietary restrictions
   const dietaryCount = initialGuests.filter((g) => g.dietary_restrictions && g.dietary_restrictions.trim()).length;
 
+  // Hide the Meal/Dietary column entirely when nobody has data yet — the
+  // pre-RSVP state has 60 guests of "—" which wastes a third of the table.
+  // Once any guest has a meal_choice or dietary entry, the column reappears.
+  const hasAnyMealOrDietary = initialGuests.some(
+    (g) => (g.meal_choice && g.meal_choice.trim()) || (g.dietary_restrictions && g.dietary_restrictions.trim())
+  );
+
   // Filtered guests
   const filtered = initialGuests
     .filter((g) => {
@@ -166,14 +172,9 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
       return matchesSearch && matchesRsvp && matchesDietary;
     })
     .sort((a, b) => {
-      if (sortBy === "last") {
-        return `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`);
-      }
-      if (sortBy === "first") {
-        return `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`);
-      }
-      // "rsvp" and "default" both use RSVP priority; default is the smart
-      // action-order (pending first), which is what the couple usually wants.
+      // Smart order — pending first so the couple sees who still needs to be
+      // chased, then alphabetical within each status group. No user-facing
+      // sort control: filter handles narrowing, smart order handles ordering.
       const priority: Record<string, number> = {
         pending: 0,
         no_response: 1,
@@ -396,6 +397,9 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
         {initialGuests.length > 0 ? (
           <>
             <p className="text-sm text-muted-foreground mt-2">
+              Who&apos;s celebrating with you. Track invites, RSVPs, meals, and seating from one place.
+            </p>
+            <p className="text-sm text-muted-foreground mt-2">
               <span className="font-medium text-foreground/80">{initialGuests.length}</span> invited
               <span className="text-muted-foreground/50"> · </span>
               <span className="font-medium text-emerald-700">{confirmed}</span> confirmed
@@ -416,11 +420,18 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
                   <span className="text-muted-foreground/50"> · </span>
                   <span className="inline-flex items-center gap-1">
                     <UtensilsCrossed className="h-3 w-3" />
-                    <span className="font-medium text-foreground/80">{catererCount}</span> for caterer
-                    {vendorMealsTotal > 0 && (
-                      <span className="text-muted-foreground/70 text-xs">
-                        (incl. {vendorMealsTotal} vendor)
-                      </span>
+                    {catererGuestHeadcount === 0 ? (
+                      <>
+                        <span className="font-medium text-foreground/80">{vendorMealsTotal}</span> vendor meal{vendorMealsTotal === 1 ? "" : "s"} for caterer
+                      </>
+                    ) : vendorMealsTotal === 0 ? (
+                      <>
+                        <span className="font-medium text-foreground/80">{catererGuestHeadcount}</span> for caterer
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-medium text-foreground/80">{catererGuestHeadcount}</span> guest + <span className="font-medium text-foreground/80">{vendorMealsTotal}</span> vendor for caterer
+                      </>
                     )}
                   </span>
                 </>
@@ -503,19 +514,6 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        {initialGuests.length > 1 && (
-          <Select value={sortBy} onValueChange={(v) => v && setSortBy(v as typeof sortBy)}>
-            <SelectTrigger className="h-9 w-[170px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="default">Smart order</SelectItem>
-              <SelectItem value="last">Last name A-Z</SelectItem>
-              <SelectItem value="first">First name A-Z</SelectItem>
-              <SelectItem value="rsvp">RSVP status</SelectItem>
-            </SelectContent>
-          </Select>
-        )}
         <div className="flex items-center gap-2">
           {initialGuests.length > 0 && !selectMode && (
             <Button
@@ -677,28 +675,30 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
                   </DropdownMenu>
                 </th>
 
-                {/* Dietary column header with filter */}
-                <th className="text-left px-3 py-2.5">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger className={`inline-flex items-center gap-1 text-xs font-semibold tracking-[0.1em] uppercase transition-colors group ${filterDietary ? "text-primary" : "text-foreground/80 hover:text-foreground"}`}>
-                      {showMealChoice ? "Meal / Dietary" : "Dietary"}
-                      <ChevronDown className={`h-3 w-3 transition-opacity ${filterDietary ? "opacity-80" : "opacity-40 group-hover:opacity-80"}`} />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-52">
-                      <DropdownMenuItem onClick={() => setFilterDietary(false)} className="flex justify-between">
-                        <span>All</span>
-                        <span className="text-xs text-muted-foreground tabular-nums">{initialGuests.length}</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setFilterDietary(true)} className="flex justify-between">
-                        <span className="flex items-center gap-2">
-                          <AlertTriangle className="h-3 w-3 text-amber-600" />
-                          Has dietary needs
-                        </span>
-                        <span className="text-xs text-muted-foreground tabular-nums">{dietaryCount}</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </th>
+                {/* Dietary column header with filter — hidden until any guest has data */}
+                {hasAnyMealOrDietary && (
+                  <th className="text-left px-3 py-2.5">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className={`inline-flex items-center gap-1 text-xs font-semibold tracking-[0.1em] uppercase transition-colors group ${filterDietary ? "text-primary" : "text-foreground/80 hover:text-foreground"}`}>
+                        {showMealChoice ? "Meal / Dietary" : "Dietary"}
+                        <ChevronDown className={`h-3 w-3 transition-opacity ${filterDietary ? "opacity-80" : "opacity-40 group-hover:opacity-80"}`} />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-52">
+                        <DropdownMenuItem onClick={() => setFilterDietary(false)} className="flex justify-between">
+                          <span>All</span>
+                          <span className="text-xs text-muted-foreground tabular-nums">{initialGuests.length}</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setFilterDietary(true)} className="flex justify-between">
+                          <span className="flex items-center gap-2">
+                            <AlertTriangle className="h-3 w-3 text-amber-600" />
+                            Has dietary needs
+                          </span>
+                          <span className="text-xs text-muted-foreground tabular-nums">{dietaryCount}</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </th>
+                )}
 
                 <th className="text-right px-3 py-2.5 w-24"></th>
               </tr>
@@ -771,25 +771,27 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
                     </Select>
                   </td>
 
-                  {/* Meal + Dietary merged */}
-                  <td className="px-3 py-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {showMealChoice && guest.meal_choice && (
-                        <span className="text-sm text-foreground/80 capitalize">
-                          {guest.meal_choice}
-                        </span>
-                      )}
-                      {guest.dietary_restrictions && (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
-                          <AlertTriangle className="h-2.5 w-2.5" />
-                          {guest.dietary_restrictions}
-                        </span>
-                      )}
-                      {!guest.meal_choice && !guest.dietary_restrictions && (
-                        <span className="text-muted-foreground/40 text-sm">—</span>
-                      )}
-                    </div>
-                  </td>
+                  {/* Meal + Dietary merged — column hidden until any guest has data */}
+                  {hasAnyMealOrDietary && (
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {showMealChoice && guest.meal_choice && (
+                          <span className="text-sm text-foreground/80 capitalize">
+                            {guest.meal_choice}
+                          </span>
+                        )}
+                        {guest.dietary_restrictions && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                            <AlertTriangle className="h-2.5 w-2.5" />
+                            {guest.dietary_restrictions}
+                          </span>
+                        )}
+                        {!guest.meal_choice && !guest.dietary_restrictions && (
+                          <span className="text-muted-foreground/40 text-sm">—</span>
+                        )}
+                      </div>
+                    </td>
+                  )}
 
                   {/* Actions */}
                   <td className="px-3 py-3 text-right">
