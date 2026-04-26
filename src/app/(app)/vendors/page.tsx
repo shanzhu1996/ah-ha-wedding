@@ -44,7 +44,7 @@ export default async function VendorsPage() {
           Vendors
         </h1>
         <p className="text-sm text-muted-foreground mt-2">
-          Everyone helping you pull this off — photographer, caterer, florist, DJ, and so on. Track contacts, contracts, arrival times, and meals in one place.
+          Your wedding&apos;s working crew. Everything you need to track in one place.
         </p>
       </div>
       <VendorList

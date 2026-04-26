@@ -90,22 +90,28 @@ interface VendorListProps {
   paymentsByVendor?: Record<string, PaymentRow[]>;
 }
 
-// Small inline progress indicator — square per payment, filled when paid
+// Inline payment progress — dots paired with "{paid}/{total} paid" so the
+// signal is readable without needing to learn the dot legend. Tips excluded.
 function PaymentDots({ items }: { items: PaymentRow[] }) {
   if (!items || items.length === 0) return null;
-  // Exclude tips from the "contract paid" indicator
   const contractItems = items.filter((i) => i.item_type !== "tip");
   if (contractItems.length === 0) return null;
+  const paidCount = contractItems.filter((i) => i.paid).length;
   return (
-    <span className="mt-1 flex items-center gap-0.5">
-      {contractItems.map((i) => (
-        <span
-          key={i.id}
-          className={`inline-block h-1.5 w-1.5 rounded-sm ${
-            i.paid ? "bg-emerald-600" : "bg-muted-foreground/30"
-          }`}
-        />
-      ))}
+    <span className="mt-1 inline-flex items-center gap-1">
+      <span className="flex items-center gap-0.5">
+        {contractItems.map((i) => (
+          <span
+            key={i.id}
+            className={`inline-block h-1.5 w-1.5 rounded-sm ${
+              i.paid ? "bg-emerald-600" : "bg-muted-foreground/30"
+            }`}
+          />
+        ))}
+      </span>
+      <span className="text-[10px] text-muted-foreground tabular-nums">
+        {paidCount}/{contractItems.length} paid
+      </span>
     </span>
   );
 }

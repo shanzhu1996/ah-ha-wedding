@@ -49,6 +49,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { TimePicker } from "@/components/ui/time-picker";
 import {
@@ -469,6 +470,65 @@ function formatDate(date: Date): string {
 }
 
 // ---------------------------------------------------------------------------
+// Next-action helper — surfaces the most urgent unpaid payment so the
+// detail page opens with "what's owed and when" instead of a long form.
+// ---------------------------------------------------------------------------
+
+type ActionStatus = "overdue" | "today" | "soon" | "scheduled" | "no_date";
+
+function getPaymentNextAction(payments: PaymentItem[]): {
+  description: string;
+  amount: number;
+  dueLabel: string;
+  status: ActionStatus;
+} | null {
+  const unpaid = payments.filter((p) => !p.paid && p.item_type !== "tip");
+  if (unpaid.length === 0) return null;
+
+  const sorted = [...unpaid].sort((a, b) => {
+    if (!a.due_date && !b.due_date) return 0;
+    if (!a.due_date) return 1;
+    if (!b.due_date) return -1;
+    return a.due_date.localeCompare(b.due_date);
+  });
+  const next = sorted[0];
+
+  let dueLabel = "no due date set";
+  let status: ActionStatus = "no_date";
+
+  if (next.due_date) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(next.due_date + "T00:00:00");
+    const days = Math.round((due.getTime() - today.getTime()) / 86_400_000);
+    if (days < 0) {
+      const abs = Math.abs(days);
+      dueLabel = `${abs} day${abs === 1 ? "" : "s"} overdue`;
+      status = "overdue";
+    } else if (days === 0) {
+      dueLabel = "due today";
+      status = "today";
+    } else if (days === 1) {
+      dueLabel = "due tomorrow";
+      status = "soon";
+    } else if (days <= 14) {
+      dueLabel = `due in ${days} days`;
+      status = "soon";
+    } else {
+      dueLabel = `due ${formatDate(due)}`;
+      status = "scheduled";
+    }
+  }
+
+  return {
+    description: next.description,
+    amount: next.amount,
+    dueLabel,
+    status,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -596,6 +656,9 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initi
     VENDOR_COMMUNICATION_GUIDE[vendorType] ??
     VENDOR_COMMUNICATION_GUIDE.other;
 
+  // ---- Next action for booked vendors (most urgent unpaid payment) ----
+  const nextAction = !isNew ? getPaymentNextAction(initialPayments) : null;
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Back link */}
@@ -632,6 +695,44 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initi
           </Button>
         )}
       </div>
+
+      {/* Next-action callout — most urgent unpaid payment surfaced up top */}
+      {nextAction && (
+        <div
+          className={cn(
+            "rounded-xl border p-3.5 flex items-center gap-3",
+            nextAction.status === "overdue" &&
+              "border-destructive/40 bg-destructive/5",
+            nextAction.status === "today" &&
+              "border-amber-400/60 bg-amber-50",
+            (nextAction.status === "soon" ||
+              nextAction.status === "scheduled" ||
+              nextAction.status === "no_date") &&
+              "border-primary/30 bg-primary/[0.04]"
+          )}
+        >
+          <CircleDot
+            className={cn(
+              "h-4 w-4 shrink-0",
+              nextAction.status === "overdue" && "text-destructive",
+              nextAction.status === "today" && "text-amber-600",
+              (nextAction.status === "soon" ||
+                nextAction.status === "scheduled") &&
+                "text-primary",
+              nextAction.status === "no_date" && "text-muted-foreground"
+            )}
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold">
+              Next up
+            </p>
+            <p className="text-sm font-medium mt-0.5">
+              ${nextAction.amount.toLocaleString()}{" "}
+              {nextAction.description.toLowerCase()} · {nextAction.dueLabel}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Tabs — different for booked vs unbooked */}
       <Tabs defaultValue={isNew ? "questions" : "details"} className="space-y-6">
