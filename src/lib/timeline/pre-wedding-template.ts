@@ -85,6 +85,9 @@ const TASK_DEFINITIONS: TaskDef[] = [
   { exactDaysBefore: 30, title: "RSVP deadline", description: "The cutoff for guest responses. Everything after depends on the final count: headcount, seating, escort cards, menu.", link: "/guests" },
   { exactDaysBefore: 27, title: "Chase non-responders", description: "Call anyone who still hasn't RSVP'd. A direct phone call works better than another text.", link: "/guests" },
 
+  // ~3.5 weeks: vendor logistics prep before catering headcount
+  { exactDaysBefore: 26, title: "Confirm vendor meal counts", description: "Open each vendor and fill in the 'Vendor Meals Needed' field. Photographers, DJs, coordinators, videographers usually need a staff plate. The caterer needs the total in a few days.", link: "/vendors" },
+
   // ~3 weeks: finalize based on final count
   { exactDaysBefore: 21, title: "Submit final headcount to caterer", description: "Give the caterer the final number. Don't forget vendor meals — photographer, DJ, coordinator need to eat too.", link: "/vendors" },
   { exactDaysBefore: 21, title: "Finalize seating chart", description: "Finalize table assignments. Double-check dietary restrictions are noted for each table.", link: "/seating" },

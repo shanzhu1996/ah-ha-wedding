@@ -26,6 +26,7 @@ import {
   MessageSquare,
   Lightbulb,
   CircleDot,
+  Check,
   Plus,
   ShoppingCart,
   ArrowUpRight,
@@ -80,6 +81,7 @@ interface VendorData {
   dietary_notes: string | null;
   notes: string | null;
   extra_details: Record<string, unknown> | null;
+  comm_completed_steps: string[];
 }
 
 interface CoveredShoppingItem {
@@ -561,6 +563,25 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initi
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [completedSteps, setCompletedSteps] = useState<string[]>(
+    vendor?.comm_completed_steps ?? []
+  );
+
+  // Toggle a Communication Guide milestone done/undone — stored as the
+  // `when` string ("After booking", "1 month before") so completion
+  // survives template reordering.
+  async function toggleCommStep(when: string) {
+    if (!vendor) return;
+    const next = completedSteps.includes(when)
+      ? completedSteps.filter((s) => s !== when)
+      : [...completedSteps, when];
+    setCompletedSteps(next);
+    const supabase = createClient();
+    await supabase
+      .from("vendors")
+      .update({ comm_completed_steps: next })
+      .eq("id", vendor.id);
+  }
 
   // ---- Save (create or update) ----
   async function handleSave() {
@@ -1062,9 +1083,8 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initi
         {/* ============================================================= */}
         <TabsContent value="communication" className="space-y-6">
           <p className="text-sm text-muted-foreground">
-            A recommended communication timeline for your{" "}
-            {config.label.toLowerCase()}. Stay on top of key touchpoints so
-            nothing falls through the cracks.
+            From booking through the wedding day — touch base with your{" "}
+            {config.label.toLowerCase()} at each milestone.
           </p>
 
           {/* Vertical timeline */}
@@ -1075,14 +1095,32 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initi
             <div className="space-y-6">
               {commGuide.map((step, i) => {
                 const resolvedDate = resolveDate(weddingDate, step.when);
+                const isDone = completedSteps.includes(step.when);
+                const canToggle = !!vendor;
                 return (
                   <div key={i} className="relative">
-                    {/* Dot */}
-                    <div className="absolute -left-8 top-1 flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 border-primary bg-background">
-                      <CircleDot className="h-3 w-3 text-primary" />
-                    </div>
+                    {/* Toggle dot — click to mark done */}
+                    <button
+                      type="button"
+                      onClick={() => canToggle && toggleCommStep(step.when)}
+                      disabled={!canToggle}
+                      aria-label={isDone ? "Mark as not done" : "Mark as done"}
+                      className={cn(
+                        "absolute -left-8 top-1 flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 bg-background transition-colors",
+                        isDone
+                          ? "border-emerald-600 bg-emerald-600 hover:bg-emerald-700"
+                          : "border-primary hover:bg-primary/10",
+                        canToggle ? "cursor-pointer" : "cursor-default"
+                      )}
+                    >
+                      {isDone ? (
+                        <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                      ) : (
+                        <CircleDot className="h-3 w-3 text-primary" />
+                      )}
+                    </button>
 
-                    <Card>
+                    <Card className={cn(isDone && "opacity-60")}>
                       <CardContent className="pt-4 pb-4">
                         <div className="flex flex-wrap items-center gap-2 mb-1">
                           <Badge variant="outline" className="text-xs">
@@ -1094,7 +1132,12 @@ export function VendorDetail({ vendor, vendorType, weddingId, weddingDate, initi
                             </span>
                           )}
                         </div>
-                        <p className="font-semibold text-sm mt-1">
+                        <p
+                          className={cn(
+                            "font-semibold text-sm mt-1",
+                            isDone && "line-through text-muted-foreground"
+                          )}
+                        >
                           {step.what}
                         </p>
                         {step.tip && (
