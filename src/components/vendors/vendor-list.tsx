@@ -202,12 +202,21 @@ export function VendorList({ vendors: initialVendors, weddingId, paymentsByVendo
 
   return (
     <>
-      {/* ===== BOOKED VENDORS ===== */}
+      {/* ===== YOUR VENDORS ===== */}
       {(bookedStandard.length > 0 || bookedCustom.length > 0) && (
         <div className="space-y-3">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            Booked Vendors
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-muted-foreground">
+              Your vendors
+            </h2>
+            <button
+              onClick={() => { resetForm(); setShowDialog(true); }}
+              className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-1"
+            >
+              <Plus className="h-3 w-3" />
+              Add custom
+            </button>
+          </div>
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
             {bookedStandard.map((vendor) => {
               const config = vendorTypeConfig[vendor.type as VendorType] || vendorTypeConfig.other;
@@ -277,22 +286,13 @@ export function VendorList({ vendors: initialVendors, weddingId, paymentsByVendo
               </button>
             ))}
           </div>
-
-          {/* + Custom vendor link */}
-          <button
-            onClick={() => { resetForm(); setShowDialog(true); }}
-            className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-1"
-          >
-            <Plus className="h-3 w-3" />
-            Add custom vendor
-          </button>
         </div>
       )}
 
-      {/* ===== OTHER VENDORS (unbooked) ===== */}
+      {/* ===== ADD BY CATEGORY (unbooked vendor types) ===== */}
       <div className="space-y-3">
         <h2 className="text-sm font-medium text-muted-foreground">
-          {initialVendors.length > 0 ? "Other Vendors" : "Get Started — Tap any vendor to see what to ask and when to communicate"}
+          {initialVendors.length > 0 ? "Add by category" : "Get started — tap any category to see what to ask and when to communicate"}
         </h2>
         <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
           {unbookedTypes.map(([key, config]) => {
