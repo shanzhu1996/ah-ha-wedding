@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { getCurrentWedding } from "@/lib/supabase/queries";
+import { getCurrentWedding, getWeddingStats } from "@/lib/supabase/queries";
 import { sections, type SectionKey } from "@/lib/nav-config";
 import { SectionHub } from "@/components/layout/section-hub";
 
@@ -19,8 +19,9 @@ export default async function SectionPage({
   const wedding = await getCurrentWedding();
   if (!wedding) redirect("/onboarding");
 
+  const stats = await getWeddingStats(wedding.id);
   const visits: Record<string, string> =
     (wedding.tool_visits as Record<string, string>) ?? {};
 
-  return <SectionHub section={section} visits={visits} />;
+  return <SectionHub section={section} visits={visits} stats={stats} />;
 }

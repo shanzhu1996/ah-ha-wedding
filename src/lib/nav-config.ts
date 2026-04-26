@@ -69,7 +69,7 @@ export const sections: Section[] = [
     tabLabel: "People",
     question: "Who's involved?",
     description:
-      "Before you plan anything, know two things: who's helping you and who's celebrating with you.",
+      "It starts with two groups: who's pulling this off with you, and who's there to celebrate.",
     icon: Users,
     items: [
       { href: "/vendors", icon: Users, label: "Vendors", tagline: "Who's helping you?" },
