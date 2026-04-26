@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -15,7 +15,6 @@ import {
   ChevronRight,
   UtensilsCrossed,
   X,
-  Lightbulb,
   AlertTriangle,
   CheckSquare,
 } from "lucide-react";
@@ -113,7 +112,6 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showContactSection, setShowContactSection] = useState(false);
-  const [rsvpTipDismissed, setRsvpTipDismissed] = useState(true);
 
   // Form state
   const [firstName, setFirstName] = useState("");
@@ -130,11 +128,6 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
   const [notes, setNotes] = useState("");
 
   const showMealChoice = !NON_PLATED_FORMATS.includes(receptionFormat ?? "");
-
-  // Check localStorage for RSVP tip dismissal
-  useEffect(() => {
-    setRsvpTipDismissed(localStorage.getItem("ahha-rsvp-tip-dismissed") === "true");
-  }, []);
 
   // Stats
   const confirmed = initialGuests.filter((g) => g.rsvp_status === "confirmed").length;
@@ -381,11 +374,6 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
     router.refresh();
   }
 
-  function dismissRsvpTip() {
-    localStorage.setItem("ahha-rsvp-tip-dismissed", "true");
-    setRsvpTipDismissed(true);
-  }
-
   return (
     <TooltipProvider>
       <div className="space-y-8">
@@ -453,28 +441,6 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
         )}
       </div>
 
-      {/* RSVP Connection Tip — understated, warm palette */}
-      {!rsvpTipDismissed && initialGuests.length > 0 && (
-        <div className="flex items-center gap-2.5 pl-3 pr-2 py-2 rounded-md bg-primary/[0.04] border border-primary/15 text-sm">
-          <Lightbulb className="h-3.5 w-3.5 text-primary shrink-0" />
-          <p className="text-xs text-foreground/80 flex-1">
-            Want guests to RSVP online? Add a form to your wedding website.
-          </p>
-          <Link
-            href="/website"
-            className="text-xs font-medium text-primary hover:underline whitespace-nowrap"
-          >
-            Build it &rarr;
-          </Link>
-          <button
-            type="button"
-            onClick={dismissRsvpTip}
-            className="text-muted-foreground/60 hover:text-foreground transition-colors p-1"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-      )}
 
       {/* Bulk Add Success + Undo */}
       {bulkSuccessCount !== null && (
