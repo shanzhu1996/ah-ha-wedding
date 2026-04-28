@@ -13,9 +13,11 @@ import {
   Lamp,
   Camera,
   Sparkles,
+  Scissors,
+  Heart,
+  Coffee,
   Trash2,
   ExternalLink,
-  Lightbulb,
   ImagePlus,
   ChevronRight,
 } from "lucide-react";
@@ -48,6 +50,7 @@ interface MoodboardManagerProps {
   weddingDate: string | null;
   venueName: string | null;
   weddingStyle: string | null;
+  hasTeaCeremony: boolean;
 }
 
 // Fix 10: Reordered to match vendor meeting sequence
@@ -59,7 +62,8 @@ const SECTIONS = [
     key: "color_palette",
     title: "Color Palette",
     icon: Palette,
-    shareWith: "Florist, Coordinator",
+    shareWith: "Florist, Coordinator, Photographer",
+    scope: "hero color, 2-3 complementary shades",
     tip: "Start with one color you love, then pick 2-3 complementary shades.",
     question: "What's your hero color? Do you prefer warm or cool tones?",
     pinterestSearch: "wedding color palette inspiration",
@@ -70,11 +74,12 @@ const SECTIONS = [
   },
   {
     key: "venue_setting",
-    title: "Venue & Setting",
+    title: "Venue",
     icon: Building,
-    shareWith: "Coordinator",
-    tip: "Photograph your actual venue from different angles and times of day.",
-    question: "Indoor, outdoor, or both? What's the natural light like?",
+    shareWith: "Coordinator, Florist, Photographer",
+    scope: "the empty space from all angles and times of day",
+    tip: "Photograph the space as it is — empty, all angles, all times of day. Bones, not decor.",
+    question: "Indoor or outdoor? What's the light, the layout, the vibe of the empty space?",
     pinterestSearch: "wedding venue decor inspiration",
     maxImages: 5,
     suggestedCount: "3-5",
@@ -82,23 +87,54 @@ const SECTIONS = [
     notePlaceholder: "Notes about your venue — what you love about the space, any constraints?",
   },
   {
+    key: "tea_ceremony",
+    title: "Tea Ceremony",
+    icon: Coffee,
+    shareWith: "Coordinator, Florist, Photographer, Rentals",
+    scope: "tea set, qipao, 囍 decorations, kneeling cushions",
+    tip: "Show parents reference photos to align — red lacquer or modern porcelain, traditional or minimal staging.",
+    question: "Tea set style, kneeling cushions, qipao/kua, 囍 backdrop, ancestor altar, gift display?",
+    pinterestSearch: "Chinese tea ceremony 茶礼 wedding inspiration",
+    maxImages: 6,
+    suggestedCount: "4-6",
+    priority: false,
+    teaCeremonyOnly: true,
+    notePlaceholder: "Notes for your coordinator & florist — tea set, layout, parents' seating, kneeling cushions, gift display.",
+  },
+  {
     key: "florals",
-    title: "Florals & Greenery",
+    title: "Personal Flowers",
     icon: Flower2,
     shareWith: "Florist",
-    tip: "In-season flowers are 2-3x cheaper. Ask your florist what's available.",
-    question: "Loose & wild or tight & structured? Any must-have flowers?",
-    pinterestSearch: "wedding bouquet centerpiece inspiration",
-    maxImages: 8,
-    suggestedCount: "5-8",
+    scope: "bouquets, boutonnieres, parents' flowers, flower girl petals",
+    tip: "Bouquets, boutonnieres, corsages — what you and your party carry. In-season flowers are 2-3x cheaper.",
+    question: "Bouquet style, boutonnieres, corsages, flower girl petals — what personal flowers do you carry?",
+    pinterestSearch: "wedding bouquet boutonniere corsage inspiration",
+    maxImages: 6,
+    suggestedCount: "4-6",
     priority: true,
-    notePlaceholder: "Notes for your florist — what do you love or want to avoid?",
+    notePlaceholder: "Notes for your florist — bouquet shape, must-have stems, anything to avoid?",
+  },
+  {
+    key: "ceremony_setup",
+    title: "Ceremony Setup",
+    icon: Heart,
+    shareWith: "Florist, Coordinator, Officiant, Rentals",
+    scope: "arch, aisle decor, ceremony chairs, welcome board, sign-in table",
+    tip: "Most photographed 30 minutes of the day — and the biggest single floral spend. Lock the visual early.",
+    question: "Arch, chuppah, mandap, arbor? Aisle treatment, processional layout, what's behind you in every photo?",
+    pinterestSearch: "wedding ceremony arch altar aisle inspiration",
+    maxImages: 5,
+    suggestedCount: "3-5",
+    priority: true,
+    notePlaceholder: "Notes for florist & coordinator — arch style, aisle decor, processional layout, ritual props.",
   },
   {
     key: "photo_style",
-    title: "Photography Style",
+    title: "Photo Style",
     icon: Camera,
-    shareWith: "Photographer",
+    shareWith: "Photographer, Videographer",
+    scope: "wedding photo style you love",
     tip: "Include reference photos showing the editing style you love.",
     question: "Light & airy, moody & cinematic, or documentary?",
     pinterestSearch: "wedding photography style light airy moody",
@@ -109,22 +145,38 @@ const SECTIONS = [
   },
   {
     key: "attire",
-    title: "Attire & Accessories",
+    title: "Attire",
     icon: Shirt,
-    shareWith: "Hair & Makeup",
-    tip: "Include hair and accessories — think about how it all looks together.",
-    question: "What silhouette? Any cultural elements?",
+    shareWith: "Stylist, Tailor",
+    scope: "silhouette, fabric, accessories, second look",
+    tip: "Bring photos to fittings — silhouette, neckline, fabric drape are easier shown than described. Include shoes, jewelry, headpiece if they shape the look.",
+    question: "What silhouette? Any cultural pieces (qipao, kua, sherwani, second look)?",
     pinterestSearch: "wedding outfit accessories inspiration",
     maxImages: 5,
     suggestedCount: "3-5",
     priority: false,
-    notePlaceholder: "Notes for your stylist — overall look, accessories, cultural elements?",
+    notePlaceholder: "Notes on attire — silhouette, neckline, accessories, cultural pieces, second-look ideas.",
+  },
+  {
+    key: "hair_makeup",
+    title: "Hair & Makeup",
+    icon: Scissors,
+    shareWith: "Hair & Makeup Artist",
+    scope: "complete bridal looks",
+    tip: "\"Natural\" means 5 different things. Show specific looks — hair texture, eye/lip intensity, skin finish.",
+    question: "Updo or down? Bold or soft? Any specific skin-tone or eye-shape references?",
+    pinterestSearch: "wedding hair makeup bridal beauty",
+    maxImages: 6,
+    suggestedCount: "4-6",
+    priority: false,
+    notePlaceholder: "Notes for your HMUA — products that work for your skin, allergies, second-look hair.",
   },
   {
     key: "tablescape",
     title: "Tablescape",
     icon: UtensilsCrossed,
-    shareWith: "Caterer, Rentals, Coordinator",
+    shareWith: "Caterer, Rentals, Florist, Coordinator",
+    scope: "place settings, linens, centerpieces, table numbers",
     tip: "Guests stare at this for 2+ hours. Include place setting details.",
     question: "Round or long tables? What vibe — minimal or layered?",
     pinterestSearch: "wedding table setting centerpiece",
@@ -135,9 +187,10 @@ const SECTIONS = [
   },
   {
     key: "cake_desserts",
-    title: "Cake & Desserts",
+    title: "Cake",
     icon: Cake,
-    shareWith: "Baker",
+    shareWith: "Baker, Florist",
+    scope: "cake design, tiers, dessert table",
     tip: "Show your baker 3-5 reference cakes. Note what you like about each.",
     question: "Fondant or buttercream? How many tiers? Any flavors in mind?",
     pinterestSearch: "wedding cake design ideas",
@@ -148,9 +201,10 @@ const SECTIONS = [
   },
   {
     key: "stationery",
-    title: "Stationery & Paper",
+    title: "Stationery",
     icon: Mail,
-    shareWith: "Coordinator",
+    shareWith: "Coordinator, Florist",
+    scope: "invitations, menus, table numbers, programs",
     tip: "Your stationery sets the tone before guests arrive.",
     question: "Modern & clean or vintage & textured? Handwritten or printed?",
     pinterestSearch: "wedding invitation suite design",
@@ -161,9 +215,10 @@ const SECTIONS = [
   },
   {
     key: "lighting",
-    title: "Lighting & Ambiance",
+    title: "Lighting",
     icon: Lamp,
     shareWith: "DJ, Coordinator, Venue",
+    scope: "string lights, uplighting, candlelight",
     tip: "Lighting transforms a space, especially for evening receptions.",
     question: "String lights, candles, uplighting, or natural light?",
     pinterestSearch: "wedding lighting string lights ambiance",
@@ -173,22 +228,57 @@ const SECTIONS = [
     notePlaceholder: "Notes for your venue & coordinator — lighting vibe, candle preferences, restrictions?",
   },
   {
-    key: "details",
-    title: "Details & Personal Touches",
+    key: "reception_setup",
+    title: "Reception Setup",
     icon: Sparkles,
-    shareWith: "Coordinator",
-    tip: "The little things people remember. Make it uniquely yours.",
-    question: "Favors, guest book style, signage, personal touches?",
-    pinterestSearch: "wedding details favors guest book ideas",
-    maxImages: 5,
-    suggestedCount: "3-5",
+    shareWith: "Florist, Coordinator, Rentals",
+    scope: "sweetheart table, escort card display, cake table, bar",
+    tip: "The styled focal points beyond guest tables — what guests photograph and remember.",
+    question: "Welcome board, sweetheart table, escort card display, cake table, photo backdrop, sign-in table?",
+    pinterestSearch: "wedding reception welcome board sweetheart table backdrop",
+    maxImages: 6,
+    suggestedCount: "4-6",
     priority: false,
-    notePlaceholder: "Notes for your coordinator — personal touches, DIY elements, special items?",
+    notePlaceholder: "Notes for florist & coordinator — which focal points matter most, any signage details, layout constraints?",
   },
 ];
 
-const PRIORITY_SECTIONS = SECTIONS.filter((s) => s.priority);
-const MORE_SECTIONS = SECTIONS.filter((s) => !s.priority);
+// 3 conceptual groups, each collapsible (tier-1). Sections inside are
+// independently collapsible (tier-2). Tea Ceremony lives under "The Day"
+// but is conditionally hidden via teaCeremonyOnly on the section.
+//
+// Single-axis categorization is fundamentally lossy for weddings (florals
+// appear in cake, tablescape, ceremony, etc.) — we accept that and use
+// per-section shareWith as the multi-vendor tag, treating these groups
+// purely as a navigation aid.
+const GROUPS = [
+  {
+    key: "vibe",
+    label: "The Vibe",
+    sections: ["color_palette", "photo_style"],
+  },
+  {
+    key: "day",
+    label: "The Day",
+    sections: [
+      "venue_setting",
+      "ceremony_setup",
+      "reception_setup",
+      "tablescape",
+      "lighting",
+      "tea_ceremony",
+      "cake_desserts",
+      "stationery",
+    ],
+  },
+  {
+    key: "newlyweds",
+    label: "The Newlyweds",
+    sections: ["attire", "hair_makeup", "florals"],
+  },
+] as const;
+
+type GroupKey = typeof GROUPS[number]["key"];
 
 export function MoodboardManager({
   sections: initialSections,
@@ -198,24 +288,54 @@ export function MoodboardManager({
   weddingDate,
   venueName,
   weddingStyle,
+  hasTeaCeremony,
 }: MoodboardManagerProps) {
+  // Hide tea-ceremony-only sections for couples who haven't opted into it.
+  const visibleSections = SECTIONS.filter(
+    (s) => !("teaCeremonyOnly" in s && s.teaCeremonyOnly) || hasTeaCeremony
+  );
+  const visibleSectionKeys = new Set(visibleSections.map((s) => s.key));
+
+  // Each group's sections list is filtered against visibleSections so a
+  // non-Chinese wedding sees a 7-section "The Day" group instead of 8.
+  const groupsWithSections = GROUPS.map((g) => ({
+    ...g,
+    sectionDefs: g.sections
+      .filter((key) => visibleSectionKeys.has(key))
+      .map((key) => visibleSections.find((s) => s.key === key)!)
+      .filter(Boolean),
+  }));
+
+  // Groups always expanded by default — auto-collapsing empty groups
+  // creates discovery blind spots ("where did Tablescape go?"). The
+  // per-section logic already keeps the page short by collapsing
+  // image-less sections to their header. Group collapse is reserved for
+  // manual focus ("I'm done with The Vibe, collapse it to focus on The
+  // Day").
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<GroupKey>>(
+    new Set()
+  );
+  function toggleGroup(key: GroupKey) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
   const router = useRouter();
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [showUrlInput, setShowUrlInput] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState("");
   const [uploading, setUploading] = useState<string | null>(null);
 
-  // Fix 2: Sections with images auto-expand; empty sections collapsed
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => {
-    const expanded = new Set<string>();
-    // Auto-expand sections that have images
-    initialSections.forEach((s) => {
-      if (s.moodboard_images?.length > 0) expanded.add(s.section_key);
-    });
-    // Always expand priority sections
-    PRIORITY_SECTIONS.forEach((s) => expanded.add(s.key));
-    return expanded;
-  });
+  // All sections start collapsed — the per-section image count badge
+  // (rendered in the header) tells users where their work lives, so
+  // they expand only what they want to see/edit. Cleaner overview vs
+  // auto-expanding everything-with-images.
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(
+    new Set()
+  );
 
   function toggleSection(key: string) {
     setExpandedSections((prev) => {
@@ -425,7 +545,7 @@ export function MoodboardManager({
       : "";
 
     // Build section pages — one per section with images
-    const sectionPages = SECTIONS.map((def) => {
+    const sectionPages = visibleSections.map((def) => {
       const section = sectionMap.get(def.key);
       const images = section?.moodboard_images || [];
       if (images.length === 0) return "";
@@ -570,49 +690,59 @@ export function MoodboardManager({
 
     return (
       <div key={def.key}>
-        {/* Section header — clickable to expand/collapse */}
+        {/* Section header — clickable to expand/collapse.
+            Title row holds title + Browse ideas; Share with sits on its own
+            line below. Image count "X of Y" was dropped — the grid speaks
+            for itself, and the count framed an arbitrary cap as a goal. */}
         <button
           onClick={() => toggleSection(def.key)}
-          className="w-full flex items-center gap-3 py-3 text-left group/header hover:bg-muted/20 rounded-lg px-2 -mx-2 transition-colors"
+          className="w-full flex items-start gap-3 py-3 text-left group/header hover:bg-muted/20 rounded-lg px-2 -mx-2 transition-colors"
         >
-          <ChevronRight className={cn("h-4 w-4 text-muted-foreground/60 transition-transform shrink-0", isExpanded && "rotate-90")} />
-          <Icon className="h-4 w-4 text-primary/70 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
+          <ChevronRight className={cn("h-4 w-4 text-muted-foreground/60 transition-transform shrink-0 mt-0.5", isExpanded && "rotate-90")} />
+          <Icon className="h-4 w-4 text-primary/70 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0 space-y-0.5">
+            <div className="flex items-start justify-between gap-2">
               <span className="text-sm font-semibold text-foreground">{def.title}</span>
-              {/* Fix 11: Image count with guidance */}
-              <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
-                {images.length} of {def.maxImages}
-                              </span>
-              <span className="text-[11px] font-medium text-foreground/60">
-                Share with: {def.shareWith}
+              <span className="inline-flex items-center gap-2 shrink-0">
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-0.5 text-[11px] font-medium tabular-nums",
+                    images.length > 0
+                      ? "text-primary/80"
+                      : "text-muted-foreground/50"
+                  )}
+                >
+                  <ImagePlus className="h-3 w-3" />
+                  {images.length}
+                </span>
+                <a
+                  href={`https://www.pinterest.com/search/pins/?q=${encodeURIComponent(def.pinterestSearch)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  Browse ideas →
+                </a>
               </span>
             </div>
+            <div className="text-[11px] font-medium text-muted-foreground">
+              Share with: {def.shareWith}
+            </div>
           </div>
-          <a
-            href={`https://www.pinterest.com/search/pins/?q=${encodeURIComponent(def.pinterestSearch)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="text-xs font-medium text-primary hover:underline shrink-0"
-          >
-            Browse ideas →
-          </a>
         </button>
 
         {/* Expanded content */}
         {isExpanded && (
           <div className="pl-9 space-y-3 pb-4">
-            {/* Fix 4: Tip with better contrast */}
-            <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-              <Lightbulb className="h-3 w-3 text-primary/60 shrink-0" />
-              {def.tip}
-            </p>
-
-            {/* Fix 7: Guiding question when few images */}
-            {images.length < 2 && (
-              <p className="text-sm italic text-muted-foreground">
-                {def.question}
+            {/* Scope as in-body guidance — replaces the previous tip field,
+                which was redundant with the title and inconsistent in voice
+                across sections. The "Including: …" line tells couples
+                exactly what kinds of images go in the section. */}
+            {"scope" in def && def.scope && (
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground/80">Including:</span>{" "}
+                {def.scope as string}.
               </p>
             )}
 
@@ -755,10 +885,20 @@ export function MoodboardManager({
           </h1>
           <p className="text-sm text-muted-foreground mt-2">
             <span className="font-medium text-foreground/80">{totalImages}</span> image{totalImages !== 1 ? "s" : ""}
-            <span className="text-muted-foreground/50"> · </span>
-            <span className="font-medium text-foreground/80">
-              {SECTIONS.filter((s) => (sectionMap.get(s.key)?.moodboard_images?.length || 0) > 0).length}
-            </span> of {SECTIONS.length} sections planned
+            {(() => {
+              const usedSections = visibleSections.filter(
+                (s) => (sectionMap.get(s.key)?.moodboard_images?.length || 0) > 0
+              ).length;
+              if (usedSections === 0) return null;
+              return (
+                <>
+                  <span className="text-muted-foreground/50"> · </span>
+                  <span className="font-medium text-foreground/80 tabular-nums">
+                    {usedSections === visibleSections.length ? visibleSections.length : `${usedSections}/${visibleSections.length}`}
+                  </span> sections
+                </>
+              );
+            })()}
           </p>
         </div>
         {totalImages > 0 && (
@@ -771,7 +911,7 @@ export function MoodboardManager({
 
       {/* Brief explanation */}
       <p className="text-sm text-muted-foreground max-w-xl leading-relaxed">
-        Collect images that show your style — colors, flowers, table settings, lighting. Share this with your vendors so everyone designs toward the same vision.
+        How it looks, in pictures. Share with vendors so they design toward the same vision.
       </p>
 
       {/* Fix 3: Wedding Vibe — hero element */}
@@ -791,26 +931,51 @@ export function MoodboardManager({
         />
       </div>
 
-      {/* Fix 6: Priority sections — "Start with these" */}
-      <div className="space-y-1">
-        {PRIORITY_SECTIONS.map((def) => renderSection(def))}
-      </div>
+      {/* 2-tier accordion: group header (clickable) → sections inside (each
+          independently collapsible). Single-axis categorization is lossy
+          for weddings, so groups are nav aid; the multi-vendor shareWith
+          on each section captures cross-cutting relationships. */}
+      <div className="space-y-6">
+        {groupsWithSections.map((group) => {
+          const isCollapsed = collapsedGroups.has(group.key);
+          const sectionsWithImages = group.sectionDefs.filter(
+            (def) => (sectionMap.get(def.key)?.moodboard_images?.length || 0) > 0
+          ).length;
+          return (
+            <div key={group.key} className="space-y-1">
+              {/* Group header */}
+              <button
+                type="button"
+                onClick={() => toggleGroup(group.key)}
+                className="w-full flex items-center gap-2 py-2 group/grouphdr"
+              >
+                <ChevronRight
+                  className={cn(
+                    "h-3.5 w-3.5 text-muted-foreground/70 transition-transform shrink-0",
+                    !isCollapsed && "rotate-90"
+                  )}
+                />
+                <h2 className="text-base font-[family-name:var(--font-heading)] tracking-tight text-foreground">
+                  {group.label}
+                </h2>
+                <span className="text-[11px] text-muted-foreground/70 tabular-nums">
+                  {sectionsWithImages > 0
+                    ? `${sectionsWithImages}/${group.sectionDefs.length}`
+                    : group.sectionDefs.length}
+                </span>
+                <div className="flex-1 h-px bg-border/40 ml-2" />
+              </button>
 
-      {/* More sections divider */}
-      {MORE_SECTIONS.length > 0 && (
-        <div className="space-y-1">
-          <div className="flex items-center gap-3 pt-2 pb-1">
-            <span className="text-xs font-semibold tracking-[0.1em] uppercase text-foreground/60">
-              More sections
-            </span>
-            <div className="flex-1 h-px bg-border/50" />
-            <span className="text-[11px] text-muted-foreground">
-              {MORE_SECTIONS.length} categories — add as you go
-            </span>
-          </div>
-          {MORE_SECTIONS.map((def) => renderSection(def))}
-        </div>
-      )}
+              {/* Sections inside */}
+              {!isCollapsed && (
+                <div className="space-y-1 pl-1">
+                  {group.sectionDefs.map((def) => renderSection(def))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

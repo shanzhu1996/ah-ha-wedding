@@ -23,6 +23,7 @@ export default async function MoodboardPage() {
       weddingDate={wedding.wedding_date}
       venueName={wedding.venue_name}
       weddingStyle={wedding.style}
+      hasTeaCeremony={!!wedding.has_tea_ceremony}
     />
   );
 }
