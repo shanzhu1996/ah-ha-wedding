@@ -17,6 +17,8 @@ import {
   Disc3,
   Music2,
   Mic,
+  Link2,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +44,7 @@ interface Song {
   notes: string | null;
   is_do_not_play: boolean;
   sort_order: number;
+  source_url: string | null;
   created_at: string;
 }
 
@@ -205,6 +208,19 @@ export function MusicManager({
   const [artist, setArtist] = useState("");
   const [notes, setNotes] = useState("");
 
+  // Import-from-link state. Open per-phase from "Add from link" button;
+  // step 1 = paste URL, step 2 = preview tracks (with already-in-phase
+  // tracks marked as dup), confirm to bulk-insert non-dups.
+  const [showImport, setShowImport] = useState(false);
+  const [importPhase, setImportPhase] = useState<string>("");
+  const [importUrl, setImportUrl] = useState("");
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importPreview, setImportPreview] = useState<
+    { song_title: string; artist: string; source_url: string; isDup: boolean }[]
+  >([]);
+  const [importInserting, setImportInserting] = useState(false);
+
   const doNotPlaySongs = initialSongs.filter((s) => s.is_do_not_play);
   const phasesPlanned = ALL_PHASES.filter((p) => songsForPhase(p.value).length > 0).length;
 
@@ -278,6 +294,91 @@ export function MusicManager({
   async function handleDelete(id: string) {
     const supabase = createClient();
     await supabase.from("music_selections").delete().eq("id", id);
+    router.refresh();
+  }
+
+  function openImportDialog(phase: string) {
+    setImportPhase(phase);
+    setImportUrl("");
+    setImportError(null);
+    setImportPreview([]);
+    setShowImport(true);
+  }
+
+  async function handleImportPreview() {
+    const url = importUrl.trim();
+    if (!url) return;
+    setImportLoading(true);
+    setImportError(null);
+    setImportPreview([]);
+    try {
+      const res = await fetch("/api/music/import-youtube", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setImportError(data.error || `Error ${res.status}`);
+        return;
+      }
+      // Mark already-imported tracks (same source_url, same phase, this
+      // wedding) so we don't insert duplicates on confirm.
+      const existingUrls = new Set(
+        initialSongs
+          .filter(
+            (s) => s.phase === importPhase || importPhase === "do_not_play"
+          )
+          .filter((s) =>
+            importPhase === "do_not_play" ? s.is_do_not_play : !s.is_do_not_play
+          )
+          .map((s) => s.source_url)
+          .filter((u): u is string => !!u)
+      );
+      setImportPreview(
+        (
+          data.items as {
+            song_title: string;
+            artist: string;
+            source_url: string;
+          }[]
+        ).map((t) => ({
+          ...t,
+          isDup: existingUrls.has(t.source_url),
+        }))
+      );
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function handleImportConfirm() {
+    const newTracks = importPreview.filter((t) => !t.isDup);
+    if (newTracks.length === 0) {
+      setShowImport(false);
+      return;
+    }
+    setImportInserting(true);
+    const supabase = createClient();
+    const isDoNotPlay = importPhase === "do_not_play";
+    const existingCount = (
+      isDoNotPlay ? doNotPlaySongs : songsForPhase(importPhase)
+    ).length;
+    const rows = newTracks.map((t, idx) => ({
+      wedding_id: weddingId,
+      phase: importPhase,
+      song_title: t.song_title,
+      artist: t.artist,
+      notes: null,
+      is_do_not_play: isDoNotPlay,
+      sort_order: existingCount + idx,
+      source_url: t.source_url,
+    }));
+    await supabase.from("music_selections").insert(rows);
+    setImportInserting(false);
+    setShowImport(false);
     router.refresh();
   }
 
@@ -429,13 +530,22 @@ export function MusicManager({
               </div>
             )}
 
-            <button
-              onClick={() => openAddDialog(phase.value)}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors mt-1"
-            >
-              <Plus className="h-3 w-3" />
-              Add song
-            </button>
+            <div className="flex items-center gap-4 mt-1">
+              <button
+                onClick={() => openAddDialog(phase.value)}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+                Add song
+              </button>
+              <button
+                onClick={() => openImportDialog(phase.value)}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Link2 className="h-3 w-3" />
+                Add from YouTube
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -542,13 +652,22 @@ export function MusicManager({
                   {doNotPlaySongs.map((song, idx) => renderSongRow(song, idx, doNotPlaySongs.length, "do_not_play"))}
                 </div>
               )}
-              <button
-                onClick={() => openAddDialog("do_not_play")}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors mt-1"
-              >
-                <Plus className="h-3 w-3" />
-                Add to do-not-play list
-              </button>
+              <div className="flex items-center gap-4 mt-1">
+                <button
+                  onClick={() => openAddDialog("do_not_play")}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Plus className="h-3 w-3" />
+                  Add to do-not-play list
+                </button>
+                <button
+                  onClick={() => openImportDialog("do_not_play")}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Link2 className="h-3 w-3" />
+                  Add from YouTube
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -625,6 +744,144 @@ export function MusicManager({
                   : "Add Song"}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import from YouTube */}
+      <Dialog open={showImport} onOpenChange={setShowImport}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              Add from YouTube —{" "}
+              {importPhase === "do_not_play"
+                ? "Do Not Play"
+                : ALL_PHASES.find((p) => p.value === importPhase)?.label ??
+                  importPhase}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {importPreview.length === 0 ? (
+              <>
+                <div className="space-y-2">
+                  <Label>YouTube URL</Label>
+                  <Input
+                    value={importUrl}
+                    onChange={(e) => setImportUrl(e.target.value)}
+                    placeholder="https://www.youtube.com/playlist?list=..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && importUrl.trim() && !importLoading)
+                        handleImportPreview();
+                    }}
+                    autoFocus
+                  />
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Paste a YouTube video or playlist URL. Spotify and Apple
+                    Music aren&apos;t supported yet — please add those songs
+                    manually.
+                  </p>
+                </div>
+                {importError && (
+                  <p className="text-xs text-destructive">{importError}</p>
+                )}
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowImport(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleImportPreview}
+                    disabled={importLoading || !importUrl.trim()}
+                  >
+                    {importLoading && (
+                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    )}
+                    {importLoading ? "Loading..." : "Preview"}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                {(() => {
+                  const dupCount = importPreview.filter((t) => t.isDup).length;
+                  const newCount = importPreview.length - dupCount;
+                  return (
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-semibold text-foreground/80">
+                        {newCount}
+                      </span>{" "}
+                      to import
+                      {dupCount > 0 && (
+                        <>
+                          {" · "}
+                          <span className="font-semibold text-foreground/80">
+                            {dupCount}
+                          </span>{" "}
+                          already added
+                        </>
+                      )}
+                    </p>
+                  );
+                })()}
+                <div className="max-h-72 overflow-y-auto rounded-md border border-border/50 divide-y divide-border/40">
+                  {importPreview.map((t, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "flex items-start gap-2 px-3 py-2 text-sm",
+                        t.isDup && "opacity-50"
+                      )}
+                    >
+                      <span className="text-[11px] text-muted-foreground/60 tabular-nums shrink-0 mt-0.5 w-5">
+                        {i + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{t.song_title}</div>
+                        {t.artist && (
+                          <div className="text-xs text-muted-foreground truncate">
+                            {t.artist}
+                          </div>
+                        )}
+                      </div>
+                      {t.isDup && (
+                        <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5 uppercase tracking-wider">
+                          Already added
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowImport(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleImportConfirm}
+                    disabled={
+                      importInserting ||
+                      importPreview.every((t) => t.isDup)
+                    }
+                  >
+                    {importInserting && (
+                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    )}
+                    {importInserting
+                      ? "Importing..."
+                      : (() => {
+                          const n = importPreview.filter((t) => !t.isDup).length;
+                          return n === 0
+                            ? "Nothing to import"
+                            : `Import ${n} song${n !== 1 ? "s" : ""}`;
+                        })()}
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>
