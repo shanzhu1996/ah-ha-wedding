@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import {
   Camera,
   Video,
@@ -1297,6 +1297,25 @@ export function BookletGenerator({
     setPreviewMode("booklets");
     setPreviewOpen(true);
   }
+
+  // Deep-link: /booklets#<vendor_id> scrolls to the vendor card and
+  // auto-opens its booklet preview. Used by the Music page "View in DJ
+  // booklet" link and reusable for future cross-page links.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!hash) return;
+    const target = vendorList.find((v) => v.id === hash);
+    if (!target) return;
+    requestAnimationFrame(() => {
+      document.getElementById(hash)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      openSingleBooklet(target);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function openAllBooklets() {
     setSelectedVendors(vendorList);
@@ -3172,7 +3191,7 @@ export function BookletGenerator({
             const style = readinessStyle[level];
             const isEditingNote = editingNoteVendorId === vendor.id;
             return (
-              <Card key={vendor.id}>
+              <Card key={vendor.id} id={vendor.id} className="scroll-mt-24">
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between mb-3 gap-2">
                     <div className="flex items-center gap-3 min-w-0">

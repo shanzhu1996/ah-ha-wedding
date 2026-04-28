@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -8,6 +9,7 @@ import {
   GripVertical,
   Music,
   Ban,
+  Check,
   ChevronUp,
   ChevronDown,
   ChevronRight,
@@ -204,7 +206,6 @@ export function MusicManager({
   const [notes, setNotes] = useState("");
 
   const doNotPlaySongs = initialSongs.filter((s) => s.is_do_not_play);
-  const totalSongs = initialSongs.filter((s) => !s.is_do_not_play).length;
   const phasesPlanned = ALL_PHASES.filter((p) => songsForPhase(p.value).length > 0).length;
 
   function songsForPhase(phase: string): Song[] {
@@ -451,13 +452,24 @@ export function MusicManager({
           Music
         </h1>
         <p className="text-sm text-muted-foreground mt-2">
-          <span className="font-medium text-foreground/80">{totalSongs}</span> song{totalSongs !== 1 ? "s" : ""}
-          <span className="text-muted-foreground/50"> · </span>
-          <span className="font-medium text-foreground/80">{phasesPlanned}</span> of {ALL_PHASES.length} moments planned
-          {doNotPlaySongs.length > 0 && (
+          {phasesPlanned === ALL_PHASES.length ? (
+            <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="inline-flex items-center gap-1.5 font-medium text-primary">
+                <Check className="h-3.5 w-3.5" />
+                Ready to share with your DJ
+              </span>
+              {musicVendors.length > 0 && (
+                <Link
+                  href={`/booklets#${musicVendors[0].id}`}
+                  className="text-xs text-primary hover:underline"
+                >
+                  View in DJ booklet →
+                </Link>
+              )}
+            </span>
+          ) : (
             <>
-              <span className="text-muted-foreground/50"> · </span>
-              <span className="font-medium text-foreground/80">{doNotPlaySongs.length}</span> do-not-play
+              <span className="font-medium text-foreground/80">{phasesPlanned}</span> of {ALL_PHASES.length} moments planned
             </>
           )}
         </p>
@@ -505,11 +517,6 @@ export function MusicManager({
           phaseRefs.current["do_not_play"] = el;
         }}
       >
-        <div className="flex items-center gap-3 mb-2 pb-1 border-b border-border/50">
-          <span className="text-xs font-semibold tracking-[0.12em] uppercase text-foreground/80">
-            Do Not Play
-          </span>
-        </div>
         <div>
           <button
             onClick={() => setExpandedPhase(expandedPhase === "do_not_play" ? null : "do_not_play")}
