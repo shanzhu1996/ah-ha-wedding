@@ -233,6 +233,12 @@ function generateDayOfTimeline(
   });
 }
 
+function getDueWindow(daysUntil: number | null): { days: number; label: string } {
+  if (daysUntil !== null && daysUntil <= 7) return { days: 1, label: "today" };
+  if (daysUntil !== null && daysUntil <= 30) return { days: 3, label: "in 3 days" };
+  return { days: 7, label: "this week" };
+}
+
 function PriorityBadge({ priority }: { priority: string }) {
   if (priority === "critical") {
     return (
@@ -356,7 +362,20 @@ export function TimelineManager({
     const currentMonthKey = format(now, "yyyy-MM");
     const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     const nextMonthKey = format(nextMonth, "yyyy-MM");
-    return new Set([currentMonthKey, nextMonthKey]);
+    const expanded = new Set([currentMonthKey, nextMonthKey]);
+
+    // Past months with incomplete tasks must stay visible — otherwise
+    // overdue work disappears as the calendar rolls over.
+    const todayMidnight = new Date();
+    todayMidnight.setHours(0, 0, 0, 0);
+    for (const e of initialEvents) {
+      if (e.completed || !e.event_date || e.type !== "pre_wedding") continue;
+      const d = new Date(e.event_date + "T00:00:00");
+      if (d < todayMidnight) {
+        expanded.add(format(d, "yyyy-MM"));
+      }
+    }
+    return expanded;
   });
 
   const [title, setTitle] = useState("");
@@ -380,13 +399,31 @@ export function TimelineManager({
     : allPreWedding.filter((e) => e.assigned_to === assignFilter);
 
   // Stats
-  const completedCount = allPreWedding.filter((e) => e.completed).length;
   const daysUntilWedding = weddingDate
     ? differenceInCalendarDays(
         new Date(weddingDate + "T00:00:00"),
         new Date()
       )
     : null;
+
+  // Adaptive due-window callout: matches dashboard pattern.
+  // Window narrows as wedding approaches (this week → next 3 days → today).
+  const dueWindow = getDueWindow(daysUntilWedding);
+  const todayMidnight = (() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  })();
+  const windowEndMs = todayMidnight + dueWindow.days * 86400000;
+  const overdueCount = allPreWedding.filter((e) => {
+    if (e.completed || !e.event_date) return false;
+    return new Date(e.event_date + "T00:00:00").getTime() < todayMidnight;
+  }).length;
+  const dueSoonCount = allPreWedding.filter((e) => {
+    if (e.completed || !e.event_date) return false;
+    const t = new Date(e.event_date + "T00:00:00").getTime();
+    return t >= todayMidnight && t < windowEndMs;
+  }).length;
 
 
   const [menuEventId, setMenuEventId] = useState<string | null>(null);
@@ -523,17 +560,19 @@ export function TimelineManager({
               Timeline
             </h1>
             <p className="text-sm text-muted-foreground mt-2">
-              Your smart to-do list — auto-ordered by when things should get done. Divide and conquer: tap the person icon on any task to split work between {partner1Name} and {partner2Name}.
+              Your planning calendar — auto-ordered from today through your wedding day. Divide and conquer: tap any task&apos;s person icon to split work between {partner1Name} and {partner2Name}.
             </p>
-            {allPreWedding.length > 0 && (
-              <p className="text-xs text-muted-foreground/80 mt-1.5">
-                {daysUntilWedding !== null && daysUntilWedding > 0 && (
-                  <span className="font-medium text-foreground/80">{daysUntilWedding} days</span>
+            {(overdueCount > 0 || dueSoonCount > 0) && (
+              <p className="text-xs mt-2">
+                {overdueCount > 0 && (
+                  <span className="font-medium text-destructive">{overdueCount} overdue</span>
                 )}
-                {daysUntilWedding !== null && daysUntilWedding > 0 && (
+                {overdueCount > 0 && dueSoonCount > 0 && (
                   <span className="text-muted-foreground/50"> · </span>
                 )}
-                <span><span className="font-medium text-foreground/80">{completedCount}</span> of {allPreWedding.length} done</span>
+                {dueSoonCount > 0 && (
+                  <span className="font-medium text-foreground/80">{dueSoonCount} due {dueWindow.label}</span>
+                )}
               </p>
             )}
           </div>
