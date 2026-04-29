@@ -261,23 +261,42 @@ export function PaymentSchedule({
     const nextUnpaid = sortedItems.find(
       (i) => !(optimisticPaid[i.id] ?? i.paid)
     );
+    // Overdue check — late payments are real money pain, must stand out.
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const nextDueOverdue =
+      !!nextDue?.due_date &&
+      new Date(nextDue.due_date + "T00:00:00") < today;
     return (
       <div className="group/row flex items-center gap-2">
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors tabular-nums rounded-md -mx-1.5 px-1.5 py-1 hover:bg-muted/40"
+          className={cn(
+            "flex items-center gap-2 text-xs transition-colors tabular-nums rounded-md -mx-1.5 px-1.5 py-1 hover:bg-muted/40",
+            nextDueOverdue
+              ? "text-red-700 hover:text-red-800"
+              : "text-muted-foreground hover:text-foreground"
+          )}
         >
           <ChevronRight className="h-3 w-3 transition-transform" />
           <span className="flex items-center gap-0.5">
             {sortedItems.map((i) => {
               const isPaid = optimisticPaid[i.id] ?? i.paid;
+              const itemOverdue =
+                !isPaid &&
+                !!i.due_date &&
+                new Date(i.due_date + "T00:00:00") < today;
               return (
                 <span
                   key={i.id}
                   className={cn(
                     "inline-block h-2 w-2 rounded-sm",
-                    isPaid ? "bg-emerald-600" : "bg-muted-foreground/30"
+                    isPaid
+                      ? "bg-emerald-600"
+                      : itemOverdue
+                      ? "bg-red-500"
+                      : "bg-muted-foreground/30"
                   )}
                 />
               );
@@ -286,7 +305,13 @@ export function PaymentSchedule({
           <span className="whitespace-nowrap">
             {paidCount} of {items.length} paid
             {nextDue?.due_date && (
-              <> · next {formatDate(nextDue.due_date)}</>
+              <>
+                {" · next "}
+                {formatDate(nextDue.due_date)}
+                {nextDueOverdue && (
+                  <span className="font-medium"> · overdue</span>
+                )}
+              </>
             )}
           </span>
         </button>

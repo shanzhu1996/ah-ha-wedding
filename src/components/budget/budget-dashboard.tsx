@@ -235,13 +235,6 @@ export function BudgetDashboard({
 
 
 
-  // Upcoming payments (vendor balances + custom items with due dates + unpaid)
-  // Empty state: no vendors, no shopping costs, no custom items
-  const isEmpty =
-    vendorTotals.booked.length === 0 &&
-    shoppingTotals.items.length === 0 &&
-    customItems.length === 0;
-
   // ── Collapsible sections state ─────────────────────────────────────
 
   // Auto-expand sections that have data, collapse empty ones
@@ -363,6 +356,9 @@ export function BudgetDashboard({
         <h1 className="text-3xl sm:text-4xl font-[family-name:var(--font-heading)] tracking-tight">
           Budget
         </h1>
+        <p className="text-sm text-muted-foreground mt-2 max-w-xl leading-relaxed">
+          Your wedding spending in one view — vendors and shopping roll up automatically.
+        </p>
         <div className="text-sm text-muted-foreground mt-2">
           {budget > 0 ? (
             <>
@@ -441,14 +437,6 @@ export function BudgetDashboard({
         </div>
       </div>
 
-      {/* Intro when page is completely empty */}
-      {isEmpty && (
-        <p className="text-sm text-muted-foreground max-w-xl leading-relaxed">
-          Your budget fills in automatically from vendors and shopping. Add vendor contracts or custom items to get started.
-        </p>
-      )}
-
-
       {/* From Vendors section — collapsible */}
       <section>
           <button
@@ -463,9 +451,11 @@ export function BudgetDashboard({
                 · {vendorTotals.booked.length} {vendorTotals.booked.length === 1 ? "vendor" : "vendors"}
               </span>
             </span>
-            <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
-              {formatCurrency(vendorTotals.total)}
-            </span>
+            {vendorTotals.booked.length > 0 && (
+              <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+                {formatCurrency(vendorTotals.total)}
+              </span>
+            )}
           </button>
 
           {expandedSections.has("vendors") && (
@@ -527,9 +517,11 @@ export function BudgetDashboard({
                 · {shoppingTotals.items.length} {shoppingTotals.items.length === 1 ? "item" : "items"}
               </span>
             </span>
-            <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
-              {formatCurrency(shoppingTotals.total)}
-            </span>
+            {shoppingTotals.items.length > 0 && (
+              <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+                {formatCurrency(shoppingTotals.total)}
+              </span>
+            )}
           </button>
 
           {expandedSections.has("shopping") && (
@@ -608,9 +600,11 @@ export function BudgetDashboard({
                 · {customItems.length} {customItems.length === 1 ? "item" : "items"}
               </span>
             </span>
-            <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
-              {formatCurrency(customTotals.total)}
-            </span>
+            {customItems.length > 0 && (
+              <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+                {formatCurrency(customTotals.total)}
+              </span>
+            )}
           </button>
 
           {expandedSections.has("custom") && (
