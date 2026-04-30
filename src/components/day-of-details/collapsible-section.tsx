@@ -68,12 +68,14 @@ export function CollapsibleSection({
           <span className="flex items-center self-center [&>svg]:!h-[18px] [&>svg]:!w-[18px] [&>svg]:!text-primary shrink-0">
             {icon}
           </span>
-          <div className="flex-1 min-w-0 flex items-baseline gap-2 flex-wrap">
-            <span className="text-[15px] font-semibold text-foreground leading-none">
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-semibold text-foreground leading-none">
               {title}
-            </span>
+            </div>
             {hint && (
-              <span className="text-[13px] text-muted-foreground">— {hint}</span>
+              <div className="text-[13px] text-muted-foreground mt-1 leading-snug">
+                {hint}
+              </div>
             )}
           </div>
 

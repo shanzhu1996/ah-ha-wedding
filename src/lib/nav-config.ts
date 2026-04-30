@@ -102,7 +102,7 @@ export const sections: Section[] = [
     items: [
       { href: "/timeline", icon: CalendarDays, label: "Timeline", tagline: "Your planning calendar" },
       { href: "/budget", icon: Wallet, label: "Budget", tagline: "Where is the money going?" },
-      { href: "/day-of-details", icon: ClipboardCheck, label: "Day-of Details", tagline: "The hour-by-hour playbook", highlight: true },
+      { href: "/day-of-details", icon: ClipboardCheck, label: "Day-of Details", tagline: "The hour-by-hour playbook" },
       { href: "/shopping", icon: CheckSquare, label: "Shopping", tagline: "What do you need?" },
       { href: "/layout-guide", icon: LayoutGrid, label: "Layout Guide", tagline: "Where does everything go?" },
       { href: "/seating", icon: Layout, label: "Seating", tagline: "Who sits where?" },

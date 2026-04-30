@@ -2436,6 +2436,14 @@ export function BookletGenerator({
                     </div>
                   );
                 })()}
+                {hasText(logisticsDayOf.cultural_notes) && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Cultural or religious logistics
+                    </p>
+                    <p className="whitespace-pre-wrap">{logisticsDayOf.cultural_notes}</p>
+                  </div>
+                )}
                 {hasText(logisticsDayOf.notes) && (
                   <div>
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">

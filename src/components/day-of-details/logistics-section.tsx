@@ -4,16 +4,17 @@ import { useState } from "react";
 import {
   Car,
   Umbrella,
-  ShieldAlert,
   ClipboardList,
   UtensilsCrossed,
-  Flame,
+  HandHeart,
   StickyNote,
   Plus,
   Phone,
   User,
   MoreHorizontal,
   Trash2,
+  Circle,
+  CircleCheck,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -122,15 +123,12 @@ export function LogisticsSection({ data, onChange }: LogisticsSectionProps) {
     ];
   })();
   const assignedRoleCount = roles.filter((r) => r.assignee?.trim()).length;
-  const rolesChips: SectionSummaryChip[] =
-    assignedRoleCount > 0
-      ? [
-          {
-            label: `${assignedRoleCount} of ${roles.length} assigned`,
-            tone: "accent",
-          },
-        ]
-      : [];
+  const rolesChips: SectionSummaryChip[] = [
+    {
+      label: `${assignedRoleCount} of ${roles.length} assigned`,
+      tone: assignedRoleCount > 0 ? "accent" : "muted",
+    },
+  ];
   const vendorMealsChips: SectionSummaryChip[] = data.vendor_meals_timing?.trim()
     ? [{ label: "has notes", tone: "muted" }]
     : [];
@@ -143,6 +141,10 @@ export function LogisticsSection({ data, onChange }: LogisticsSectionProps) {
 
   return (
     <div className="space-y-2">
+      <p className="text-xs text-muted-foreground/80 px-1">
+        Everything here flows into your <span className="font-medium text-foreground/80">Coordinator &amp; Venue</span> day-of booklets. Vendor meals also goes to the <span className="font-medium text-foreground/80">Caterer</span>.
+      </p>
+
       {/* 1. Transportation */}
       <CollapsibleSection
         icon={<Car />}
@@ -176,7 +178,7 @@ export function LogisticsSection({ data, onChange }: LogisticsSectionProps) {
 
       {/* 3. Emergency contacts (list) */}
       <CollapsibleSection
-        icon={<ShieldAlert />}
+        icon={<Phone />}
         title="Emergency contacts"
         hint="coordinator, backup, family rep — the people your team can call"
         summaryChips={emergencyChips}
@@ -254,13 +256,13 @@ export function LogisticsSection({ data, onChange }: LogisticsSectionProps) {
           className="text-sm min-h-[80px]"
         />
         <p className="text-[11px] text-muted-foreground/70 mt-2">
-          Shown under the Dinner moment on the Reception tab.
+          Also shown under the Dinner moment on the Reception tab.
         </p>
       </CollapsibleSection>
 
       {/* 6. Cultural / religious logistics */}
       <CollapsibleSection
-        icon={<Flame />}
+        icon={<HandHeart />}
         title="Cultural or religious logistics"
         hint="special setup, timing, or participants for cultural elements"
         summaryChips={culturalChips}
@@ -362,22 +364,43 @@ function RoleRow({
   onRemove: () => void;
 }) {
   const [editingLabel, setEditingLabel] = useState(false);
+  const filled = !!role.assignee?.trim();
+  const showMobileHint = !filled && role.isBuiltIn && !!role.hint;
   return (
     <div className="rounded-lg border border-border/70 bg-card">
-      <div className="flex items-stretch">
-        <div className="flex-1 px-3 py-2.5 min-w-0 space-y-1">
-          {/* Label row — built-ins show the preset label + hint; customs
-              render an editable Input for the label. */}
+      <div
+        className={cn(
+          "grid items-center gap-x-2 gap-y-1.5 px-3 py-2 min-w-0",
+          // Mobile: 3 cols (dot | label | menu); hint and input span on later rows
+          "grid-cols-[auto_minmax(0,1fr)_auto]",
+          // Desktop: 4 cols (dot | label·hint | input | menu) all on row 1
+          "sm:grid-cols-[auto_minmax(0,3fr)_minmax(0,4fr)_auto] sm:gap-y-2"
+        )}
+      >
+        {/* Status dot */}
+        <span
+          className={cn(
+            "row-start-1 col-start-1 shrink-0 [&>svg]:h-4 [&>svg]:w-4",
+            filled ? "text-primary" : "text-muted-foreground/40"
+          )}
+          aria-label={filled ? "Assigned" : "Unassigned"}
+        >
+          {filled ? <CircleCheck /> : <Circle />}
+        </span>
+
+        {/* Label — desktop shows label·hint inline; mobile shows label only */}
+        <div className="row-start-1 col-start-2 text-[13px] flex items-baseline gap-1 min-w-0">
           {role.isBuiltIn ? (
-            <div className="text-xs">
-              <span className="font-medium text-foreground">{role.label}</span>
+            <>
+              <span className="font-semibold text-foreground shrink-0">
+                {role.label}
+              </span>
               {role.hint && (
-                <span className="text-muted-foreground/70">
-                  {" · "}
-                  {role.hint}
+                <span className="hidden sm:inline text-muted-foreground/70 truncate">
+                  · {role.hint}
                 </span>
               )}
-            </div>
+            </>
           ) : editingLabel || !role.label.trim() ? (
             <Input
               autoFocus={editingLabel}
@@ -386,43 +409,55 @@ function RoleRow({
               onBlur={() => setEditingLabel(false)}
               placeholder="Custom role, e.g., Pet handler"
               className={cn(
-                "h-8 text-sm font-medium border-transparent focus-visible:border-border shadow-none px-1"
+                "h-7 text-sm font-medium border-transparent focus-visible:border-border shadow-none px-1"
               )}
             />
           ) : (
             <button
               type="button"
               onClick={() => setEditingLabel(true)}
-              className="text-sm font-medium text-foreground hover:text-primary transition-colors text-left"
+              className="text-sm font-medium text-foreground hover:text-primary transition-colors text-left truncate"
               title="Rename"
             >
               {role.label}
             </button>
           )}
-          <Input
-            value={role.assignee}
-            onChange={(e) => onChange({ assignee: e.target.value })}
-            placeholder="Name & phone (optional)"
-            className="h-9 text-sm"
-          />
         </div>
-        <div className="flex items-start shrink-0 pt-1.5 pr-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label={`More options for ${role.label || "role"}`}
-              title="More options"
-              className="p-1 rounded text-muted-foreground/40 hover:text-foreground transition-colors data-[popup-open]:text-foreground"
-            >
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" sideOffset={6} className="min-w-[160px]">
-              <DropdownMenuItem variant="destructive" onClick={onRemove}>
-                <Trash2 className="h-3.5 w-3.5" />
-                Remove role
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+
+        {/* Mobile-only hint row — visible only when unfilled, so once a name is in the field, the row collapses to 2 lines */}
+        {showMobileHint && (
+          <div className="row-start-2 col-start-2 col-span-2 text-[12px] leading-snug text-muted-foreground/70 sm:hidden">
+            {role.hint}
+          </div>
+        )}
+
+        {/* Assignee input — mobile: spans all cols on row 3 (or row 2 when no hint); desktop: col 3 of row 1 */}
+        <Input
+          value={role.assignee}
+          onChange={(e) => onChange({ assignee: e.target.value })}
+          placeholder="Name & phone"
+          className={cn(
+            "col-span-3 sm:col-span-1 h-8 text-sm w-full min-w-0",
+            "sm:row-start-1 sm:col-start-3",
+            showMobileHint ? "row-start-3" : "row-start-2"
+          )}
+        />
+
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label={`More options for ${role.label || "role"}`}
+            title="More options"
+            className="row-start-1 col-start-3 sm:col-start-4 p-1 rounded text-muted-foreground/40 hover:text-foreground transition-colors data-[popup-open]:text-foreground shrink-0"
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" sideOffset={6} className="min-w-[160px]">
+            <DropdownMenuItem variant="destructive" onClick={onRemove}>
+              <Trash2 className="h-3.5 w-3.5" />
+              Remove role
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );

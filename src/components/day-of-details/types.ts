@@ -828,6 +828,7 @@ export interface DayOfRoles {
   toasts_cue: string;
   gifts: string;
   timeline: string;
+  send_off: string;
 }
 
 export const DAY_OF_ROLE_META: {
@@ -841,6 +842,7 @@ export const DAY_OF_ROLE_META: {
   { key: "toasts_cue", label: "Toast cueing", hint: "Signals speakers when to start" },
   { key: "gifts", label: "Gifts & cards", hint: "Collects & secures gift table items" },
   { key: "timeline", label: "Timeline nudger", hint: "Keeps the day on schedule" },
+  { key: "send_off", label: "Send-off captain", hint: "Cues the send-off lineup and getaway car" },
 ];
 
 export interface DayOfRole {
@@ -907,7 +909,24 @@ export function getDefaultLogisticsData(): LogisticsData {
  */
 export function effectiveRoles(d: LogisticsData): DayOfRole[] {
   if (Array.isArray(d.roles_list) && d.roles_list.length > 0) {
-    return d.roles_list;
+    // Auto-merge built-ins introduced after this list was first seeded
+    // (e.g., Send-off captain added later). Match by label since IDs are
+    // randomly generated. Edge case: if a user explicitly removed a
+    // built-in, it will reappear — they can remove again if desired.
+    const existingBuiltInLabels = new Set(
+      d.roles_list.filter((r) => r.isBuiltIn).map((r) => r.label)
+    );
+    const missingBuiltIns = DAY_OF_ROLE_META.filter(
+      (m) => !existingBuiltInLabels.has(m.label)
+    ).map((m) => ({
+      id: crypto.randomUUID(),
+      label: m.label,
+      hint: m.hint,
+      assignee: "",
+      isBuiltIn: true as const,
+    }));
+    if (missingBuiltIns.length === 0) return d.roles_list;
+    return [...d.roles_list, ...missingBuiltIns];
   }
   const legacy = (d as unknown as { roles?: DayOfRoles }).roles;
   if (legacy && typeof legacy === "object") {
