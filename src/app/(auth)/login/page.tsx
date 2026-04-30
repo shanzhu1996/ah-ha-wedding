@@ -3,7 +3,7 @@
 import { useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Heart, Mail, Lock, User, ArrowRight } from "lucide-react";
+import { Heart, Mail, Lock, User, ArrowRight, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +31,11 @@ function LoginForm() {
   const [error, setError] = useState("");
   const [duplicateEmail, setDuplicateEmail] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [pendingConfirmEmail, setPendingConfirmEmail] = useState<string | null>(
+    null
+  );
+  const [resending, setResending] = useState(false);
+  const [resendStatus, setResendStatus] = useState<string | null>(null);
 
   const supabase = createClient();
 
@@ -38,12 +43,15 @@ function LoginForm() {
     setMode(next);
     setError("");
     setDuplicateEmail(false);
+    setPendingConfirmEmail(null);
+    setResendStatus(null);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setDuplicateEmail(false);
+    setResendStatus(null);
     setLoading(true);
 
     try {
@@ -53,11 +61,19 @@ function LoginForm() {
           password,
           options: {
             data: { full_name: name },
+            emailRedirectTo: `${window.location.origin}/callback`,
           },
         });
         if (error) throw error;
         if (data?.user && data.user.identities?.length === 0) {
           setDuplicateEmail(true);
+          return;
+        }
+        // Email confirmation enabled: signUp returns no session until the
+        // user clicks the link. Show a check-your-inbox card instead of
+        // redirecting (they'd just get bounced back by middleware).
+        if (!data.session) {
+          setPendingConfirmEmail(email);
           return;
         }
         router.push("/onboarding");
@@ -66,13 +82,43 @@ function LoginForm() {
           email,
           password,
         });
-        if (error) throw error;
+        if (error) {
+          // Surface the same check-your-inbox UI so the user has a path
+          // forward (resend) instead of a raw error string.
+          if (/email not confirmed/i.test(error.message)) {
+            setPendingConfirmEmail(email);
+            return;
+          }
+          throw error;
+        }
         router.push("/dashboard");
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleResend() {
+    if (!pendingConfirmEmail) return;
+    setResending(true);
+    setResendStatus(null);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: pendingConfirmEmail,
+        options: {
+          emailRedirectTo: `${window.location.origin}/callback`,
+        },
+      });
+      if (error) {
+        setResendStatus(error.message);
+      } else {
+        setResendStatus("Sent — check your inbox (and spam folder).");
+      }
+    } finally {
+      setResending(false);
     }
   }
 
@@ -98,12 +144,56 @@ function LoginForm() {
             </span>
           </Link>
           <p className="text-muted-foreground mt-2">
-            {mode === "signup" ? "Create your account" : "Welcome back"}
+            {pendingConfirmEmail
+              ? "Check your email"
+              : mode === "signup"
+              ? "Create your account"
+              : "Welcome back"}
           </p>
         </div>
 
-        {/* Card */}
-        <div className="bg-card border rounded-xl p-6 shadow-sm">
+        {pendingConfirmEmail ? (
+          <div className="bg-card border rounded-xl p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-center h-12 w-12 rounded-full bg-primary/10 mx-auto">
+              <MailCheck className="h-6 w-6 text-primary" />
+            </div>
+            <div className="text-center space-y-1">
+              <p className="text-sm">We sent a confirmation link to</p>
+              <p className="font-medium text-sm break-all">
+                {pendingConfirmEmail}
+              </p>
+              <p className="text-xs text-muted-foreground pt-1">
+                Click the link in the email to finish creating your account.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleResend}
+              disabled={resending}
+            >
+              {resending ? "Sending..." : "Resend email"}
+            </Button>
+            {resendStatus && (
+              <p className="text-xs text-center text-muted-foreground">
+                {resendStatus}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setPendingConfirmEmail(null);
+                setResendStatus(null);
+                setPassword("");
+              }}
+              className="block mx-auto text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Use a different email
+            </button>
+          </div>
+        ) : (
+          <>
+          <div className="bg-card border rounded-xl p-6 shadow-sm">
           {/* Google OAuth */}
           <Button
             variant="outline"
@@ -226,8 +316,6 @@ function LoginForm() {
             </Button>
           </form>
         </div>
-
-        {/* Toggle */}
         <p className="text-center text-sm text-muted-foreground mt-4">
           {mode === "login" ? (
             <>
@@ -251,6 +339,8 @@ function LoginForm() {
             </>
           )}
         </p>
+          </>
+        )}
       </div>
     </div>
   );
