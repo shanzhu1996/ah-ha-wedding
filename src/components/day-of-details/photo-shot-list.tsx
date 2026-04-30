@@ -9,6 +9,7 @@ import {
   Plus,
   StickyNote,
   MoreHorizontal,
+  Pencil,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import {
 interface PhotoShotListProps {
   data: PhotoShotListData;
   onChange: (data: PhotoShotListData) => void;
+  onNavigateToLogistics?: () => void;
 }
 
 type CategoryKey = "pre_ceremony" | "ceremony_family" | "reception";
@@ -72,7 +74,10 @@ function ShotRow({
 }) {
   const hasNote = !!shot.notes?.trim();
   const [noteOpen, setNoteOpen] = useState(false);
-  const showNoteInput = noteOpen || hasNote;
+  const [editingLabel, setEditingLabel] = useState(false);
+  // Custom shots without a label start in edit mode so the user can type.
+  const showLabelInput =
+    editingLabel || (shot.isCustom && !shot.label.trim());
 
   return (
     <div className="flex items-center gap-2 py-0.5 flex-wrap sm:flex-nowrap">
@@ -80,16 +85,38 @@ function ShotRow({
         checked={shot.included}
         onCheckedChange={(checked) => onUpdate({ included: checked === true })}
       />
-      <Input
-        value={shot.label}
-        onChange={(e) => onUpdate({ label: e.target.value })}
-        className={cn(
-          "text-sm flex-1 min-w-0",
-          !shot.included && "line-through text-muted-foreground/50"
-        )}
-        placeholder="Shot description"
-      />
-      {!showNoteInput && (
+      {showLabelInput ? (
+        <Input
+          autoFocus={editingLabel || (shot.isCustom && !shot.label)}
+          value={shot.label}
+          onChange={(e) => onUpdate({ label: e.target.value })}
+          onBlur={() => setEditingLabel(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
+          className={cn(
+            "text-sm flex-1 min-w-0",
+            !shot.included && "line-through text-muted-foreground/50"
+          )}
+          placeholder="Shot description"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setEditingLabel(true)}
+          title="Tap to rename"
+          className={cn(
+            "text-sm flex-1 min-w-0 text-left break-words leading-snug py-1.5 hover:text-primary transition-colors",
+            !shot.included && "line-through text-muted-foreground/50"
+          )}
+        >
+          {shot.label}
+        </button>
+      )}
+      {/* Note: 3 states — empty/closed shows [+ Note] entry; has-note/closed
+          shows a truncated preview chip; open shows the input. Blur always
+          collapses to the closed state so the user can dismiss freely. */}
+      {!noteOpen && !hasNote && (
         <button
           type="button"
           onClick={() => setNoteOpen(true)}
@@ -100,44 +127,60 @@ function ShotRow({
           Note
         </button>
       )}
-      {/* Note input: inline on desktop, wraps to row 2 on mobile via order-last + w-full */}
-      {showNoteInput && (
+      {!noteOpen && hasNote && (
+        <button
+          type="button"
+          onClick={() => setNoteOpen(true)}
+          className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border border-primary/30 bg-primary/5 text-primary/80 hover:bg-primary/10 transition-colors shrink-0 max-w-[180px] sm:max-w-[220px]"
+          title="Tap to edit note"
+        >
+          <StickyNote className="h-3 w-3 shrink-0" />
+          <span className="truncate">{shot.notes}</span>
+        </button>
+      )}
+      {noteOpen && (
         <Input
-          autoFocus={noteOpen && !hasNote}
+          autoFocus
           value={shot.notes}
           onChange={(e) => onUpdate({ notes: e.target.value })}
-          onBlur={() => {
-            if (!shot.notes?.trim()) setNoteOpen(false);
+          onBlur={() => setNoteOpen(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
           }}
           className="text-xs text-muted-foreground w-full order-last sm:order-none sm:w-56 shrink-0"
           placeholder="Note — e.g., wide angle"
         />
       )}
-      {onDelete ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label="More options for shot"
-            title="More options"
-            className="p-1 rounded text-muted-foreground/40 hover:text-foreground transition-colors data-[popup-open]:text-foreground"
-          >
-            <MoreHorizontal className="h-3.5 w-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={6} className="min-w-[160px]">
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label="More options for shot"
+          title="More options"
+          className="p-1 rounded text-muted-foreground/40 hover:text-foreground transition-colors data-[popup-open]:text-foreground shrink-0"
+        >
+          <MoreHorizontal className="h-3.5 w-3.5" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={6} className="min-w-[160px]">
+          <DropdownMenuItem onClick={() => setEditingLabel(true)}>
+            <Pencil className="h-3.5 w-3.5" />
+            Rename shot
+          </DropdownMenuItem>
+          {onDelete && (
             <DropdownMenuItem variant="destructive" onClick={onDelete}>
               <Trash2 className="h-3.5 w-3.5" />
               Remove shot
             </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : (
-        // Invisible spacer to keep rows aligned with custom-shot rows.
-        <span aria-hidden className="w-7 shrink-0" />
-      )}
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
 
-export function PhotoShotList({ data, onChange }: PhotoShotListProps) {
+export function PhotoShotList({
+  data,
+  onChange,
+  onNavigateToLogistics,
+}: PhotoShotListProps) {
   function updateShot(
     categoryKey: CategoryKey,
     shotId: string,
@@ -178,21 +221,28 @@ export function PhotoShotList({ data, onChange }: PhotoShotListProps) {
 
   return (
     <div className="space-y-2">
+      <p className="text-xs text-muted-foreground/80 px-1">
+        Everything here flows into your <span className="font-medium text-foreground/80">Photographer &amp; Videographer</span> booklets.
+      </p>
+
       {CATEGORIES.map(({ key, label, hint, icon }) => {
         const shots = data[key] || [];
+        const totalCount = shots.length;
         const includedCount = shots.filter((s) => s.included).length;
         const customCount = shots.filter((s) => s.isCustom).length;
+        const isUntouched =
+          customCount === 0 && includedCount === totalCount && totalCount > 0;
         const chips: SectionSummaryChip[] = [];
-        if (includedCount > 0) {
+        if (totalCount > 0) {
           chips.push({
-            label: `${includedCount} included`,
-            tone: "accent",
+            label: `${includedCount} of ${totalCount} picked`,
+            tone: isUntouched ? "muted" : "accent",
           });
         }
         if (customCount > 0) {
           chips.push({
             label: `${customCount} custom`,
-            tone: "muted",
+            tone: "accent",
           });
         }
         return (
@@ -205,6 +255,18 @@ export function PhotoShotList({ data, onChange }: PhotoShotListProps) {
             defaultOpen
             emptyLabel="No shots"
           >
+            {key === "ceremony_family" && (
+              <p className="text-[11px] text-muted-foreground/70 mb-2.5 px-0.5">
+                Family photos go faster when someone calls out names —{" "}
+                <button
+                  type="button"
+                  onClick={() => onNavigateToLogistics?.()}
+                  className="text-primary hover:underline font-medium"
+                >
+                  assign a helper in Logistics →
+                </button>
+              </p>
+            )}
             <div className="space-y-1">
               {shots.map((shot) => (
                 <ShotRow
@@ -233,7 +295,7 @@ export function PhotoShotList({ data, onChange }: PhotoShotListProps) {
       <CollapsibleSection
         icon={<EyeOff />}
         title="Do not shoot"
-        hint="sensitive dynamics — divorced family, exclusions, topics to skip"
+        hint="people or topics to avoid"
         summaryChips={doNotShootChips}
         emptyLabel="None — skip if not applicable"
       >

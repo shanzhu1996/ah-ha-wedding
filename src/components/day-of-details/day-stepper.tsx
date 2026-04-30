@@ -305,6 +305,7 @@ export function DayStepper({ weddingId, initialData, songs: initialSongs, hasTea
           <PhotoShotList
             data={(data.photos || {}) as any}
             onChange={(d) => handleChange("photos", d)}
+            onNavigateToLogistics={() => handleSectionClick("logistics")}
           />
         )}
         {activeSection === "logistics" && (

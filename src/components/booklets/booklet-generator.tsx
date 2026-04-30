@@ -1533,6 +1533,17 @@ export function BookletGenerator({
               )}
             </div>
 
+            {hasText(photosDayOf?.do_not_shoot_notes) && (
+              <div className="avoid-break rounded-md border border-dashed border-destructive/40 bg-destructive/5 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-destructive mb-1">
+                  Do not shoot
+                </p>
+                <p className="text-sm whitespace-pre-wrap">
+                  {photosDayOf!.do_not_shoot_notes}
+                </p>
+              </div>
+            )}
+
             {gettingReadyDayOf?.first_look && (
               <div className="avoid-break">
                 <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-0.5">
