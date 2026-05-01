@@ -24,7 +24,9 @@ export async function GET(request: Request) {
           return NextResponse.redirect(`${origin}/dashboard`);
         }
       }
-      return NextResponse.redirect(`${origin}/onboarding`);
+      // First-time arrival (no wedding yet) — flag the welcome pill so
+      // the onboarding page can acknowledge the email confirmation.
+      return NextResponse.redirect(`${origin}/onboarding?welcome=true`);
     }
   }
 

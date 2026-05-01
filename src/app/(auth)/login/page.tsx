@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Heart, Mail, Lock, User, ArrowRight, MailCheck } from "lucide-react";
@@ -38,6 +38,23 @@ function LoginForm() {
   const [resendStatus, setResendStatus] = useState<string | null>(null);
 
   const supabase = createClient();
+
+  // While the user is staring at the "Check your email" card, watch for
+  // a session to appear — handles the case where they confirm in the
+  // SAME browser (different tab) and never refresh this one. Cross-device
+  // confirms (mobile email app → mobile browser) don't fire here, but
+  // those users are already on the new device.
+  useEffect(() => {
+    if (!pendingConfirmEmail) return;
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session) {
+        router.push("/onboarding?welcome=true");
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [pendingConfirmEmail, supabase, router]);
 
   function switchMode(next: "login" | "signup") {
     setMode(next);

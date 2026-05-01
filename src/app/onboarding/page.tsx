@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Heart, ArrowRight, ArrowLeft, Check } from "lucide-react";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Heart, ArrowRight, ArrowLeft, Check, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,7 +31,17 @@ const weddingStyles: { value: WeddingStyle; label: string; emoji: string }[] = [
 const TOTAL_STEPS = 3;
 
 export default function OnboardingPage() {
+  return (
+    <Suspense>
+      <OnboardingForm />
+    </Suspense>
+  );
+}
+
+function OnboardingForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const showWelcome = searchParams.get("welcome") === "true";
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
@@ -145,6 +155,14 @@ export default function OnboardingPage() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-muted/30">
       <div className="w-full max-w-lg">
+        {showWelcome && (
+          <div className="mb-6 flex justify-center">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-medium">
+              <MailCheck className="h-3.5 w-3.5" />
+              Email confirmed — welcome to Ah-Ha!
+            </div>
+          </div>
+        )}
         {/* Logo */}
         <div className="text-center mb-8">
           <Heart className="h-8 w-8 text-primary fill-primary mx-auto mb-2" />
