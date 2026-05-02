@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { X, Plus, Sparkles, Clock, Pencil, RefreshCw, MoreHorizontal } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Plus, Sparkles, Clock, Pencil, RefreshCw, MoreHorizontal, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -194,6 +195,10 @@ export function ScheduleSection({
   const [refreshSummary, setRefreshSummary] = useState<string | null>(null);
   const entries = data.entries || [];
   const hasEntries = entries.length > 0;
+  // Keep latest data reachable from toast Undo callbacks (which capture
+  // stale `data` at toast-show time). Undo writes always merge into current.
+  const dataRef = useRef(data);
+  dataRef.current = data;
 
   // One-shot cleanup on mount: drop entries that have no title AND no
   // time. These are abandoned drafts from earlier sessions where the
@@ -310,8 +315,22 @@ export function ScheduleSection({
   }
 
   function removeEntry(id: string) {
+    const idx = entries.findIndex((e) => e.id === id);
+    if (idx < 0) return;
+    const snapshot = entries[idx];
     onChange({ ...data, entries: entries.filter((e) => e.id !== id) });
     if (editingId === id) setEditingId(null);
+    toast.success(`Deleted "${snapshot.title || "Untitled entry"}"`, {
+      action: {
+        label: "Undo",
+        onClick: () => {
+          const current = dataRef.current;
+          const arr = [...current.entries];
+          arr.splice(idx, 0, snapshot);
+          onChange({ ...current, entries: arr });
+        },
+      },
+    });
   }
 
   function removePhaseBlock(block: PhaseBlock) {
@@ -332,11 +351,16 @@ export function ScheduleSection({
   }
 
   function insertAfter(index: number) {
+    // Inherit linkedSection from the entry we're inserting after so a
+    // new "Pinata smash" added inside the Reception block is tagged
+    // "reception" — that lets Reception tab pick it up as a generic card.
+    const anchor = entries[index];
     const newEntry: ScheduleEntry = {
       id: crypto.randomUUID(),
       time: "",
       title: "",
       notes: "",
+      linkedSection: anchor?.linkedSection,
       user_touched: true,
     };
     const next = [...entries];
@@ -708,9 +732,12 @@ export function ScheduleSection({
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); removeEntry(entry.id); }}
-                                className="text-muted-foreground/30 hover:text-destructive transition-colors p-1"
+                                aria-label={`Delete "${entry.title || "entry"}"`}
+                                title="Delete this entry"
+                                className="text-muted-foreground/40 hover:text-destructive transition-colors p-1 inline-flex items-center gap-1 text-[11px]"
                               >
-                                <X className="h-3.5 w-3.5" />
+                                <Trash2 className="h-3.5 w-3.5" />
+                                <span>Delete</span>
                               </button>
                             </div>
                           ) : (

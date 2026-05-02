@@ -132,9 +132,10 @@ export function summarizeSongs(
   if (phaseSongs.length === 0) return null;
   if (expected === "single" && phaseSongs.length === 1) {
     const s = phaseSongs[0];
-    return s.artist?.trim()
+    const text = s.artist?.trim()
       ? `${s.song_title} · ${s.artist.trim()}`
       : s.song_title;
+    return `♪ ${text}`;
   }
-  return `${phaseSongs.length} song${phaseSongs.length > 1 ? "s" : ""}`;
+  return `♪ ${phaseSongs.length} song${phaseSongs.length > 1 ? "s" : ""}`;
 }

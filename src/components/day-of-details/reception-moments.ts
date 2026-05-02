@@ -14,6 +14,7 @@ import {
   RECEPTION_TOSS_IDS,
   RECEPTION_MOMENT_TITLES,
 } from "./types";
+import { getPhase } from "@/lib/day-of/phase";
 
 // ── Schedule ↔ Reception moment matching ───────────────────────────────
 
@@ -82,6 +83,9 @@ export interface ResolvedMoment {
   isCustom: boolean;
   /** The custom moment source, when `isCustom`. */
   custom?: CustomReceptionMoment;
+  /** True if sourced from a user-added Schedule entry (Phase 3) — title +
+   *  time come from Schedule; details live in moment_extras keyed by entry id. */
+  isScheduleCustom?: boolean;
 }
 
 function parseTime(t: string | undefined): number {
@@ -105,19 +109,40 @@ export function resolveReceptionMoments(
   data: ReceptionData,
   schedule?: ScheduleData
 ): ResolvedMoment[] {
-  const hidden = new Set(data.hidden_moments || []);
-  // Built-ins the couple hasn't hidden
-  const builtInIds: string[] = RECEPTION_MOMENT_IDS.filter((id) => !hidden.has(id));
-  // Tosses appear when the Schedule has a matching entry — Schedule is
-  // the source of truth. Hidden ids are still suppressed.
+  // Built-ins + tosses are visible only when a matching Schedule entry
+  // exists. Schedule is the single source of truth — to remove a moment,
+  // delete its Schedule entry; to bring it back, re-add in Schedule.
+  // The legacy `hidden_moments` field is ignored (preserved in data
+  // for backward compat but no longer read).
+  const builtInIds: string[] = RECEPTION_MOMENT_IDS.filter(
+    (id) => findScheduleEntryForMoment(id, schedule) !== undefined
+  );
   const tossIds: string[] = RECEPTION_TOSS_IDS.filter(
-    (id) =>
-      findScheduleEntryForMoment(id, schedule) !== undefined &&
-      !hidden.has(id)
+    (id) => findScheduleEntryForMoment(id, schedule) !== undefined
   );
   const customs = data.custom_moments || [];
   const customIds = customs.map((c) => c.id);
-  const all = [...builtInIds, ...tossIds, ...customIds];
+
+  // Phase 3: Schedule entries the user added directly that aren't
+  // matched by any built-in/toss keyword and aren't already a
+  // custom_moment. These get rendered as generic cards so anything
+  // the couple types in Schedule shows up in Reception.
+  const matchedEntryIds = new Set<string>();
+  for (const id of [...builtInIds, ...tossIds]) {
+    const e = findScheduleEntryForMoment(id, schedule);
+    if (e) matchedEntryIds.add(e.id);
+  }
+  const customIdSet = new Set(customIds);
+  const scheduleCustomIds: string[] = (schedule?.entries || [])
+    .filter((e) => {
+      if (matchedEntryIds.has(e.id)) return false;
+      if (customIdSet.has(e.id)) return false;
+      const phase = getPhase(e);
+      return phase === "reception" || phase === "dancing & send-off";
+    })
+    .map((e) => e.id);
+
+  const all = [...builtInIds, ...tossIds, ...customIds, ...scheduleCustomIds];
 
   // Apply saved moment_order if any (filter + append missing)
   let ordered: string[];
@@ -148,6 +173,7 @@ export function resolveReceptionMoments(
     ordered = indexed.map((x) => x.id);
   }
 
+  const scheduleCustomSet = new Set(scheduleCustomIds);
   return ordered.map((id) => {
     const custom = customs.find((c) => c.id === id);
     if (custom) {
@@ -159,6 +185,21 @@ export function resolveReceptionMoments(
         extras: { time, music_needed, mc_needed, mc_line, guest_action, notes },
         isCustom: true,
         custom,
+      };
+    }
+    // Schedule-custom (Phase 3): Schedule entry that isn't a known
+    // built-in/toss/custom. Title + time come from Schedule; song/MC/notes
+    // live in moment_extras keyed by the entry id.
+    if (scheduleCustomSet.has(id)) {
+      const entry = (schedule?.entries || []).find((e) => e.id === id);
+      const extras = data.moment_extras?.[id];
+      return {
+        id,
+        title: extras?.display_title?.trim() || entry?.title || "Untitled moment",
+        time: entry?.time?.trim() || extras?.time,
+        extras,
+        isCustom: false,
+        isScheduleCustom: true,
       };
     }
     const extras = data.moment_extras?.[id];

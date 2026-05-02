@@ -86,6 +86,7 @@ import {
   resolveReceptionMoments,
   findScheduleEntryForMoment,
 } from "./reception-moments";
+import { getPhase } from "@/lib/day-of/phase";
 
 // ── Moment descriptions — 1-liner explaining each ───────────────────────
 const MOMENT_DESCRIPTIONS: Record<string, string> = {
@@ -285,13 +286,22 @@ export function ReceptionSection({
     [data, scheduleData]
   );
   // Filter by phase — custom moments default to "reception" phase for now.
+  // Schedule-custom (Phase 3) entries route by their Schedule phase block:
+  // "reception" or "dancing & send-off" via getPhase().
   const resolvedMoments = useMemo(
     () =>
       allResolvedMoments.filter((m) => {
         if (m.isCustom) return phaseFilter === "reception";
+        if (m.isScheduleCustom) {
+          const entry = (scheduleData?.entries || []).find((e) => e.id === m.id);
+          if (!entry) return false;
+          const phase = getPhase(entry);
+          if (phaseFilter === "dancing") return phase === "dancing & send-off";
+          return phase === "reception";
+        }
         return phaseForMoment(m.id) === phaseFilter;
       }),
-    [allResolvedMoments, phaseFilter]
+    [allResolvedMoments, phaseFilter, scheduleData]
   );
   /**
    * Has any song been planned (in Music tab) for this phase? When true,
@@ -416,35 +426,6 @@ export function ReceptionSection({
     });
   }
 
-  /** Hide a built-in moment from the timeline. Data is preserved. */
-  function hideBuiltInMoment(id: string) {
-    const existing = data.hidden_moments || [];
-    if (existing.includes(id)) return;
-    set({ hidden_moments: [...existing, id] });
-    toast.success(`"${stockTitleFor(id)}" hidden`, {
-      description: "Your details are saved — restore it from Hidden moments.",
-      action: {
-        label: "Undo",
-        onClick: () => {
-          const current = dataRef.current;
-          onChange({
-            ...current,
-            hidden_moments: (current.hidden_moments || []).filter(
-              (x) => x !== id
-            ),
-          });
-        },
-      },
-    });
-  }
-
-  /** Restore a previously hidden built-in moment. */
-  function restoreBuiltInMoment(id: string) {
-    const existing = data.hidden_moments || [];
-    if (!existing.includes(id)) return;
-    set({ hidden_moments: existing.filter((x) => x !== id) });
-  }
-
   /** Rename helper: built-ins go through display_title, customs through title. */
   function renameMoment(id: string, newTitle: string) {
     const isCustom = (data.custom_moments || []).some((m) => m.id === id);
@@ -453,13 +434,6 @@ export function ReceptionSection({
     } else {
       updateExtras(id, { display_title: newTitle });
     }
-  }
-
-  /** Resolve the label for a hidden built-in (stock label, ignoring display_title). */
-  function stockTitleFor(id: string): string {
-    return (
-      RECEPTION_MOMENT_TITLES[id as keyof typeof RECEPTION_MOMENT_TITLES] ?? id
-    );
   }
 
   // Parent dances + speeches mutators (unchanged)
@@ -504,6 +478,10 @@ export function ReceptionSection({
 
   return (
     <div className="space-y-6">
+      <p className="text-xs text-muted-foreground/80 px-1">
+        Everything here flows into your <span className="font-medium text-foreground/80">DJ, MC, and Coordinator</span> booklets.
+      </p>
+
       {/* Dancing phase: surface the Open dancing playlist at top — Music
           tab owns it; this is a read-only pointer so couples don't have to
           hunt across tabs to manage the main dance floor. */}
@@ -558,44 +536,17 @@ export function ReceptionSection({
       </DndContext>
 
       {phaseFilter === "reception" && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={addCustomMoment}
-          className="gap-1.5 text-xs"
-        >
-          <Plus className="h-3 w-3" />
-          Add a moment
-        </Button>
-      )}
-
-      {/* Hidden moments — surface-level restore (filtered to current phase) */}
-      {(data.hidden_moments || []).filter((id) => phaseForMoment(id) === phaseFilter).length > 0 && (
-        <div className="pt-3 border-t border-border/40">
-          <div className="flex items-baseline gap-3 mb-2">
-            <h4 className="text-xs font-semibold tracking-[0.12em] uppercase text-foreground/80">
-              Hidden moments
-            </h4>
-            <span className="text-[11px] text-muted-foreground/70">
-              Details preserved · click to restore
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {(data.hidden_moments || [])
-              .filter((id) => phaseForMoment(id) === phaseFilter)
-              .map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => restoreBuiltInMoment(id)}
-                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border border-border/70 bg-background text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
-                >
-                  <Plus className="h-3 w-3" />
-                  {stockTitleFor(id)}
-                </button>
-              ))}
-          </div>
-        </div>
+        <p className="text-[11px] text-muted-foreground/70 px-1">
+          Need a new moment? Add it on the{" "}
+          <button
+            type="button"
+            onClick={() => onNavigateToSchedule?.()}
+            className="text-primary hover:underline font-medium"
+          >
+            Schedule tab
+          </button>
+          {" "}— it&rsquo;ll show up here automatically.
+        </p>
       )}
 
       {/* Seating link — only in Reception phase */}
@@ -624,7 +575,9 @@ export function ReceptionSection({
               : "dinner-time interactions and reveals — time comes from Schedule"
           }
           summaryChips={extrasSummaryChips}
-          emptyLabel="None added"
+          emptyLabel={`Including: ${extrasForPhase
+            .map((id) => RECEPTION_MOMENT_TITLES[id])
+            .join(", ")}`}
         >
           <TooltipProvider delay={150}>
             <div className="flex flex-wrap gap-2">
@@ -722,6 +675,15 @@ export function ReceptionSection({
     if (custom) {
       return renderCustomMoment(custom);
     }
+    // Schedule-custom (Phase 3): Schedule entry the user added that isn't a
+    // known built-in/toss. Render a generic card.
+    const scheduleEntry = scheduleData?.entries.find((e) => e.id === id);
+    const isKnownBuiltIn =
+      RECEPTION_MOMENT_TITLES[id as keyof typeof RECEPTION_MOMENT_TITLES] !==
+      undefined;
+    if (scheduleEntry && !isKnownBuiltIn) {
+      return renderScheduleCustomMoment(scheduleEntry);
+    }
     const title = RECEPTION_MOMENT_TITLES[id as keyof typeof RECEPTION_MOMENT_TITLES] ?? id;
     const extras = data.moment_extras?.[id];
     switch (id) {
@@ -817,8 +779,6 @@ export function ReceptionSection({
         onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("grand_entrance", t)}
-        onRemove={() => hideBuiltInMoment("grand_entrance")}
-        removeLabel="Hide from timeline"
       >
         <div className="space-y-5">
           <Description momentId="grand_entrance" />
@@ -867,8 +827,6 @@ export function ReceptionSection({
         onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("first_dance", t)}
-        onRemove={() => hideBuiltInMoment("first_dance")}
-        removeLabel="Hide from timeline"
       >
         <div className="space-y-5">
           <Description momentId="first_dance" />
@@ -929,8 +887,6 @@ export function ReceptionSection({
         onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("dinner", t)}
-        onRemove={() => hideBuiltInMoment("dinner")}
-        removeLabel="Hide from timeline"
       >
         <div className="space-y-5">
           <Description momentId="dinner" />
@@ -1021,8 +977,6 @@ export function ReceptionSection({
         onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("parent_dances", t)}
-        onRemove={() => hideBuiltInMoment("parent_dances")}
-        removeLabel="Hide from timeline"
       >
         <div className="space-y-5">
           <Description momentId="parent_dances" />
@@ -1108,8 +1062,6 @@ export function ReceptionSection({
         onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("speeches", t)}
-        onRemove={() => hideBuiltInMoment("speeches")}
-        removeLabel="Hide from timeline"
       >
         <div className="space-y-5">
           <Description momentId="speeches" />
@@ -1226,8 +1178,6 @@ export function ReceptionSection({
         onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("cake_cutting", t)}
-        onRemove={() => hideBuiltInMoment("cake_cutting")}
-        removeLabel="Hide from timeline"
       >
         <div className="space-y-5">
           <Description momentId="cake_cutting" />
@@ -1274,8 +1224,6 @@ export function ReceptionSection({
         onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("last_dance", t)}
-        onRemove={() => hideBuiltInMoment("last_dance")}
-        removeLabel="Hide from timeline"
       >
         <div className="space-y-5">
           <Description momentId="last_dance" />
@@ -1323,8 +1271,6 @@ export function ReceptionSection({
         onNavigateToSchedule={onNavigateToSchedule}
         summaryChips={summary}
         onRename={(t) => renameMoment("exit", t)}
-        onRemove={() => hideBuiltInMoment("exit")}
-        removeLabel="Hide from timeline"
       >
         <div className="space-y-5">
           <Description momentId="exit" />
@@ -1554,6 +1500,72 @@ export function ReceptionSection({
             extras={extrasFromCustom}
             onChange={(patch) => updateCustomMoment(m.id, patch)}
             receptionData={data}
+          />
+        </div>
+      </MomentCard>
+    );
+  }
+
+  /**
+   * Phase 3: a Schedule-driven generic card for entries the user added
+   * directly in the Schedule (not matching any built-in/toss keyword,
+   * not a custom_moment). Title + time live in Schedule; song / MC line /
+   * notes live in moment_extras keyed by the Schedule entry id. Edit
+   * title or time via the Schedule tab; deletion goes through Schedule too
+   * (so this card has no ⋯ menu).
+   */
+  function renderScheduleCustomMoment(entry: ScheduleEntry) {
+    const extras = data.moment_extras?.[entry.id];
+    const title = extras?.display_title?.trim() || entry.title || "Untitled moment";
+    const summary = chips([extras?.song?.trim(), ...extrasChips(extras)]);
+    return (
+      <MomentCard
+        key={entry.id}
+        id={entry.id}
+        title={title}
+        time={entry.time}
+        timeFromSchedule
+        onNavigateToSchedule={onNavigateToSchedule}
+        summaryChips={summary}
+      >
+        <div className="space-y-5">
+          <p className="text-xs text-muted-foreground leading-relaxed -mt-1">
+            From your Schedule. Rename or change the time on the{" "}
+            <button
+              type="button"
+              onClick={() => onNavigateToSchedule?.()}
+              className="text-primary hover:underline font-medium"
+            >
+              Schedule tab
+            </button>
+            .
+          </p>
+          <PrimaryField
+            icon={<Music className="h-4 w-4 text-primary/80" />}
+            label="Song"
+            hint="optional — a signature song for this moment"
+          >
+            <MomentMusicBlock
+              skip={extras?.skip_music ?? false}
+              onSkipChange={(v) => updateExtras(entry.id, { skip_music: v })}
+            >
+              <Input
+                placeholder="Song (optional)"
+                value={extras?.song ?? ""}
+                onChange={(e) =>
+                  updateExtras(entry.id, { song: e.target.value })
+                }
+                className="h-10 text-sm"
+              />
+            </MomentMusicBlock>
+          </PrimaryField>
+          <MomentUniformFields
+            momentId={entry.id}
+            extras={extras}
+            onChange={(patch) => updateExtras(entry.id, patch)}
+            receptionData={data}
+            scheduleOwnsTime
+            onNavigateToSchedule={onNavigateToSchedule}
           />
         </div>
       </MomentCard>
