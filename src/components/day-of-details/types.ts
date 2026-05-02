@@ -91,10 +91,15 @@ export function generateSuggestedTimeline(ceremonyTime: string): ScheduleEntry[]
     { id: crypto.randomUUID(), time: offset(0, 30), title: "Ceremony ends — family formal photos", notes: "", linkedSection: "photos" },
     { id: crypto.randomUUID(), time: offset(0, 45), title: "Private moment — just you two", notes: "Take a breath. You're married!" },
     { id: crypto.randomUUID(), time: offset(1), title: "Cocktail hour", notes: "", linkedSection: "cocktail" },
-    { id: crypto.randomUUID(), time: offset(2), title: "Grand entrance & first dance", notes: "", linkedSection: "reception" },
+    { id: crypto.randomUUID(), time: offset(2), title: "Grand entrance", notes: "", linkedSection: "reception" },
     { id: crypto.randomUUID(), time: offset(2, 15), title: "Dinner service", notes: "" },
     { id: crypto.randomUUID(), time: offset(3, 15), title: "Speeches & toasts", notes: "", linkedSection: "reception" },
-    { id: crypto.randomUUID(), time: offset(3, 45), title: "Parent dances", notes: "", linkedSection: "reception" },
+    // First dance opens the spotlight-dance set right after speeches —
+    // industry-standard placement (~7:15 PM for a 3:30 ceremony). Many
+    // couples pair it with parent dances as one set; users who want them
+    // back-to-back can adjust the time on either entry.
+    { id: crypto.randomUUID(), time: offset(3, 45), title: "First dance", notes: "", linkedSection: "reception" },
+    { id: crypto.randomUUID(), time: offset(3, 50), title: "Parent dances", notes: "", linkedSection: "reception" },
     { id: crypto.randomUUID(), time: offset(4), title: "Cake cutting", notes: "", linkedSection: "reception" },
     { id: crypto.randomUUID(), time: offset(4, 15), title: "Open dancing", notes: "" },
     { id: crypto.randomUUID(), time: offset(5, 45), title: "Last dance", notes: "", linkedSection: "reception" },
@@ -113,6 +118,23 @@ function parseTo24h(time: string): [number, number] | null {
   if (period === "PM" && h < 12) h += 12;
   if (period === "AM" && h === 12) h = 0;
   return [h, m];
+}
+
+/**
+ * Add minutes to a "h:mm AM/PM" time string. Returns the original string
+ * if it can't be parsed. Handles overflow into next hour.
+ */
+export function addMinutesToTime(time: string, minutes: number): string {
+  const parsed = parseTo24h(time);
+  if (parsed === null) return time;
+  let [h, m] = parsed;
+  m += minutes;
+  while (m >= 60) { h += 1; m -= 60; }
+  while (m < 0) { h -= 1; m += 60; }
+  if (h < 0 || h > 23) return time;
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${h12}:${m.toString().padStart(2, "0")} ${period}`;
 }
 
 // ── Getting Ready ──────────────────────────────────────────────────────

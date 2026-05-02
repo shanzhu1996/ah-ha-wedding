@@ -71,6 +71,7 @@ import {
   RECEPTION_MOMENT_TITLES,
   RECEPTION_TOSS_IDS,
   phaseForMoment,
+  addMinutesToTime,
 } from "./types";
 import { MomentCard, type MomentSummaryChip } from "./moment-card";
 import { MomentUniformFields } from "./moment-uniform-fields";
@@ -239,6 +240,40 @@ export function ReceptionSection({
       entries: scheduleData.entries.filter((e) => e.id !== existing.id),
     });
   }
+  /**
+   * One-click split for a Schedule entry that two Reception moments are
+   * fuzzy-matching to (e.g., legacy seed "Grand entrance & first dance").
+   * Renames the original to `keepTitle` and inserts a new entry with
+   * `newTitle` at original.time + offsetMinutes.
+   */
+  function splitScheduleEntry(
+    entryId: string,
+    keepTitle: string,
+    newTitle: string,
+    offsetMinutes: number
+  ) {
+    if (!onScheduleChange || !scheduleData) return;
+    const idx = scheduleData.entries.findIndex((e) => e.id === entryId);
+    if (idx < 0) return;
+    const original = scheduleData.entries[idx];
+    const updatedOriginal: ScheduleEntry = {
+      ...original,
+      title: keepTitle,
+      user_touched: true,
+    };
+    const newEntry: ScheduleEntry = {
+      id: crypto.randomUUID(),
+      time: addMinutesToTime(original.time, offsetMinutes),
+      title: newTitle,
+      notes: "",
+      linkedSection: original.linkedSection,
+      user_touched: true,
+    };
+    const entries = [...scheduleData.entries];
+    entries[idx] = updatedOriginal;
+    entries.splice(idx + 1, 0, newEntry);
+    onScheduleChange({ ...scheduleData, entries });
+  }
 
   // Keep latest data reachable from toast Undo callbacks (which capture stale
   // `data` at toast-show time). Undo writes should always merge into current.
@@ -283,6 +318,28 @@ export function ReceptionSection({
       map[m.id] = !!findScheduleEntryForMoment(m.id, scheduleData)?.time?.trim();
     }
     return map;
+  }, [resolvedMoments, scheduleData]);
+  /**
+   * id → title of the earlier moment that's claiming the same Schedule entry.
+   * Surfaces when fuzzy-matching collides on a single combined entry like
+   * the legacy seed "Grand entrance & first dance" — both moments' keywords
+   * hit it, so they share a time. The second (or later) moment renders a
+   * "split in Schedule" hint to disambiguate.
+   */
+  const sharedScheduleHintByMoment = useMemo(() => {
+    const result: Record<string, string | undefined> = {};
+    const claimed: Record<string, string> = {};
+    for (const m of resolvedMoments) {
+      if (m.isCustom) continue;
+      const entry = findScheduleEntryForMoment(m.id, scheduleData);
+      if (!entry) continue;
+      if (claimed[entry.id]) {
+        result[m.id] = claimed[entry.id];
+      } else {
+        claimed[entry.id] = m.title;
+      }
+    }
+    return result;
   }, [resolvedMoments, scheduleData]);
 
   const sensors = useSensors(
@@ -468,7 +525,34 @@ export function ReceptionSection({
       >
         <SortableContext items={momentOrder} strategy={verticalListSortingStrategy}>
           <div className="space-y-2">
-            {momentOrder.map((id) => renderMoment(id))}
+            {momentOrder.map((id) => {
+              const sharedWith = sharedScheduleHintByMoment[id];
+              if (!sharedWith) return renderMoment(id);
+              const m = resolvedMoments.find((x) => x.id === id);
+              const entry = findScheduleEntryForMoment(id, scheduleData);
+              const canSplit = !!(m && entry && onScheduleChange);
+              return (
+                <div key={id} className="space-y-1">
+                  {renderMoment(id)}
+                  <div className="ml-9 text-[11px] text-muted-foreground/70 inline-flex items-center gap-1.5 flex-wrap">
+                    <span>Same time as &ldquo;{sharedWith}&rdquo;.</span>
+                    {canSplit ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          splitScheduleEntry(entry!.id, sharedWith, m!.title, 5)
+                        }
+                        className="text-primary hover:underline font-medium"
+                      >
+                        Split in Schedule →
+                      </button>
+                    ) : (
+                      <span>Edit in Schedule to split.</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </SortableContext>
       </DndContext>
