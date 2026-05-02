@@ -454,6 +454,23 @@ export interface ParentDance {
   who: string;
   song: string;
   artist: string;
+  /** Minutes the song plays — couples often shorten to 1.5 min so guests
+   *  don't sit through a full track. DJ uses this to plan the cut. */
+  length_minutes?: number;
+}
+
+/** A single member or pair walking in during the Grand entrance bridal-party
+ *  procession. Sequential — the array order is the entrance order. */
+export interface BridalPartyMember {
+  id: string;
+  /** What the MC announces — e.g., "Sarah & Tom" for a paired entrance. */
+  name: string;
+  /** Optional role — e.g., "Maid of Honor", "Best Man & Maid of Honor". */
+  role: string;
+  /** Optional song. Often left blank when the DJ uses one playlist for
+   *  the whole procession; fill in only when a member has a custom track. */
+  song: string;
+  artist: string;
 }
 
 export interface SpeechEntry {
@@ -680,6 +697,9 @@ export interface ReceptionData {
   first_dance_artist: string;
   first_dance_notes: string;
   parent_dances: ParentDance[];
+  /** Bridal party members + pairings announced before the couple's grand
+   *  entrance. Array order = entrance order. Optional — older data omits. */
+  bridal_party_intros?: BridalPartyMember[];
   speeches: SpeechEntry[];
   cake_cutting: boolean;
   cake_cutting_song: string;

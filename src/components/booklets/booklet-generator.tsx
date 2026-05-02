@@ -462,6 +462,18 @@ function getKeyReceptionSongs(
     artist?: string | null;
   }[] = [];
   if (!receptionDayOf) return out;
+  // Bridal party intros come BEFORE the grand entrance — only surface
+  // those with a custom song; the DJ usually plays one shared playlist
+  // for the procession otherwise.
+  (receptionDayOf.bridal_party_intros || [])
+    .filter((m) => hasText(m.song))
+    .forEach((m, i) =>
+      out.push({
+        label: `Bridal party intro ${i + 1}${hasText(m.role) ? ` · ${m.role}` : ""}`,
+        title: m.song,
+        artist: m.artist,
+      })
+    );
   if (hasText(receptionDayOf.grand_entrance_song))
     out.push({
       label: "Grand entrance",
@@ -477,7 +489,8 @@ function getKeyReceptionSongs(
     .filter((d) => hasText(d.song) || hasText(d.who))
     .forEach((d) =>
       out.push({
-        label: `Parent dance · ${d.who || "(who)"}`,
+        // Append " · X min" so the DJ knows whether to cut the track.
+        label: `Parent dance · ${d.who || "(who)"}${d.length_minutes ? ` · ${d.length_minutes} min` : ""}`,
         title: d.song || "(song)",
         artist: d.artist,
       })
@@ -729,6 +742,18 @@ function buildMcCues(
 ): { orderHint: number; label: string; line: string }[] {
   const cues: { orderHint: number; label: string; line: string }[] = [];
   if (!receptionDayOf) return cues;
+  // Bridal party intros — each member becomes an MC cue, ordered before
+  // the grand entrance. Skips empty rows (no name and no role).
+  (receptionDayOf.bridal_party_intros || []).forEach((m, i) => {
+    if (!hasText(m.name) && !hasText(m.role)) return;
+    cues.push({
+      orderHint: 0.5 + i * 0.01,
+      label: `Bridal party intro: ${m.name || "(name)"}${hasText(m.role) ? ` — ${m.role}` : ""}`,
+      line: m.name
+        ? `Please welcome ${hasText(m.role) ? `our ${m.role!.toLowerCase()}, ` : ""}${m.name}!`
+        : `Please welcome ${hasText(m.role) ? `our ${m.role!.toLowerCase()}` : "the next member of our party"}!`,
+    });
+  });
   if (receptionDayOf.moment_extras) {
     const canonicalOrder: Record<string, number> = {
       grand_entrance: 1,
@@ -1454,6 +1479,15 @@ export function BookletGenerator({
         // Reception beats the photographer should stake out.
         const receptionKeyMoments: string[] = [];
         if (receptionDayOf) {
+          // Bridal party procession — each member is a photo opportunity
+          // before the couple's grand entrance.
+          const introCount = (receptionDayOf.bridal_party_intros || []).filter(
+            (m) => hasText(m.name) || hasText(m.role)
+          ).length;
+          if (introCount > 0)
+            receptionKeyMoments.push(
+              `Bridal party intros (${introCount} ${introCount === 1 ? "member" : "members"})`
+            );
           if (hasText(receptionDayOf.grand_entrance_song))
             receptionKeyMoments.push("Grand entrance");
           if (hasText(receptionDayOf.first_dance_song))

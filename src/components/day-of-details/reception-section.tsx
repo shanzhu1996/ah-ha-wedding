@@ -56,6 +56,7 @@ import {
 import type {
   ReceptionData,
   ParentDance,
+  BridalPartyMember,
   SpeechEntry,
   ExitPlan,
   MomentExtras,
@@ -455,6 +456,33 @@ export function ReceptionSection({
   function removeSpeech(id: string) {
     set({ speeches: (data.speeches || []).filter((s) => s.id !== id) });
   }
+  // Bridal party intros — sequential list shown before the couple's grand
+  // entrance. Same shape as parent_dances mutators.
+  function updateBridalPartyMember(
+    id: string,
+    patch: Partial<BridalPartyMember>
+  ) {
+    set({
+      bridal_party_intros: (data.bridal_party_intros || []).map((m) =>
+        m.id === id ? { ...m, ...patch } : m
+      ),
+    });
+  }
+  function addBridalPartyMember() {
+    set({
+      bridal_party_intros: [
+        ...(data.bridal_party_intros || []),
+        { id: crypto.randomUUID(), name: "", role: "", song: "", artist: "" },
+      ],
+    });
+  }
+  function removeBridalPartyMember(id: string) {
+    set({
+      bridal_party_intros: (data.bridal_party_intros || []).filter(
+        (m) => m.id !== id
+      ),
+    });
+  }
 
   // Phase-filtered extras list + summary chip precomputed for readability.
   const extrasForPhase = RECEPTION_TOSS_IDS.filter(
@@ -765,8 +793,10 @@ export function ReceptionSection({
   // ── Specific built-in moment cards ──────────────────────────────────
 
   function renderGrandEntrance(title: string, extras: MomentExtras | undefined) {
+    const introCount = (data.bridal_party_intros || []).length;
     const summary = chips([
       summarizeSongs("grand_entrance", songs, "single"),
+      introCount > 0 ? `${introCount} bridal-party intro${introCount > 1 ? "s" : ""}` : null,
       ...extrasChips(extras),
     ]);
     return (
@@ -782,6 +812,81 @@ export function ReceptionSection({
       >
         <div className="space-y-5">
           <Description momentId="grand_entrance" />
+          <PrimaryField
+            icon={<Users2 className="h-4 w-4 text-primary/80" />}
+            label="Bridal party intros"
+            hint="who walks in before you, in order — leave blank if you're skipping intros"
+          >
+            <div className="space-y-2">
+              {(data.bridal_party_intros || []).map((m, i) => (
+                <div
+                  key={m.id}
+                  className="rounded-md border border-border/40 bg-background p-2 space-y-1.5"
+                >
+                  <div className="grid grid-cols-[auto_1fr_auto] gap-2 sm:flex sm:items-center sm:flex-nowrap">
+                    <span className="text-xs text-muted-foreground/50 w-5 text-right self-center sm:shrink-0">
+                      {i + 1}
+                    </span>
+                    <Input
+                      placeholder="Name (e.g., Sarah & Tom)"
+                      value={m.name}
+                      onChange={(e) =>
+                        updateBridalPartyMember(m.id, { name: e.target.value })
+                      }
+                      className="h-9 text-sm sm:flex-1 sm:min-w-[140px]"
+                    />
+                    <button
+                      onClick={() => removeBridalPartyMember(m.id)}
+                      className="self-center text-muted-foreground/40 hover:text-destructive transition-colors p-1 sm:order-[99] sm:shrink-0"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                    <Input
+                      placeholder="Role (e.g., Maid of Honor)"
+                      value={m.role}
+                      onChange={(e) =>
+                        updateBridalPartyMember(m.id, { role: e.target.value })
+                      }
+                      className="col-span-3 h-9 text-sm sm:col-auto sm:flex-1 sm:min-w-[140px]"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Song (optional)"
+                      value={m.song}
+                      onChange={(e) =>
+                        updateBridalPartyMember(m.id, { song: e.target.value })
+                      }
+                      className="h-9 text-sm flex-1"
+                    />
+                    <Input
+                      placeholder="Artist"
+                      value={m.artist}
+                      onChange={(e) =>
+                        updateBridalPartyMember(m.id, {
+                          artist: e.target.value,
+                        })
+                      }
+                      className="h-9 text-sm w-28"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={addBridalPartyMember}
+              className="mt-3 gap-1.5 text-xs"
+            >
+              <Plus className="h-3 w-3" />
+              Add intro
+            </Button>
+            <p className="text-[11px] text-muted-foreground/70 mt-2">
+              The DJ usually plays one playlist for all intros — only fill in
+              song fields when a specific member has a custom track.
+            </p>
+          </PrimaryField>
           <div className="space-y-2">
             <MusicLink
               phase="grand_entrance"
@@ -983,42 +1088,72 @@ export function ReceptionSection({
           <PrimaryField
             icon={<Users2 className="h-4 w-4 text-primary/80" />}
             label="Dance pairs"
-            hint="each pairing and their song"
+            hint="each pairing, their song, and how long it plays"
           >
             <div className="space-y-2">
-              {(data.parent_dances || []).map((d) => (
-                <div key={d.id} className="flex flex-col sm:flex-row sm:items-center gap-2">
-                  <Input
-                    placeholder="Who (e.g., Bride & Father)"
-                    value={d.who}
-                    onChange={(e) =>
-                      updateParentDance(d.id, { who: e.target.value })
-                    }
-                    className="h-9 text-sm sm:flex-1"
-                  />
-                  <Input
-                    placeholder="Song"
-                    value={d.song}
-                    onChange={(e) =>
-                      updateParentDance(d.id, { song: e.target.value })
-                    }
-                    className="h-9 text-sm sm:flex-1"
-                  />
+              {(data.parent_dances || []).map((d, i) => (
+                <div
+                  key={d.id}
+                  className="rounded-md border border-border/40 bg-background p-2 space-y-1.5"
+                >
+                  <div className="grid grid-cols-[auto_1fr_auto] gap-2 sm:flex sm:items-center sm:flex-nowrap">
+                    <span className="text-xs text-muted-foreground/50 w-5 text-right self-center sm:shrink-0">
+                      {i + 1}
+                    </span>
+                    <Input
+                      placeholder="Who (e.g., Bride & Father)"
+                      value={d.who}
+                      onChange={(e) =>
+                        updateParentDance(d.id, { who: e.target.value })
+                      }
+                      className="h-9 text-sm sm:flex-1 sm:min-w-[140px]"
+                    />
+                    <button
+                      onClick={() => removeParentDance(d.id)}
+                      className="self-center text-muted-foreground/40 hover:text-destructive transition-colors p-1 sm:order-[99] sm:shrink-0"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Song"
+                      value={d.song}
+                      onChange={(e) =>
+                        updateParentDance(d.id, { song: e.target.value })
+                      }
+                      className="h-9 text-sm flex-1"
+                    />
                     <Input
                       placeholder="Artist"
                       value={d.artist}
                       onChange={(e) =>
                         updateParentDance(d.id, { artist: e.target.value })
                       }
-                      className="flex-1 sm:flex-none sm:w-32 h-9 text-sm"
+                      className="h-9 text-sm w-24 sm:w-28"
                     />
-                    <button
-                      onClick={() => removeParentDance(d.id)}
-                      className="text-muted-foreground/40 hover:text-destructive transition-colors p-1 shrink-0"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="relative shrink-0">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={10}
+                        placeholder="min"
+                        value={d.length_minutes ?? ""}
+                        onChange={(e) => {
+                          const n = parseInt(e.target.value, 10);
+                          updateParentDance(d.id, {
+                            length_minutes:
+                              Number.isFinite(n) && n > 0 ? n : undefined,
+                          });
+                        }}
+                        className="h-9 w-16 text-sm tabular-nums pr-7"
+                      />
+                      {d.length_minutes ? (
+                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/60">
+                          min
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               ))}
