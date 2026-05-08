@@ -161,6 +161,22 @@ export function ReceptionSection({
 }: ReceptionSectionProps) {
   const set = (patch: Partial<ReceptionData>) => onChange({ ...data, ...patch });
 
+  // Track which speech rows are currently in "custom minutes" edit mode.
+  // Default chip strip [2 / 3 / 5 / Other] swaps to a single number input
+  // when a row's id is in this set. Click "Other" chip → enter; click Back
+  // → leave. State here (not in data) so toggling doesn't dirty the row.
+  const [speechMinutesEditing, setSpeechMinutesEditing] = useState<Set<string>>(
+    () => new Set()
+  );
+  function toggleSpeechMinutesEditing(id: string, on: boolean) {
+    setSpeechMinutesEditing((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
   // ── Toss helpers (Schedule is the source of truth) ──────────────────
   // Clicking a Quick-add button inserts / removes a Schedule entry titled
   // like the toss. The Dancing timeline reads from Schedule, so the pill
@@ -820,15 +836,12 @@ export function ReceptionSection({
             hint="who walks in before you, in order. Leave blank if you're skipping intros."
           >
             <div className="space-y-2">
-              {(data.bridal_party_intros || []).map((m, i) => (
+              {(data.bridal_party_intros || []).map((m) => (
                 <div
                   key={m.id}
                   className="rounded-md border border-border/40 bg-background p-2 space-y-1.5"
                 >
-                  <div className="grid grid-cols-[auto_1fr_auto] gap-2 sm:flex sm:items-center sm:flex-nowrap">
-                    <span className="text-xs text-muted-foreground/50 w-5 text-right self-center sm:shrink-0">
-                      {i + 1}
-                    </span>
+                  <div className="grid grid-cols-[1fr_auto] gap-2 sm:flex sm:items-center sm:flex-nowrap">
                     <Input
                       placeholder="Name (e.g., Sarah & Tom)"
                       value={m.name}
@@ -849,7 +862,7 @@ export function ReceptionSection({
                       onChange={(e) =>
                         updateBridalPartyMember(m.id, { role: e.target.value })
                       }
-                      className="col-span-3 h-9 text-sm sm:col-auto sm:flex-1 sm:min-w-[140px]"
+                      className="col-span-2 h-9 text-sm sm:col-auto sm:flex-1 sm:min-w-[140px]"
                     />
                   </div>
                   <div className="flex items-center gap-2">
@@ -1121,15 +1134,12 @@ export function ReceptionSection({
             hint="each pairing, their song, and how long it plays"
           >
             <div className="space-y-2">
-              {(data.parent_dances || []).map((d, i) => (
+              {(data.parent_dances || []).map((d) => (
                 <div
                   key={d.id}
                   className="rounded-md border border-border/40 bg-background p-2 space-y-1.5"
                 >
-                  <div className="grid grid-cols-[auto_1fr_auto] gap-2 sm:flex sm:items-center sm:flex-nowrap">
-                    <span className="text-xs text-muted-foreground/50 w-5 text-right self-center sm:shrink-0">
-                      {i + 1}
-                    </span>
+                  <div className="grid grid-cols-[1fr_auto] gap-2 sm:flex sm:items-center sm:flex-nowrap">
                     <Input
                       placeholder="Who (e.g., Bride & Father)"
                       value={d.who}
@@ -1236,16 +1246,14 @@ export function ReceptionSection({
             hint="order and estimated length. Tight estimates save the timeline."
           >
             <div className="space-y-3">
-              {(data.speeches || []).map((s, i) => {
+              {(data.speeches || []).map((s) => {
                 const minutes = s.estimated_minutes ?? 3;
                 const isCustom = ![2, 3, 5].includes(minutes);
+                const editing = speechMinutesEditing.has(s.id);
                 return (
                   <div key={s.id} className="rounded-md border border-border/40 bg-background p-2 space-y-1.5">
-                    {/* Mobile: 3-col grid so fields stack cleanly. Desktop: single flex row. */}
-                    <div className="grid grid-cols-[auto_1fr_auto] gap-2 sm:flex sm:items-center sm:flex-nowrap">
-                      <span className="text-xs text-muted-foreground/50 w-5 text-right self-center sm:shrink-0">
-                        {i + 1}
-                      </span>
+                    {/* Mobile: 2-col grid (input + delete). Desktop: single flex row. */}
+                    <div className="grid grid-cols-[1fr_auto] gap-2 sm:flex sm:items-center sm:flex-nowrap">
                       <Input
                         placeholder="Speaker name"
                         value={s.speaker}
@@ -1262,44 +1270,130 @@ export function ReceptionSection({
                         placeholder="Role (e.g., Maid of Honor)"
                         value={s.role ?? ""}
                         onChange={(e) => updateSpeech(s.id, { role: e.target.value })}
-                        className="col-span-3 h-9 text-sm sm:col-auto sm:flex-1 sm:min-w-[140px]"
+                        className="col-span-2 h-9 text-sm sm:col-auto sm:flex-1 sm:min-w-[140px]"
                       />
-                      <div className="col-span-3 flex items-center gap-1 sm:col-auto sm:shrink-0">
-                        {[2, 3, 5].map((n) => (
-                          <button
-                            key={n}
-                            type="button"
-                            onClick={() => updateSpeech(s.id, { estimated_minutes: n })}
-                            className={cn(
-                              "h-7 px-2 rounded-md text-xs tabular-nums transition-colors border",
-                              minutes === n && !isCustom
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "border-border bg-background text-muted-foreground hover:text-foreground"
-                            )}
-                          >
-                            {n}m
-                          </button>
-                        ))}
-                        <Input
-                          type="number"
-                          min={1}
-                          max={60}
-                          value={isCustom ? minutes : ""}
-                          onChange={(e) => {
-                            const n = parseInt(e.target.value, 10);
-                            if (Number.isFinite(n) && n > 0) updateSpeech(s.id, { estimated_minutes: n });
-                          }}
-                          placeholder="…"
-                          className={cn("h-7 w-14 text-xs tabular-nums px-1.5", isCustom && "ring-1 ring-primary")}
-                        />
+                      <div className="col-span-2 flex items-center gap-1 sm:col-auto sm:shrink-0">
+                        {editing ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleSpeechMinutesEditing(s.id, false)
+                              }
+                              className="h-7 px-2 rounded-md text-xs border border-border bg-background text-muted-foreground hover:text-foreground transition-colors inline-flex items-center"
+                              title="Back to chips"
+                              aria-label="Back to common lengths"
+                            >
+                              ←
+                            </button>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={60}
+                              autoFocus
+                              value={minutes}
+                              onChange={(e) => {
+                                const n = parseInt(e.target.value, 10);
+                                if (Number.isFinite(n) && n > 0)
+                                  updateSpeech(s.id, { estimated_minutes: n });
+                              }}
+                              className="h-7 w-14 text-xs tabular-nums px-1.5"
+                            />
+                            <span className="text-[10px] text-muted-foreground/60">
+                              min
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            {[2, 3, 5].map((n) => (
+                              <button
+                                key={n}
+                                type="button"
+                                onClick={() =>
+                                  updateSpeech(s.id, { estimated_minutes: n })
+                                }
+                                className={cn(
+                                  "h-7 px-2 rounded-md text-xs tabular-nums transition-colors border",
+                                  minutes === n && !isCustom
+                                    ? "bg-primary text-primary-foreground border-primary"
+                                    : "border-border bg-background text-muted-foreground hover:text-foreground"
+                                )}
+                              >
+                                {n}m
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleSpeechMinutesEditing(s.id, true)
+                              }
+                              className={cn(
+                                "h-7 px-2 rounded-md text-xs tabular-nums transition-colors border inline-flex items-center gap-1",
+                                isCustom
+                                  ? "bg-primary text-primary-foreground border-primary"
+                                  : "border-border bg-background text-muted-foreground hover:text-foreground"
+                              )}
+                            >
+                              {isCustom ? `${minutes}m` : (
+                                <>
+                                  <Plus className="h-3 w-3" />
+                                  Other
+                                </>
+                              )}
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
-                    <Input
-                      placeholder={`MC intro (optional — default: "Please welcome to the mic, ${s.speaker || "…"}${s.role ? ", " + s.role : ""}.")`}
-                      value={s.intro_line ?? ""}
-                      onChange={(e) => updateSpeech(s.id, { intro_line: e.target.value })}
-                      className="h-8 text-xs text-muted-foreground"
-                    />
+                    {(() => {
+                      const speaker = s.speaker?.trim();
+                      const role = s.role?.trim();
+                      const computedDefault =
+                        speaker && role
+                          ? `Please welcome to the mic, ${speaker}, ${role}.`
+                          : speaker
+                            ? `Please welcome to the mic, ${speaker}.`
+                            : role
+                              ? `Please welcome our next speaker, ${role}.`
+                              : null;
+                      const filled = !!s.intro_line?.trim();
+                      return (
+                        <div className="space-y-1">
+                          <Input
+                            placeholder="MC intro (optional)"
+                            value={s.intro_line ?? ""}
+                            onChange={(e) =>
+                              updateSpeech(s.id, { intro_line: e.target.value })
+                            }
+                            className="h-8 text-xs text-muted-foreground"
+                          />
+                          {!filled && (
+                            <div className="text-[10px] text-muted-foreground/70 flex items-center gap-2 pl-1">
+                              {computedDefault ? (
+                                <>
+                                  <span className="truncate min-w-0 flex-1">
+                                    Default: <span className="italic">&ldquo;{computedDefault}&rdquo;</span>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateSpeech(s.id, { intro_line: computedDefault })
+                                    }
+                                    className="text-primary hover:underline shrink-0 font-medium"
+                                  >
+                                    Use
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="italic">
+                                  Default appears once you fill in name + role.
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
