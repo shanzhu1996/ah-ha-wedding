@@ -244,7 +244,7 @@ export function CeremonySection({
         title="Readings"
         hint="readings or poems during the ceremony"
         summaryChips={readingsChips}
-        emptyLabel="No readings — many ceremonies have 1–2"
+        emptyLabel="Many ceremonies have 1–2"
       >
         <ReadingList
           entries={readings}
@@ -277,9 +277,9 @@ export function CeremonySection({
       <CollapsibleSection
         icon={<InfinityIcon />}
         title="Unity ceremony"
-        hint="optional — many couples skip this"
+        hint="optional. many couples skip this"
         summaryChips={unityChips}
-        emptyLabel="None — skip if not applicable"
+        emptyLabel="Skip if not applicable"
       >
         <div className="space-y-3">
           <Select
@@ -375,9 +375,9 @@ export function CeremonySection({
       <CollapsibleSection
         icon={<Flame />}
         title="Other cultural / religious traditions"
-        hint="anything not already structured above — breaking of the glass, jumping the broom, etc."
+        hint="anything not already structured above: breaking of the glass, jumping the broom, etc."
         summaryChips={culturalChips}
-        emptyLabel="None — skip if not applicable"
+        emptyLabel="Skip if not applicable"
       >
         <Textarea
           value={data.cultural_notes}

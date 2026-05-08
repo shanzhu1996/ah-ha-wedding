@@ -422,7 +422,7 @@ export function GettingReadySection({
       <CollapsibleSection
         icon={<Users2 />}
         title="Bridal party photos"
-        hint="who's in each shot — photographer handles where and when"
+        hint="who's in each shot. Photographer handles where and when."
         summaryChips={bridalChips}
       >
         <div className="space-y-3">
@@ -473,7 +473,7 @@ export function GettingReadySection({
       <CollapsibleSection
         icon={<UserPlus />}
         title="Family photos"
-        hint="posed lineups, one group at a time — photographer handles where and when"
+        hint="posed lineups, one group at a time. Photographer handles where and when."
         summaryChips={familyChips}
       >
         <div className="space-y-3">
@@ -544,7 +544,7 @@ export function GettingReadySection({
         title="Cultural or religious prep"
         hint="traditions during getting-ready"
         summaryChips={culturalChips}
-        emptyLabel="None — skip if not applicable"
+        emptyLabel="Skip if not applicable"
       >
         <Textarea
           value={data.cultural_notes}

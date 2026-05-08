@@ -164,7 +164,7 @@ export function LogisticsSection({ data, onChange }: LogisticsSectionProps) {
       <CollapsibleSection
         icon={<Umbrella />}
         title="Rain plan"
-        hint="always have a backup — even if it probably won't rain"
+        hint="always have a backup, even if it probably won't rain"
         summaryChips={rainChips}
         emptyLabel="Not planned yet"
       >
@@ -180,7 +180,7 @@ export function LogisticsSection({ data, onChange }: LogisticsSectionProps) {
       <CollapsibleSection
         icon={<Phone />}
         title="Emergency contacts"
-        hint="coordinator, backup, family rep — the people your team can call"
+        hint="coordinator, backup, family rep; the people your team can call"
         summaryChips={emergencyChips}
         emptyLabel="None added"
       >
@@ -246,7 +246,7 @@ export function LogisticsSection({ data, onChange }: LogisticsSectionProps) {
       <CollapsibleSection
         icon={<UtensilsCrossed />}
         title="Vendor meals"
-        hint="your vendors work long hours — make sure they're fed"
+        hint="your vendors work long hours. Make sure they're fed."
         summaryChips={vendorMealsChips}
       >
         <Textarea
@@ -266,7 +266,7 @@ export function LogisticsSection({ data, onChange }: LogisticsSectionProps) {
         title="Cultural or religious logistics"
         hint="special setup, timing, or participants for cultural elements"
         summaryChips={culturalChips}
-        emptyLabel="None — skip if not applicable"
+        emptyLabel="Skip if not applicable"
       >
         <Textarea
           value={data.cultural_notes}

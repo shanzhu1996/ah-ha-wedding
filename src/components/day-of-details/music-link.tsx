@@ -47,14 +47,18 @@ export function MusicLink({
   return (
     <div className="space-y-2">
       {label && (
-        <div className="flex items-baseline gap-2 flex-wrap">
-          <Music className="h-[18px] w-[18px] text-primary self-center" />
-          <span className="text-[15px] font-semibold text-foreground leading-none">
-            {label}
-          </span>
-          {hint && (
-            <span className="text-[13px] text-muted-foreground">— {hint}</span>
-          )}
+        <div className="flex items-start gap-2">
+          <Music className="h-[18px] w-[18px] text-primary mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <span className="block text-[15px] font-semibold text-foreground leading-tight">
+              {label}
+            </span>
+            {hint && (
+              <p className="text-[13px] text-muted-foreground mt-0.5 leading-snug">
+                {hint}
+              </p>
+            )}
+          </div>
         </div>
       )}
 

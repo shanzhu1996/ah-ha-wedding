@@ -696,6 +696,10 @@ export interface ReceptionData {
   first_dance_song: string;
   first_dance_artist: string;
   first_dance_notes: string;
+  /** Minutes the first-dance song plays — couples often shorten to ~1.5
+   *  min so guests don't sit through a full track. DJ uses this to plan
+   *  the cut. Optional; missing means full song. */
+  first_dance_length_minutes?: number;
   parent_dances: ParentDance[];
   /** Bridal party members + pairings announced before the couple's grand
    *  entrance. Array order = entrance order. Optional — older data omits. */
@@ -703,8 +707,18 @@ export interface ReceptionData {
   speeches: SpeechEntry[];
   cake_cutting: boolean;
   cake_cutting_song: string;
+  /** How the couple feeds each other (or doesn't). Empty string = unset. */
+  cake_feed_style?: "feed_each_other" | "clean_cut" | "skip" | "";
+  /** Who actually does the cutting — free text. e.g., "Couple cuts together,
+   *  banquet captain plates and serves". */
+  cake_cutter?: string;
+  /** Save the top tier for the 1-year anniversary tradition. Drives a baker
+   *  handoff note + a coordinator reminder to box the slice. */
+  cake_top_tier_saved?: boolean;
   last_dance_song: string;
   last_dance_artist: string;
+  /** Minutes the last-dance song plays — same role as first_dance_length_minutes. */
+  last_dance_length_minutes?: number;
   exit_style: "none" | "sparklers" | "bubbles" | "confetti" | "ribbon_wands" | "other" | "";
   exit_song: string;
   /** Conditional on exit_style being set to something other than "none" or "". */

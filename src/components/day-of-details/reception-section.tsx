@@ -19,6 +19,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   ChevronDown,
+  Clock,
   Music,
   UtensilsCrossed,
   Users2,
@@ -28,6 +29,7 @@ import {
   StickyNote,
   PartyPopper,
   Flame,
+  Cake,
   Info,
 } from "lucide-react";
 import {
@@ -682,7 +684,7 @@ export function ReceptionSection({
               ? [{ label: "has notes", tone: "muted" }]
               : []
           }
-          emptyLabel="None — skip if not applicable"
+          emptyLabel="Skip if not applicable"
         >
           <Textarea
             placeholder="Describe any cultural or religious reception elements…"
@@ -815,7 +817,7 @@ export function ReceptionSection({
           <PrimaryField
             icon={<Users2 className="h-4 w-4 text-primary/80" />}
             label="Bridal party intros"
-            hint="who walks in before you, in order — leave blank if you're skipping intros"
+            hint="who walks in before you, in order. Leave blank if you're skipping intros."
           >
             <div className="space-y-2">
               {(data.bridal_party_intros || []).map((m, i) => (
@@ -883,7 +885,7 @@ export function ReceptionSection({
               Add intro
             </Button>
             <p className="text-[11px] text-muted-foreground/70 mt-2">
-              The DJ usually plays one playlist for all intros — only fill in
+              The DJ usually plays one playlist for all intros. Only fill in
               song fields when a specific member has a custom track.
             </p>
           </PrimaryField>
@@ -951,9 +953,37 @@ export function ReceptionSection({
             )}
           </div>
           <PrimaryField
+            icon={<Clock className="h-4 w-4 text-primary/80" />}
+            label="Song length"
+            hint="many couples cut to ~1:30 so guests don't lose interest"
+          >
+            <div className="relative inline-block">
+              <Input
+                type="number"
+                min={1}
+                max={10}
+                placeholder="min"
+                value={data.first_dance_length_minutes ?? ""}
+                onChange={(e) => {
+                  const n = parseInt(e.target.value, 10);
+                  set({
+                    first_dance_length_minutes:
+                      Number.isFinite(n) && n > 0 ? n : undefined,
+                  });
+                }}
+                className="h-9 w-20 text-sm tabular-nums pr-8"
+              />
+              {data.first_dance_length_minutes ? (
+                <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/60">
+                  min
+                </span>
+              ) : null}
+            </div>
+          </PrimaryField>
+          <PrimaryField
             icon={<StickyNote className="h-4 w-4 text-primary/80" />}
             label="Choreo notes"
-            hint="optional — e.g., choreographed, surprise mashup"
+            hint="optional. e.g., choreographed, surprise mashup"
           >
             <Textarea
               placeholder="Anything the couple wants remembered about this dance"
@@ -1016,7 +1046,7 @@ export function ReceptionSection({
           <PrimaryField
             icon={<UtensilsCrossed className="h-4 w-4 text-primary/80" />}
             label="Vendor meals"
-            hint="when vendors eat — managed in Logistics"
+            hint="when vendors eat. Managed in Logistics."
           >
             <button
               type="button"
@@ -1203,7 +1233,7 @@ export function ReceptionSection({
           <PrimaryField
             icon={<Mic className="h-4 w-4 text-primary/80" />}
             label="Speakers"
-            hint="order and estimated length — tight estimates save the timeline"
+            hint="order and estimated length. Tight estimates save the timeline."
           >
             <div className="space-y-3">
               {(data.speeches || []).map((s, i) => {
@@ -1331,6 +1361,55 @@ export function ReceptionSection({
               />
             )}
           </div>
+          <PrimaryField
+            icon={<Cake className="h-4 w-4 text-primary/80" />}
+            label="Feeding tradition"
+            hint="how you do the bite"
+          >
+            <Select
+              value={data.cake_feed_style || undefined}
+              onValueChange={(v) =>
+                set({
+                  cake_feed_style: (v ??
+                    "") as ReceptionData["cake_feed_style"],
+                })
+              }
+            >
+              <SelectTrigger className="w-full sm:w-64 h-10 text-sm">
+                <SelectValue placeholder="Select feeding style" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="feed_each_other">Feed each other</SelectItem>
+                <SelectItem value="clean_cut">Clean cut — no feeding</SelectItem>
+                <SelectItem value="skip">Skip the cutting</SelectItem>
+              </SelectContent>
+            </Select>
+          </PrimaryField>
+          <PrimaryField
+            icon={<Users2 className="h-4 w-4 text-primary/80" />}
+            label="Who cuts"
+            hint="couple cuts; usually a server steps in to plate + serve"
+          >
+            <Input
+              placeholder="e.g., Couple cuts together; banquet captain plates"
+              value={data.cake_cutter ?? ""}
+              onChange={(e) => set({ cake_cutter: e.target.value })}
+              className="h-10 text-sm"
+            />
+          </PrimaryField>
+          <PrimaryField
+            icon={<ShieldCheck className="h-4 w-4 text-primary/80" />}
+            label="Top tier"
+            hint="save the top for your 1-year anniversary?"
+          >
+            <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox
+                checked={data.cake_top_tier_saved ?? false}
+                onCheckedChange={(v) => set({ cake_top_tier_saved: !!v })}
+              />
+              Save the top tier — baker boxes it; coordinator stores it
+            </label>
+          </PrimaryField>
           <MomentUniformFields
             momentId="cake_cutting"
             extras={extras}
@@ -1368,7 +1447,7 @@ export function ReceptionSection({
               songs={songs}
               expected="single"
               label="Last dance song"
-              hint="the night's final song — last chance on the floor"
+              hint="the night's final song; last chance on the floor"
             />
             {!hasSongsFor("last_dance") && (
               <SkipMusicToggle
@@ -1377,6 +1456,34 @@ export function ReceptionSection({
               />
             )}
           </div>
+          <PrimaryField
+            icon={<Clock className="h-4 w-4 text-primary/80" />}
+            label="Song length"
+            hint="full track keeps people on the floor"
+          >
+            <div className="relative inline-block">
+              <Input
+                type="number"
+                min={1}
+                max={10}
+                placeholder="min"
+                value={data.last_dance_length_minutes ?? ""}
+                onChange={(e) => {
+                  const n = parseInt(e.target.value, 10);
+                  set({
+                    last_dance_length_minutes:
+                      Number.isFinite(n) && n > 0 ? n : undefined,
+                  });
+                }}
+                className="h-9 w-20 text-sm tabular-nums pr-8"
+              />
+              {data.last_dance_length_minutes ? (
+                <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/60">
+                  min
+                </span>
+              ) : null}
+            </div>
+          </PrimaryField>
           <MomentUniformFields
             momentId="last_dance"
             extras={extras}
@@ -1412,7 +1519,7 @@ export function ReceptionSection({
           <PrimaryField
             icon={<LogOut className="h-4 w-4 text-primary/80" />}
             label="Exit style"
-            hint="how you leave — planners say this is the biggest footgun"
+            hint="planners say this is the biggest footgun"
           >
             <Select
               value={data.exit_style || undefined}
@@ -1457,7 +1564,7 @@ export function ReceptionSection({
               <PrimaryField
                 icon={<ShieldCheck className="h-4 w-4 text-primary/80" />}
                 label="Exit details"
-                hint="confirm these 2 weeks out — biggest footgun"
+                hint="confirm these 2 weeks out; biggest footgun"
               >
                 <div className="rounded-md border border-border/60 bg-muted/30 p-3 space-y-2.5">
                   <label className="flex items-center gap-2 text-sm">
@@ -1553,7 +1660,7 @@ export function ReceptionSection({
           <PrimaryField
             icon={<Music className="h-4 w-4 text-primary/80" />}
             label="Music cue"
-            hint="optional — song title or playlist note"
+            hint="optional. song title or playlist note"
           >
             <MomentMusicBlock
               skip={extras?.skip_music ?? false}
@@ -1616,7 +1723,7 @@ export function ReceptionSection({
           <PrimaryField
             icon={<Music className="h-4 w-4 text-primary/80" />}
             label="Song"
-            hint="optional — a signature song for this moment"
+            hint="optional. a signature song for this moment"
           >
           <MomentMusicBlock
             skip={m.skip_music ?? false}
@@ -1678,7 +1785,7 @@ export function ReceptionSection({
           <PrimaryField
             icon={<Music className="h-4 w-4 text-primary/80" />}
             label="Song"
-            hint="optional — a signature song for this moment"
+            hint="optional. a signature song for this moment"
           >
             <MomentMusicBlock
               skip={extras?.skip_music ?? false}
@@ -1749,16 +1856,20 @@ function PrimaryField({
 }) {
   return (
     <div className="space-y-2">
-      <div className="flex items-baseline gap-2 flex-wrap">
-        <span className="flex items-center self-center [&>svg]:!h-[18px] [&>svg]:!w-[18px] [&>svg]:!text-primary">
+      <div className="flex items-start gap-2">
+        <span className="flex items-center self-start mt-0.5 [&>svg]:!h-[18px] [&>svg]:!w-[18px] [&>svg]:!text-primary shrink-0">
           {icon}
         </span>
-        <label className="text-[15px] font-semibold text-foreground leading-none">
-          {label}
-        </label>
-        {hint && (
-          <span className="text-[13px] text-muted-foreground">— {hint}</span>
-        )}
+        <div className="flex-1 min-w-0">
+          <label className="block text-[15px] font-semibold text-foreground leading-tight">
+            {label}
+          </label>
+          {hint && (
+            <p className="text-[13px] text-muted-foreground mt-0.5 leading-snug">
+              {hint}
+            </p>
+          )}
+        </div>
       </div>
       {children}
     </div>

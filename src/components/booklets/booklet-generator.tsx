@@ -481,7 +481,7 @@ function getKeyReceptionSongs(
     });
   if (hasText(receptionDayOf.first_dance_song))
     out.push({
-      label: "First dance",
+      label: `First dance${receptionDayOf.first_dance_length_minutes ? ` · ${receptionDayOf.first_dance_length_minutes} min` : ""}`,
       title: receptionDayOf.first_dance_song,
       artist: receptionDayOf.first_dance_artist,
     });
@@ -502,7 +502,7 @@ function getKeyReceptionSongs(
     });
   if (hasText(receptionDayOf.last_dance_song))
     out.push({
-      label: "Last dance",
+      label: `Last dance${receptionDayOf.last_dance_length_minutes ? ` · ${receptionDayOf.last_dance_length_minutes} min` : ""}`,
       title: receptionDayOf.last_dance_song,
       artist: receptionDayOf.last_dance_artist,
     });
@@ -721,12 +721,20 @@ function filterKeyReceptionSongsByAssignment<
 ): T[] {
   if (Object.keys(phaseAssignments).length === 0) return songs;
   return songs.filter((s) => {
-    // Parent dances → parent_dances phase
-    const phase = s.label.startsWith("Parent dance")
-      ? "parent_dances"
-      : s.label.startsWith("Send-off")
-        ? "send_off"
-        : RECEPTION_MOMENT_TO_PHASE[s.label];
+    // Use startsWith for all built-in moments — labels may carry a " · X min"
+    // suffix (first/last dance length) so an exact-key map lookup wouldn't work.
+    let phase: string | undefined;
+    if (s.label.startsWith("Parent dance")) phase = "parent_dances";
+    else if (s.label.startsWith("Send-off")) phase = "send_off";
+    else if (s.label.startsWith("Bridal party intro")) phase = "grand_entrance";
+    else {
+      for (const [prefix, p] of Object.entries(RECEPTION_MOMENT_TO_PHASE)) {
+        if (s.label.startsWith(prefix)) {
+          phase = p;
+          break;
+        }
+      }
+    }
     if (!phase) return true;
     const assigned = phaseAssignments[phase];
     return !assigned || assigned === vendorId;
@@ -2537,6 +2545,39 @@ export function BookletGenerator({
                 </div>
               )}
             </div>
+
+            {receptionDayOf &&
+              (receptionDayOf.cake_feed_style ||
+                hasText(receptionDayOf.cake_cutter) ||
+                receptionDayOf.cake_top_tier_saved) && (
+                <div className="avoid-break rounded-md border border-dashed p-3 bg-muted/30 space-y-2 text-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                    Cutting plan
+                  </p>
+                  {receptionDayOf.cake_feed_style && (
+                    <p>
+                      <span className="text-muted-foreground">Style:</span>{" "}
+                      {receptionDayOf.cake_feed_style === "feed_each_other"
+                        ? "Couple feeds each other"
+                        : receptionDayOf.cake_feed_style === "clean_cut"
+                          ? "Clean cut — no feeding"
+                          : "Skipping the cutting"}
+                    </p>
+                  )}
+                  {hasText(receptionDayOf.cake_cutter) && (
+                    <p>
+                      <span className="text-muted-foreground">Who cuts:</span>{" "}
+                      {receptionDayOf.cake_cutter}
+                    </p>
+                  )}
+                  {receptionDayOf.cake_top_tier_saved && (
+                    <p className="font-medium">
+                      ⚑ Box the top tier — couple saves it for their 1-year
+                      anniversary.
+                    </p>
+                  )}
+                </div>
+              )}
 
             <div className="avoid-break">
               <h4 className="font-semibold text-sm mb-2">Cake Specs</h4>

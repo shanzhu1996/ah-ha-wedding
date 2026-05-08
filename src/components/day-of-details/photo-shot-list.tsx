@@ -297,7 +297,7 @@ export function PhotoShotList({
         title="Do not shoot"
         hint="people or topics to avoid"
         summaryChips={doNotShootChips}
-        emptyLabel="None — skip if not applicable"
+        emptyLabel="Skip if not applicable"
       >
         <Textarea
           value={data.do_not_shoot_notes}

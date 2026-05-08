@@ -349,7 +349,7 @@ export function CocktailSection({
       <CollapsibleSection
         icon={<Camera />}
         title="Photographer focus during cocktail hour"
-        hint="what to capture while guests mingle — pick any"
+        hint="what to capture while guests mingle. Pick any."
         summaryChips={photosChips}
         emptyLabel="Not specified"
       >
@@ -399,7 +399,7 @@ export function CocktailSection({
         title="Cultural or religious elements"
         hint="toasts, traditions, or customs for this hour"
         summaryChips={culturalChips}
-        emptyLabel="None — skip if not applicable"
+        emptyLabel="Skip if not applicable"
       >
         <Textarea
           value={data.cultural_notes}
