@@ -50,6 +50,7 @@ import {
   mcIntroFor,
   effectiveEmergencyContacts,
   effectiveRoles,
+  formatSongLength,
   type ScheduleData,
   type GettingReadyData,
   type CeremonyData,
@@ -481,7 +482,7 @@ function getKeyReceptionSongs(
     });
   if (hasText(receptionDayOf.first_dance_song))
     out.push({
-      label: `First dance${receptionDayOf.first_dance_length_minutes ? ` · ${receptionDayOf.first_dance_length_minutes} min` : ""}`,
+      label: `First dance${receptionDayOf.first_dance_length_minutes ? ` · ${formatSongLength(receptionDayOf.first_dance_length_minutes)}` : ""}`,
       title: receptionDayOf.first_dance_song,
       artist: receptionDayOf.first_dance_artist,
     });
@@ -502,7 +503,7 @@ function getKeyReceptionSongs(
     });
   if (hasText(receptionDayOf.last_dance_song))
     out.push({
-      label: `Last dance${receptionDayOf.last_dance_length_minutes ? ` · ${receptionDayOf.last_dance_length_minutes} min` : ""}`,
+      label: `Last dance${receptionDayOf.last_dance_length_minutes ? ` · ${formatSongLength(receptionDayOf.last_dance_length_minutes)}` : ""}`,
       title: receptionDayOf.last_dance_song,
       artist: receptionDayOf.last_dance_artist,
     });

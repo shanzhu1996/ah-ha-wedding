@@ -87,8 +87,8 @@ export function generateSuggestedTimeline(ceremonyTime: string): ScheduleEntry[]
     { id: crypto.randomUUID(), time: offset(-1, -30), title: "First look", notes: "If applicable", linkedSection: "getting_ready" },
     { id: crypto.randomUUID(), time: offset(-1, -15), title: "Bridal party & family photos", notes: "", linkedSection: "photos" },
     { id: crypto.randomUUID(), time: offset(0, -30), title: "Guests arrive & are seated", notes: "" },
-    { id: crypto.randomUUID(), time: offset(0), title: "Ceremony begins", notes: "", linkedSection: "ceremony" },
-    { id: crypto.randomUUID(), time: offset(0, 30), title: "Ceremony ends — family formal photos", notes: "", linkedSection: "photos" },
+    { id: crypto.randomUUID(), time: offset(0), title: "Ceremony", notes: "", linkedSection: "ceremony" },
+    { id: crypto.randomUUID(), time: offset(0, 30), title: "Group Photos", notes: "Family + wedding party + friends", linkedSection: "photos" },
     { id: crypto.randomUUID(), time: offset(0, 45), title: "Private moment — just you two", notes: "Take a breath. You're married!" },
     { id: crypto.randomUUID(), time: offset(1), title: "Cocktail hour", notes: "", linkedSection: "cocktail" },
     { id: crypto.randomUUID(), time: offset(2), title: "Grand entrance", notes: "", linkedSection: "reception" },
@@ -118,6 +118,51 @@ function parseTo24h(time: string): [number, number] | null {
   if (period === "PM" && h < 12) h += 12;
   if (period === "AM" && h === 12) h = 0;
   return [h, m];
+}
+
+/**
+ * Parse a "M:SS" or "M" or decimal-min input into minutes-as-decimal.
+ *   "1:30" → 1.5
+ *   "1:15" → 1.25
+ *   "2"    → 2
+ *   "1.5"  → 1.5
+ * Returns null when unparseable or out of range. Storage stays in
+ * `length_minutes` (as a float) so existing integer values keep working.
+ */
+export function parseSongLength(input: string): number | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  // M:SS form
+  const colon = trimmed.match(/^(\d+):(\d{1,2})$/);
+  if (colon) {
+    const m = parseInt(colon[1], 10);
+    const s = parseInt(colon[2], 10);
+    if (!Number.isFinite(m) || !Number.isFinite(s)) return null;
+    if (s < 0 || s >= 60) return null;
+    const result = m + s / 60;
+    if (result <= 0 || result > 30) return null;
+    return Math.round(result * 100) / 100; // 2 decimals
+  }
+  // Plain integer or decimal minutes
+  const num = parseFloat(trimmed);
+  if (!Number.isFinite(num) || num <= 0 || num > 30) return null;
+  return Math.round(num * 100) / 100;
+}
+
+/**
+ * Render a decimal-minute value as "M:SS" — nicer than "1.25 min".
+ *   1.25 → "1:15"
+ *   1.5  → "1:30"
+ *   2    → "2:00"
+ *   3    → "3:00"
+ */
+export function formatSongLength(minutes: number | undefined): string {
+  if (minutes == null || !Number.isFinite(minutes) || minutes <= 0) return "";
+  const m = Math.floor(minutes);
+  const s = Math.round((minutes - m) * 60);
+  // Roll over if rounding pushed seconds to 60
+  if (s === 60) return `${m + 1}:00`;
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 /**
@@ -452,8 +497,15 @@ export function getDefaultCocktailData(): CocktailData {
 export interface ParentDance {
   id: string;
   who: string;
+  /** Music tab is the SSoT for parent-dance songs. We mirror them here so
+   *  legacy booklet code (which reads `song`/`artist`) keeps working. New
+   *  rows write song from Music tab + lowercase `song_key` for matching. */
   song: string;
   artist: string;
+  /** Lowercase trim of the matching Music-tab song title. Used to attach
+   *  this metadata row to the Music-tab song even if `song` capitalization
+   *  drifts. Optional only for backward compat with rows created pre-sync. */
+  song_key?: string;
   /** Minutes the song plays — couples often shorten to 1.5 min so guests
    *  don't sit through a full track. DJ uses this to plan the cut. */
   length_minutes?: number;
@@ -499,13 +551,13 @@ export function mcIntroFor(s: SpeechEntry): string {
   const speaker = s.speaker?.trim();
   const role = s.role?.trim();
   if (speaker && role) {
-    return `Please welcome to the mic, ${speaker}, ${role}.`;
+    return `Please welcome ${speaker}, our ${role}.`;
   }
   if (speaker) {
-    return `Please welcome to the mic, ${speaker}.`;
+    return `Please welcome ${speaker}.`;
   }
   if (role) {
-    return `Please welcome our next speaker — ${role}.`;
+    return `Please welcome our next speaker, the ${role}.`;
   }
   return "Please welcome our next speaker.";
 }
@@ -799,8 +851,8 @@ export function getDefaultReceptionData(): ReceptionData {
     first_dance_artist: "",
     first_dance_notes: "",
     parent_dances: [
-      { id: crypto.randomUUID(), who: "Partner 1 & Parent", song: "", artist: "" },
-      { id: crypto.randomUUID(), who: "Partner 2 & Parent", song: "", artist: "" },
+      { id: crypto.randomUUID(), who: "", song: "", artist: "" },
+      { id: crypto.randomUUID(), who: "", song: "", artist: "" },
     ],
     speeches: [],
     cake_cutting: true,

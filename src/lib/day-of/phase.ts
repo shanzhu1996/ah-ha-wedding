@@ -54,7 +54,8 @@ export function getPhase(entry: ScheduleEntry): string {
     t.includes("portrait") ||
     (t.includes("photo") &&
       !t.includes("ceremony") &&
-      !t.includes("formal"))
+      !t.includes("formal") &&
+      !t.includes("group"))
   )
     return "getting ready";
   if (
@@ -62,6 +63,7 @@ export function getPhase(entry: ScheduleEntry): string {
     t.includes("ceremony") ||
     t.includes("guests arrive") ||
     t.includes("family formal") ||
+    t.includes("group photo") ||
     t.includes("private moment")
   )
     return "ceremony";

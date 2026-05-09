@@ -75,6 +75,8 @@ import {
   RECEPTION_TOSS_IDS,
   phaseForMoment,
   addMinutesToTime,
+  parseSongLength,
+  formatSongLength,
 } from "./types";
 import { MomentCard, type MomentSummaryChip } from "./moment-card";
 import { MomentUniformFields } from "./moment-uniform-fields";
@@ -90,6 +92,11 @@ import {
   findScheduleEntryForMoment,
 } from "./reception-moments";
 import { getPhase } from "@/lib/day-of/phase";
+
+// Common cut points shown as quick-pick chips on the song-length picker.
+// Module-level so the inner `SongLengthInput` doesn't trip TDZ when the
+// parent component's body is still initializing.
+const COMMON_LENGTHS = [1.5, 2] as const;
 
 // ── Moment descriptions — 1-liner explaining each ───────────────────────
 const MOMENT_DESCRIPTIONS: Record<string, string> = {
@@ -173,6 +180,19 @@ export function ReceptionSection({
       const next = new Set(prev);
       if (on) next.add(id);
       else next.delete(id);
+      return next;
+    });
+  }
+  // Same pattern for song-length chips ("Other" → text input mode).
+  // Keys: "first_dance", "last_dance", or "pd:<song_key>" for parent rows.
+  const [editingLengthKeys, setEditingLengthKeys] = useState<Set<string>>(
+    () => new Set()
+  );
+  function toggleLengthEditing(key: string, on: boolean) {
+    setEditingLengthKeys((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(key);
+      else next.delete(key);
       return next;
     });
   }
@@ -808,6 +828,128 @@ export function ReceptionSection({
     );
   }
 
+  /**
+   * Length picker for any reception song. Chips for the two most common
+   * cuts + "Full" + "Other". "Other" toggles to a text input that accepts
+   * "M:SS" or decimal minutes for cuts like 1:15. Stored as decimal minutes
+   * (1.25 = 1:15) so existing integer values keep working.
+   *
+   * `editKey` namespaces the editing-state set so multiple instances on the
+   * same screen don't share an editing toggle.
+   */
+  function SongLengthInput({
+    value,
+    onChange,
+    editKey,
+  }: {
+    value: number | undefined;
+    onChange: (v: number | undefined) => void;
+    editKey: string;
+  }) {
+    const editing = editingLengthKeys.has(editKey);
+    const isCommon =
+      value !== undefined && (COMMON_LENGTHS as readonly number[]).includes(value);
+    const isCustom = value !== undefined && !isCommon;
+    const [draft, setDraft] = useState<string>(
+      value !== undefined ? formatSongLength(value) : ""
+    );
+    if (editing) {
+      return (
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              const parsed = parseSongLength(draft);
+              if (parsed != null) onChange(parsed);
+              else if (draft.trim() === "") onChange(undefined);
+              toggleLengthEditing(editKey, false);
+            }}
+            className="h-7 px-2 rounded-md text-xs border border-border bg-background text-muted-foreground hover:text-foreground transition-colors inline-flex items-center"
+            title="Back"
+            aria-label="Back to common cuts"
+          >
+            ←
+          </button>
+          <Input
+            type="text"
+            autoFocus
+            inputMode="numeric"
+            placeholder="1:15"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => {
+              const parsed = parseSongLength(draft);
+              if (parsed != null) {
+                onChange(parsed);
+                setDraft(formatSongLength(parsed));
+              } else if (draft.trim() === "") {
+                onChange(undefined);
+              } else {
+                setDraft(value !== undefined ? formatSongLength(value) : "");
+              }
+            }}
+            onFocus={(e) => e.currentTarget.select()}
+            className="h-7 w-16 text-xs tabular-nums px-1.5"
+          />
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center gap-1 flex-wrap">
+        {COMMON_LENGTHS.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onChange(v)}
+            className={cn(
+              "h-7 px-2 rounded-md text-xs tabular-nums transition-colors border",
+              value === v
+                ? "bg-primary text-primary-foreground border-primary"
+                : "border-border bg-background text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {formatSongLength(v)}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => onChange(undefined)}
+          className={cn(
+            "h-7 px-2 rounded-md text-xs transition-colors border",
+            value === undefined
+              ? "bg-primary text-primary-foreground border-primary"
+              : "border-border bg-background text-muted-foreground hover:text-foreground"
+          )}
+          title="Play the full song"
+        >
+          Full
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setDraft(value !== undefined ? formatSongLength(value) : "");
+            toggleLengthEditing(editKey, true);
+          }}
+          className={cn(
+            "h-7 px-2 rounded-md text-xs tabular-nums transition-colors border inline-flex items-center gap-1",
+            isCustom
+              ? "bg-primary text-primary-foreground border-primary"
+              : "border-border bg-background text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {isCustom ? (
+            formatSongLength(value)
+          ) : (
+            <>
+              <Plus className="h-3 w-3" />
+              Other
+            </>
+          )}
+        </button>
+      </div>
+    );
+  }
+
   // ── Specific built-in moment cards ──────────────────────────────────
 
   function renderGrandEntrance(title: string, extras: MomentExtras | undefined) {
@@ -970,28 +1112,11 @@ export function ReceptionSection({
             label="Song length"
             hint="many couples cut to ~1:30 so guests don't lose interest"
           >
-            <div className="relative inline-block">
-              <Input
-                type="number"
-                min={1}
-                max={10}
-                placeholder="min"
-                value={data.first_dance_length_minutes ?? ""}
-                onChange={(e) => {
-                  const n = parseInt(e.target.value, 10);
-                  set({
-                    first_dance_length_minutes:
-                      Number.isFinite(n) && n > 0 ? n : undefined,
-                  });
-                }}
-                className="h-9 w-20 text-sm tabular-nums pr-8"
-              />
-              {data.first_dance_length_minutes ? (
-                <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/60">
-                  min
-                </span>
-              ) : null}
-            </div>
+            <SongLengthInput
+              editKey="first_dance"
+              value={data.first_dance_length_minutes}
+              onChange={(v) => set({ first_dance_length_minutes: v })}
+            />
           </PrimaryField>
           <PrimaryField
             icon={<StickyNote className="h-4 w-4 text-primary/80" />}
@@ -1108,11 +1233,16 @@ export function ReceptionSection({
   }
 
   function renderParentDances(title: string, extras: MomentExtras | undefined) {
-    const count = (data.parent_dances || []).filter(
-      (d) => d.who?.trim() || d.song?.trim()
+    // Music tab is the SSoT for which songs are parent dances. Count rows
+    // by Music-tab phase songs, not by the legacy parent_dances array
+    // (which can hold orphaned metadata from old seeds).
+    const phaseSongCount = (songs || []).filter(
+      (s) => s.phase === "parent_dances" && !s.is_do_not_play
     ).length;
     const summary = chips([
-      count > 0 ? `${count} dance${count > 1 ? "s" : ""}` : null,
+      phaseSongCount > 0
+        ? `${phaseSongCount} dance${phaseSongCount > 1 ? "s" : ""}`
+        : null,
       ...extrasChips(extras),
     ]);
     return (
@@ -1131,82 +1261,117 @@ export function ReceptionSection({
           <PrimaryField
             icon={<Users2 className="h-4 w-4 text-primary/80" />}
             label="Dance pairs"
-            hint="each pairing, their song, and how long it plays"
+            hint="who's dancing to each Music-tab song, and how long it plays"
           >
-            <div className="space-y-2">
-              {(data.parent_dances || []).map((d) => (
-                <div
-                  key={d.id}
-                  className="rounded-md border border-border/40 bg-background p-2 space-y-1.5"
-                >
-                  <div className="grid grid-cols-[1fr_auto] gap-2 sm:flex sm:items-center sm:flex-nowrap">
-                    <Input
-                      placeholder="Who (e.g., Bride & Father)"
-                      value={d.who}
-                      onChange={(e) =>
-                        updateParentDance(d.id, { who: e.target.value })
-                      }
-                      className="h-9 text-sm sm:flex-1 sm:min-w-[140px]"
-                    />
-                    <button
-                      onClick={() => removeParentDance(d.id)}
-                      className="self-center text-muted-foreground/40 hover:text-destructive transition-colors p-1 sm:order-[99] sm:shrink-0"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+            {(() => {
+              // Music tab is the SSoT for which songs are parent dances.
+              // Each Music-tab song becomes a row; Who + Length are
+              // editable here. Add/remove songs on the Music tab.
+              const phaseSongs = (songs || [])
+                .filter((s) => s.phase === "parent_dances" && !s.is_do_not_play)
+                .sort((a, b) => a.sort_order - b.sort_order);
+              const keyOf = (title: string) => title.trim().toLowerCase();
+              if (phaseSongs.length === 0) {
+                return (
+                  <div className="rounded-md border border-dashed border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
+                    Add parent-dance songs on the{" "}
+                    <Link href="/music" className="text-primary hover:underline font-medium">
+                      Music tab
+                    </Link>
+                    . They&rsquo;ll appear here for you to assign a pairing.
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder="Song"
-                      value={d.song}
-                      onChange={(e) =>
-                        updateParentDance(d.id, { song: e.target.value })
-                      }
-                      className="h-9 text-sm flex-1"
-                    />
-                    <Input
-                      placeholder="Artist"
-                      value={d.artist}
-                      onChange={(e) =>
-                        updateParentDance(d.id, { artist: e.target.value })
-                      }
-                      className="h-9 text-sm w-24 sm:w-28"
-                    />
-                    <div className="relative shrink-0">
-                      <Input
-                        type="number"
-                        min={1}
-                        max={10}
-                        placeholder="min"
-                        value={d.length_minutes ?? ""}
-                        onChange={(e) => {
-                          const n = parseInt(e.target.value, 10);
-                          updateParentDance(d.id, {
-                            length_minutes:
-                              Number.isFinite(n) && n > 0 ? n : undefined,
-                          });
-                        }}
-                        className="h-9 w-16 text-sm tabular-nums pr-7"
-                      />
-                      {d.length_minutes ? (
-                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/60">
-                          min
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
+                );
+              }
+              function metaFor(songTitle: string) {
+                const k = keyOf(songTitle);
+                return (data.parent_dances || []).find(
+                  (d) =>
+                    keyOf(d.song_key || d.song || "") === k
+                );
+              }
+              function updateMeta(
+                songTitle: string,
+                artist: string,
+                patch: Partial<ParentDance>
+              ) {
+                const k = keyOf(songTitle);
+                const list = data.parent_dances || [];
+                const existing = list.find(
+                  (d) => keyOf(d.song_key || d.song || "") === k
+                );
+                if (existing) {
+                  set({
+                    parent_dances: list.map((d) =>
+                      d.id === existing.id
+                        ? {
+                            ...d,
+                            ...patch,
+                            song_key: k,
+                            // Keep legacy mirror so old booklet code still works.
+                            song: songTitle,
+                            artist,
+                          }
+                        : d
+                    ),
+                  });
+                } else {
+                  set({
+                    parent_dances: [
+                      ...list,
+                      {
+                        id: crypto.randomUUID(),
+                        who: "",
+                        song: songTitle,
+                        artist,
+                        song_key: k,
+                        ...patch,
+                      },
+                    ],
+                  });
+                }
+              }
+              return (
+                <div className="space-y-2">
+                  {phaseSongs.map((s) => {
+                    const meta = metaFor(s.song_title);
+                    const length = meta?.length_minutes;
+                    const who = meta?.who ?? "";
+                    return (
+                      <div
+                        key={s.song_title + (s.artist || "")}
+                        className="rounded-md border border-border/40 bg-background p-2 space-y-1.5"
+                      >
+                        <div className="flex items-center gap-2 text-sm">
+                          <Music className="h-3.5 w-3.5 text-primary/70 shrink-0" />
+                          <span className="font-medium truncate min-w-0 flex-1">
+                            {s.song_title}
+                          </span>
+                        </div>
+                        <Input
+                          placeholder="Who (e.g., Bride & Father)"
+                          value={who}
+                          onChange={(e) =>
+                            updateMeta(s.song_title, s.artist || "", {
+                              who: e.target.value,
+                            })
+                          }
+                          className="h-9 text-sm w-full"
+                        />
+                        <SongLengthInput
+                          editKey={`pd:${keyOf(s.song_title)}`}
+                          value={length}
+                          onChange={(v) =>
+                            updateMeta(s.song_title, s.artist || "", {
+                              length_minutes: v,
+                            })
+                          }
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={addParentDance}
-              className="mt-3 gap-1.5 text-xs"
-            >
-              <Plus className="h-3 w-3" />
-              Add parent dance
-            </Button>
+              );
+            })()}
           </PrimaryField>
           <MomentUniformFields
             momentId="parent_dances"
@@ -1350,11 +1515,11 @@ export function ReceptionSection({
                       const role = s.role?.trim();
                       const computedDefault =
                         speaker && role
-                          ? `Please welcome to the mic, ${speaker}, ${role}.`
+                          ? `Please welcome ${speaker}, our ${role}.`
                           : speaker
-                            ? `Please welcome to the mic, ${speaker}.`
+                            ? `Please welcome ${speaker}.`
                             : role
-                              ? `Please welcome our next speaker, ${role}.`
+                              ? `Please welcome our next speaker, the ${role}.`
                               : null;
                       const filled = !!s.intro_line?.trim();
                       return (
@@ -1368,22 +1533,25 @@ export function ReceptionSection({
                             className="h-8 text-xs text-muted-foreground"
                           />
                           {!filled && (
-                            <div className="text-[10px] text-muted-foreground/70 flex items-center gap-2 pl-1">
+                            <div className="text-[10px] text-muted-foreground/70 pl-1 leading-snug">
                               {computedDefault ? (
-                                <>
-                                  <span className="truncate min-w-0 flex-1">
-                                    Default: <span className="italic">&ldquo;{computedDefault}&rdquo;</span>
-                                  </span>
+                                <span>
+                                  Default:{" "}
+                                  <span className="italic">
+                                    &ldquo;{computedDefault}&rdquo;
+                                  </span>{" "}
                                   <button
                                     type="button"
                                     onClick={() =>
-                                      updateSpeech(s.id, { intro_line: computedDefault })
+                                      updateSpeech(s.id, {
+                                        intro_line: computedDefault,
+                                      })
                                     }
-                                    className="text-primary hover:underline shrink-0 font-medium"
+                                    className="text-primary hover:underline font-medium whitespace-nowrap"
                                   >
-                                    Use
+                                    Use this
                                   </button>
-                                </>
+                                </span>
                               ) : (
                                 <span className="italic">
                                   Default appears once you fill in name + role.
@@ -1470,11 +1638,21 @@ export function ReceptionSection({
               }
             >
               <SelectTrigger className="w-full sm:w-64 h-10 text-sm">
-                <SelectValue placeholder="Select feeding style" />
+                <SelectValue placeholder="Select feeding style">
+                  {(v: string | null) =>
+                    v === "feed_each_other"
+                      ? "Feed each other"
+                      : v === "clean_cut"
+                        ? "Clean cut, no feeding"
+                        : v === "skip"
+                          ? "Skip the cutting"
+                          : "Select feeding style"
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="feed_each_other">Feed each other</SelectItem>
-                <SelectItem value="clean_cut">Clean cut — no feeding</SelectItem>
+                <SelectItem value="clean_cut">Clean cut, no feeding</SelectItem>
                 <SelectItem value="skip">Skip the cutting</SelectItem>
               </SelectContent>
             </Select>
@@ -1555,28 +1733,11 @@ export function ReceptionSection({
             label="Song length"
             hint="full track keeps people on the floor"
           >
-            <div className="relative inline-block">
-              <Input
-                type="number"
-                min={1}
-                max={10}
-                placeholder="min"
-                value={data.last_dance_length_minutes ?? ""}
-                onChange={(e) => {
-                  const n = parseInt(e.target.value, 10);
-                  set({
-                    last_dance_length_minutes:
-                      Number.isFinite(n) && n > 0 ? n : undefined,
-                  });
-                }}
-                className="h-9 w-20 text-sm tabular-nums pr-8"
-              />
-              {data.last_dance_length_minutes ? (
-                <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/60">
-                  min
-                </span>
-              ) : null}
-            </div>
+            <SongLengthInput
+              editKey="last_dance"
+              value={data.last_dance_length_minutes}
+              onChange={(v) => set({ last_dance_length_minutes: v })}
+            />
           </PrimaryField>
           <MomentUniformFields
             momentId="last_dance"
@@ -1622,7 +1783,23 @@ export function ReceptionSection({
               }
             >
               <SelectTrigger className="w-full sm:w-64 h-10 text-sm">
-                <SelectValue placeholder="Select exit style" />
+                <SelectValue placeholder="Select exit style">
+                  {(v: string | null) =>
+                    v === "none"
+                      ? "None / just leave"
+                      : v === "sparklers"
+                        ? "Sparklers"
+                        : v === "bubbles"
+                          ? "Bubbles"
+                          : v === "confetti"
+                            ? "Confetti"
+                            : v === "ribbon_wands"
+                              ? "Ribbon wands"
+                              : v === "other"
+                                ? "Other"
+                                : "Select exit style"
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">None / just leave</SelectItem>
