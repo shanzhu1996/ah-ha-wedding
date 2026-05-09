@@ -204,13 +204,37 @@ export function ScheduleSection({
   // time. These are abandoned drafts from earlier sessions where the
   // couple clicked "+ Add here" and walked away without typing.
   // Without this, they'd keep showing up as ghost "New entry" rows.
+  //
+  // Plus a legacy-title migration: the seed used to ship "Ceremony begins"
+  // and "Ceremony ends — family formal photos". Both got renamed for
+  // clarity ("Ceremony" + "Group Photos"). Untouched entries with the old
+  // exact title get rewritten so existing users see the new copy without
+  // having to rename manually. `user_touched` entries are left alone —
+  // those are user edits, not the seed default.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const cleaned = entries.filter(
       (e) => e.title.trim() || e.time.trim()
     );
-    if (cleaned.length < entries.length) {
-      onChange({ ...data, entries: cleaned });
+    const migrated = cleaned.map((e) => {
+      if (e.user_touched) return e;
+      if (e.title === "Ceremony begins") {
+        return { ...e, title: "Ceremony" };
+      }
+      if (e.title === "Ceremony ends — family formal photos") {
+        return {
+          ...e,
+          title: "Group Photos",
+          notes: e.notes || "Family + wedding party + friends",
+        };
+      }
+      return e;
+    });
+    const changed =
+      cleaned.length < entries.length ||
+      migrated.some((e, i) => e !== cleaned[i]);
+    if (changed) {
+      onChange({ ...data, entries: migrated });
     }
   }, []);
   const hasCeremonyTime = (data.ceremony_time || "").trim().length > 0;
