@@ -542,6 +542,19 @@ export function ReceptionSection({
           },
         ];
 
+  // Bundle of dependencies passed to every BuiltInMomentCard. Keeps the
+  // per-moment renders below readable.
+  const ctx: MomentCtx = {
+    data,
+    songs,
+    effectiveTimeById,
+    timeIsFromScheduleById,
+    onNavigateToSchedule,
+    updateExtras,
+    renameMoment,
+    hasSongsFor,
+  };
+
   return (
     <div className="space-y-6">
       <p className="text-xs text-muted-foreground/80 px-1">
@@ -781,52 +794,6 @@ export function ReceptionSection({
     }
   }
 
-  /** Build MomentSummaryChip[] from mixed inputs. Falsy/blank items are dropped. */
-  function chips(
-    items: Array<
-      | string
-      | null
-      | undefined
-      | false
-      | { label: string; tone?: MomentSummaryChip["tone"] }
-    >
-  ): MomentSummaryChip[] {
-    const out: MomentSummaryChip[] = [];
-    for (const x of items) {
-      if (!x) continue;
-      if (typeof x === "string") {
-        const trimmed = x.trim();
-        if (trimmed) out.push({ label: trimmed, tone: "neutral" });
-      } else {
-        const trimmed = x.label.trim();
-        if (trimmed) out.push({ label: trimmed, tone: x.tone ?? "neutral" });
-      }
-    }
-    return out;
-  }
-
-  /** Common extras chips added to every moment's summary. */
-  function extrasChips(extras: MomentExtras | undefined): MomentSummaryChip[] {
-    const out: MomentSummaryChip[] = [];
-    if (extras?.skip_music) out.push({ label: "no music", tone: "muted" });
-    if (extras?.mc_needed) out.push({ label: "needs MC", tone: "accent" });
-    if (extras?.guest_action?.trim())
-      out.push({ label: extras.guest_action.trim(), tone: "muted" });
-    if (extras?.notes?.trim())
-      out.push({ label: "has notes", tone: "muted" });
-    return out;
-  }
-
-  /** Renders the 1-line description at the top of an expanded moment card. */
-  function Description({ momentId, fallback }: { momentId: string; fallback?: string }) {
-    const text = MOMENT_DESCRIPTIONS[momentId] ?? fallback;
-    if (!text) return null;
-    return (
-      <p className="text-xs text-muted-foreground leading-relaxed -mt-1">
-        {text}
-      </p>
-    );
-  }
 
   /**
    * Length picker for any reception song. Chips for the two most common
@@ -968,281 +935,214 @@ export function ReceptionSection({
 
   function renderGrandEntrance(title: string, extras: MomentExtras | undefined) {
     const introCount = (data.bridal_party_intros || []).length;
-    const summary = chips([
-      summarizeSongs("grand_entrance", songs, "single"),
-      introCount > 0 ? `${introCount} bridal-party intro${introCount > 1 ? "s" : ""}` : null,
-      ...extrasChips(extras),
-    ]);
     return (
-      <MomentCard
-        key="grand_entrance"
+      <BuiltInMomentCard
+        ctx={ctx}
         id="grand_entrance"
         title={title}
-        time={effectiveTimeById["grand_entrance"]}
-        timeFromSchedule={timeIsFromScheduleById["grand_entrance"]}
-        onNavigateToSchedule={onNavigateToSchedule}
-        summaryChips={summary}
-        onRename={(t) => renameMoment("grand_entrance", t)}
+        extras={extras}
+        extraSummary={[
+          summarizeSongs("grand_entrance", songs, "single"),
+          introCount > 0 ? `${introCount} bridal-party intro${introCount > 1 ? "s" : ""}` : null,
+        ]}
       >
-        <div className="space-y-5">
-          <Description momentId="grand_entrance" />
-          <PrimaryField
-            icon={<Users2 className="h-4 w-4 text-primary/80" />}
-            label="Bridal party intros"
-            hint="who walks in before you, in order. Leave blank if you're skipping intros."
-          >
-            <div className="space-y-2">
-              {(data.bridal_party_intros || []).map((m) => (
-                <div
-                  key={m.id}
-                  className="rounded-md border border-border/40 bg-background p-2 space-y-1.5"
-                >
-                  <div className="grid grid-cols-[1fr_auto] gap-2 sm:flex sm:items-center sm:flex-nowrap">
-                    <Input
-                      placeholder="Name (e.g., Sarah & Tom)"
-                      value={m.name}
-                      onChange={(e) =>
-                        updateBridalPartyMember(m.id, { name: e.target.value })
-                      }
-                      className="h-9 text-sm sm:flex-1 sm:min-w-[140px]"
-                    />
-                    <button
-                      onClick={() => removeBridalPartyMember(m.id)}
-                      className="self-center text-muted-foreground/40 hover:text-destructive transition-colors p-1 sm:order-[99] sm:shrink-0"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                    <Input
-                      placeholder="Role (e.g., Maid of Honor)"
-                      value={m.role}
-                      onChange={(e) =>
-                        updateBridalPartyMember(m.id, { role: e.target.value })
-                      }
-                      className="col-span-2 h-9 text-sm sm:col-auto sm:flex-1 sm:min-w-[140px]"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder="Song (optional)"
-                      value={m.song}
-                      onChange={(e) =>
-                        updateBridalPartyMember(m.id, { song: e.target.value })
-                      }
-                      className="h-9 text-sm flex-1"
-                    />
-                    <Input
-                      placeholder="Artist"
-                      value={m.artist}
-                      onChange={(e) =>
-                        updateBridalPartyMember(m.id, {
-                          artist: e.target.value,
-                        })
-                      }
-                      className="h-9 text-sm w-28"
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={addBridalPartyMember}
-              className="mt-3 gap-1.5 text-xs"
-            >
-              <Plus className="h-3 w-3" />
-              Add intro
-            </Button>
-            <p className="text-[11px] text-muted-foreground/70 mt-2">
-              The DJ usually plays one playlist for all intros. Only fill in
-              song fields when a specific member has a custom track.
-            </p>
-          </PrimaryField>
+        <PrimaryField
+          icon={<Users2 className="h-4 w-4 text-primary/80" />}
+          label="Bridal party intros"
+          hint="who walks in before you, in order. Leave blank if you're skipping intros."
+        >
           <div className="space-y-2">
-            <MusicLink
-              phase="grand_entrance"
-              songs={songs}
-              expected="single"
-              label="Entrance song"
-              hint="you walk in to this"
-            />
-            {!hasSongsFor("grand_entrance") && (
-              <SkipMusicToggle
-                skip={extras?.skip_music ?? false}
-                onChange={(v) =>
-                  updateExtras("grand_entrance", { skip_music: v })
-                }
-              />
-            )}
+            {(data.bridal_party_intros || []).map((m) => (
+              <div
+                key={m.id}
+                className="rounded-md border border-border/40 bg-background p-2 space-y-1.5"
+              >
+                <div className="grid grid-cols-[1fr_auto] gap-2 sm:flex sm:items-center sm:flex-nowrap">
+                  <Input
+                    placeholder="Name (e.g., Sarah & Tom)"
+                    value={m.name}
+                    onChange={(e) =>
+                      updateBridalPartyMember(m.id, { name: e.target.value })
+                    }
+                    className="h-9 text-sm sm:flex-1 sm:min-w-[140px]"
+                  />
+                  <button
+                    onClick={() => removeBridalPartyMember(m.id)}
+                    className="self-center text-muted-foreground/40 hover:text-destructive transition-colors p-1 sm:order-[99] sm:shrink-0"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                  <Input
+                    placeholder="Role (e.g., Maid of Honor)"
+                    value={m.role}
+                    onChange={(e) =>
+                      updateBridalPartyMember(m.id, { role: e.target.value })
+                    }
+                    className="col-span-2 h-9 text-sm sm:col-auto sm:flex-1 sm:min-w-[140px]"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="Song (optional)"
+                    value={m.song}
+                    onChange={(e) =>
+                      updateBridalPartyMember(m.id, { song: e.target.value })
+                    }
+                    className="h-9 text-sm flex-1"
+                  />
+                  <Input
+                    placeholder="Artist"
+                    value={m.artist}
+                    onChange={(e) =>
+                      updateBridalPartyMember(m.id, {
+                        artist: e.target.value,
+                      })
+                    }
+                    className="h-9 text-sm w-28"
+                  />
+                </div>
+              </div>
+            ))}
           </div>
-          <MomentUniformFields
-            momentId="grand_entrance"
-            extras={extras}
-            onChange={(patch) => updateExtras("grand_entrance", patch)}
-            receptionData={data}
-            scheduleOwnsTime={timeIsFromScheduleById["grand_entrance"]}
-            onNavigateToSchedule={onNavigateToSchedule}
-          />
-        </div>
-      </MomentCard>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={addBridalPartyMember}
+            className="mt-3 gap-1.5 text-xs"
+          >
+            <Plus className="h-3 w-3" />
+            Add intro
+          </Button>
+          <p className="text-[11px] text-muted-foreground/70 mt-2">
+            The DJ usually plays one playlist for all intros. Only fill in
+            song fields when a specific member has a custom track.
+          </p>
+        </PrimaryField>
+        <MomentMusicSection
+          momentId="grand_entrance"
+          phase="grand_entrance"
+          expected="single"
+          label="Entrance song"
+          hint="you walk in to this"
+          songs={songs}
+          hasSongs={hasSongsFor("grand_entrance")}
+          extras={extras}
+          onSkipChange={(v) => updateExtras("grand_entrance", { skip_music: v })}
+        />
+      </BuiltInMomentCard>
     );
   }
 
   function renderFirstDance(title: string, extras: MomentExtras | undefined) {
-    const summary = chips([
-      summarizeSongs("first_dance", songs, "single"),
-      ...extrasChips(extras),
-    ]);
     return (
-      <MomentCard
-        key="first_dance"
+      <BuiltInMomentCard
+        ctx={ctx}
         id="first_dance"
         title={title}
-        time={effectiveTimeById["first_dance"]}
-        timeFromSchedule={timeIsFromScheduleById["first_dance"]}
-        onNavigateToSchedule={onNavigateToSchedule}
-        summaryChips={summary}
-        onRename={(t) => renameMoment("first_dance", t)}
+        extras={extras}
+        extraSummary={[summarizeSongs("first_dance", songs, "single")]}
       >
-        <div className="space-y-5">
-          <Description momentId="first_dance" />
-          <div className="space-y-2">
-            <MusicLink
-              phase="first_dance"
-              songs={songs}
-              expected="single"
-              label="First dance song"
-              hint="song + artist, managed in Music tab"
-            />
-            {!hasSongsFor("first_dance") && (
-              <SkipMusicToggle
-                skip={extras?.skip_music ?? false}
-                onChange={(v) => updateExtras("first_dance", { skip_music: v })}
-              />
-            )}
-          </div>
-          <PrimaryField
-            icon={<Clock className="h-4 w-4 text-primary/80" />}
-            label="Song length"
-            hint="many couples cut to ~1:30 so guests don't lose interest"
-          >
-            <SongLengthInput
-              editKey="first_dance"
-              value={data.first_dance_length_minutes}
-              onChange={(v) => set({ first_dance_length_minutes: v })}
-            />
-          </PrimaryField>
-          <PrimaryField
-            icon={<StickyNote className="h-4 w-4 text-primary/80" />}
-            label="Choreo notes"
-            hint="optional. e.g., choreographed, surprise mashup"
-          >
-            <Textarea
-              placeholder="Anything the couple wants remembered about this dance"
-              value={data.first_dance_notes}
-              onChange={(e) => set({ first_dance_notes: e.target.value })}
-              className="text-sm min-h-[52px]"
-            />
-          </PrimaryField>
-          <MomentUniformFields
-            momentId="first_dance"
-            extras={extras}
-            onChange={(patch) => updateExtras("first_dance", patch)}
-            receptionData={data}
-            scheduleOwnsTime={timeIsFromScheduleById["first_dance"]}
-            onNavigateToSchedule={onNavigateToSchedule}
+        <MomentMusicSection
+          momentId="first_dance"
+          phase="first_dance"
+          expected="single"
+          label="First dance song"
+          hint="song + artist, managed in Music tab"
+          songs={songs}
+          hasSongs={hasSongsFor("first_dance")}
+          extras={extras}
+          onSkipChange={(v) => updateExtras("first_dance", { skip_music: v })}
+        />
+        <PrimaryField
+          icon={<Clock className="h-4 w-4 text-primary/80" />}
+          label="Song length"
+          hint="many couples cut to ~1:30 so guests don't lose interest"
+        >
+          <SongLengthInput
+            editKey="first_dance"
+            value={data.first_dance_length_minutes}
+            onChange={(v) => set({ first_dance_length_minutes: v })}
           />
-        </div>
-      </MomentCard>
+        </PrimaryField>
+        <PrimaryField
+          icon={<StickyNote className="h-4 w-4 text-primary/80" />}
+          label="Choreo notes"
+          hint="optional. e.g., choreographed, surprise mashup"
+        >
+          <Textarea
+            placeholder="Anything the couple wants remembered about this dance"
+            value={data.first_dance_notes}
+            onChange={(e) => set({ first_dance_notes: e.target.value })}
+            className="text-sm min-h-[52px]"
+          />
+        </PrimaryField>
+      </BuiltInMomentCard>
     );
   }
 
   function renderDinner(title: string, extras: MomentExtras | undefined) {
     const vendorMeals = logisticsData?.vendor_meals_timing?.trim();
-    const summary = chips([
-      summarizeSongs("dinner", songs, "playlist"),
-      vendorMeals ? "vendor meals noted" : null,
-      ...extrasChips(extras),
-    ]);
     return (
-      <MomentCard
-        key="dinner"
+      <BuiltInMomentCard
+        ctx={ctx}
         id="dinner"
         title={title}
-        time={effectiveTimeById["dinner"]}
-        timeFromSchedule={timeIsFromScheduleById["dinner"]}
-        onNavigateToSchedule={onNavigateToSchedule}
-        summaryChips={summary}
-        onRename={(t) => renameMoment("dinner", t)}
+        extras={extras}
+        extraSummary={[
+          summarizeSongs("dinner", songs, "playlist"),
+          vendorMeals ? "vendor meals noted" : null,
+        ]}
       >
-        <div className="space-y-5">
-          <Description momentId="dinner" />
-
-          <div className="space-y-2">
-            <MusicLink
-              phase="dinner"
-              songs={songs}
-              expected="playlist"
-              label="Dinner music"
-              hint="background playlist, managed in Music tab"
-            />
-            {!hasSongsFor("dinner") && (
-              <SkipMusicToggle
-                skip={extras?.skip_music ?? false}
-                onChange={(v) => updateExtras("dinner", { skip_music: v })}
-                label="No music during dinner"
-              />
+        <MomentMusicSection
+          momentId="dinner"
+          phase="dinner"
+          expected="playlist"
+          label="Dinner music"
+          hint="background playlist, managed in Music tab"
+          songs={songs}
+          hasSongs={hasSongsFor("dinner")}
+          extras={extras}
+          onSkipChange={(v) => updateExtras("dinner", { skip_music: v })}
+          skipLabel="No music during dinner"
+        />
+        <PrimaryField
+          icon={<UtensilsCrossed className="h-4 w-4 text-primary/80" />}
+          label="Vendor meals"
+          hint="when vendors eat. Managed in Logistics."
+        >
+          <button
+            type="button"
+            onClick={onNavigateToLogistics}
+            disabled={!onNavigateToLogistics}
+            className={cn(
+              "group/vm w-full flex items-center gap-3 rounded-md border px-3 py-2.5 transition-colors text-left",
+              vendorMeals
+                ? "border-primary/30 bg-primary/[0.04] hover:border-primary/60"
+                : "border-dashed border-border/80 bg-background hover:border-primary/40",
+              !onNavigateToLogistics && "opacity-60 cursor-not-allowed"
             )}
-          </div>
-
-          <PrimaryField
-            icon={<UtensilsCrossed className="h-4 w-4 text-primary/80" />}
-            label="Vendor meals"
-            hint="when vendors eat. Managed in Logistics."
           >
-            <button
-              type="button"
-              onClick={onNavigateToLogistics}
-              disabled={!onNavigateToLogistics}
-              className={cn(
-                "group/vm w-full flex items-center gap-3 rounded-md border px-3 py-2.5 transition-colors text-left",
-                vendorMeals
-                  ? "border-primary/30 bg-primary/[0.04] hover:border-primary/60"
-                  : "border-dashed border-border/80 bg-background hover:border-primary/40",
-                !onNavigateToLogistics && "opacity-60 cursor-not-allowed"
-              )}
-            >
-              {vendorMeals ? (
-                <span className="text-sm text-foreground flex-1 min-w-0 truncate whitespace-nowrap">
-                  {vendorMeals}
+            {vendorMeals ? (
+              <span className="text-sm text-foreground flex-1 min-w-0 truncate whitespace-nowrap">
+                {vendorMeals}
+              </span>
+            ) : (
+              <>
+                <Plus className="h-4 w-4 text-muted-foreground/70 shrink-0" />
+                <span className="text-sm text-muted-foreground flex-1">
+                  Not set
                 </span>
-              ) : (
-                <>
-                  <Plus className="h-4 w-4 text-muted-foreground/70 shrink-0" />
-                  <span className="text-sm text-muted-foreground flex-1">
-                    Not set
-                  </span>
-                </>
-              )}
-              {onNavigateToLogistics && (
-                <span className="inline-flex items-center gap-1 text-xs text-primary/70 group-hover/vm:text-primary transition-colors shrink-0">
-                  {vendorMeals ? "Edit" : "Add"} in Logistics
-                  <ArrowUpRight className="h-3 w-3" />
-                </span>
-              )}
-            </button>
-          </PrimaryField>
-
-          <MomentUniformFields
-            momentId="dinner"
-            extras={extras}
-            onChange={(patch) => updateExtras("dinner", patch)}
-            receptionData={data}
-            scheduleOwnsTime={timeIsFromScheduleById["dinner"]}
-            onNavigateToSchedule={onNavigateToSchedule}
-          />
-        </div>
-      </MomentCard>
+              </>
+            )}
+            {onNavigateToLogistics && (
+              <span className="inline-flex items-center gap-1 text-xs text-primary/70 group-hover/vm:text-primary transition-colors shrink-0">
+                {vendorMeals ? "Edit" : "Add"} in Logistics
+                <ArrowUpRight className="h-3 w-3" />
+              </span>
+            )}
+          </button>
+        </PrimaryField>
+      </BuiltInMomentCard>
     );
   }
 
@@ -1253,30 +1153,23 @@ export function ReceptionSection({
     const phaseSongCount = (songs || []).filter(
       (s) => s.phase === "parent_dances" && !s.is_do_not_play
     ).length;
-    const summary = chips([
-      phaseSongCount > 0
-        ? `${phaseSongCount} dance${phaseSongCount > 1 ? "s" : ""}`
-        : null,
-      ...extrasChips(extras),
-    ]);
     return (
-      <MomentCard
-        key="parent_dances"
+      <BuiltInMomentCard
+        ctx={ctx}
         id="parent_dances"
         title={title}
-        time={effectiveTimeById["parent_dances"]}
-        timeFromSchedule={timeIsFromScheduleById["parent_dances"]}
-        onNavigateToSchedule={onNavigateToSchedule}
-        summaryChips={summary}
-        onRename={(t) => renameMoment("parent_dances", t)}
+        extras={extras}
+        extraSummary={[
+          phaseSongCount > 0
+            ? `${phaseSongCount} dance${phaseSongCount > 1 ? "s" : ""}`
+            : null,
+        ]}
       >
-        <div className="space-y-5">
-          <Description momentId="parent_dances" />
-          <PrimaryField
-            icon={<Users2 className="h-4 w-4 text-primary/80" />}
-            label="Dance pairs"
-            hint="who's dancing to each Music-tab song, and how long it plays"
-          >
+        <PrimaryField
+          icon={<Users2 className="h-4 w-4 text-primary/80" />}
+          label="Dance pairs"
+          hint="who's dancing to each Music-tab song, and how long it plays"
+        >
             {(() => {
               // Music tab is the SSoT for which songs are parent dances.
               // Each Music-tab song becomes a row; Who + Length are
@@ -1386,44 +1279,28 @@ export function ReceptionSection({
                 </div>
               );
             })()}
-          </PrimaryField>
-          <MomentUniformFields
-            momentId="parent_dances"
-            extras={extras}
-            onChange={(patch) => updateExtras("parent_dances", patch)}
-            receptionData={data}
-            scheduleOwnsTime={timeIsFromScheduleById["parent_dances"]}
-            onNavigateToSchedule={onNavigateToSchedule}
-          />
-        </div>
-      </MomentCard>
+        </PrimaryField>
+      </BuiltInMomentCard>
     );
   }
 
   function renderSpeeches(title: string, extras: MomentExtras | undefined) {
     const n = (data.speeches || []).length;
-    const summary = chips([
-      n > 0 ? `${n} speaker${n > 1 ? "s" : ""} · ~${speechesTotalMinutes(data.speeches)} min` : null,
-      ...extrasChips(extras),
-    ]);
     return (
-      <MomentCard
-        key="speeches"
+      <BuiltInMomentCard
+        ctx={ctx}
         id="speeches"
         title={title}
-        time={effectiveTimeById["speeches"]}
-        timeFromSchedule={timeIsFromScheduleById["speeches"]}
-        onNavigateToSchedule={onNavigateToSchedule}
-        summaryChips={summary}
-        onRename={(t) => renameMoment("speeches", t)}
+        extras={extras}
+        extraSummary={[
+          n > 0 ? `${n} speaker${n > 1 ? "s" : ""} · ~${speechesTotalMinutes(data.speeches)} min` : null,
+        ]}
       >
-        <div className="space-y-5">
-          <Description momentId="speeches" />
-          <PrimaryField
-            icon={<Mic className="h-4 w-4 text-primary/80" />}
-            label="Speakers"
-            hint="order and estimated length. Tight estimates save the timeline."
-          >
+        <PrimaryField
+          icon={<Mic className="h-4 w-4 text-primary/80" />}
+          label="Speakers"
+          hint="order and estimated length. Tight estimates save the timeline."
+        >
             <div className="space-y-3">
               {(data.speeches || []).map((s) => {
                 const minutes = s.estimated_minutes ?? 3;
@@ -1590,385 +1467,298 @@ export function ReceptionSection({
                 </span>
               )}
             </div>
-          </PrimaryField>
-          <MomentUniformFields
-            momentId="speeches"
-            extras={extras}
-            onChange={(patch) => updateExtras("speeches", patch)}
-            receptionData={data}
-            scheduleOwnsTime={timeIsFromScheduleById["speeches"]}
-            onNavigateToSchedule={onNavigateToSchedule}
-          />
-        </div>
-      </MomentCard>
+        </PrimaryField>
+      </BuiltInMomentCard>
     );
   }
 
   function renderCakeCutting(title: string, extras: MomentExtras | undefined) {
-    const summary = chips([
-      summarizeSongs("cake_cutting", songs, "single"),
-      ...extrasChips(extras),
-    ]);
     return (
-      <MomentCard
-        key="cake_cutting"
+      <BuiltInMomentCard
+        ctx={ctx}
         id="cake_cutting"
         title={title}
-        time={effectiveTimeById["cake_cutting"]}
-        timeFromSchedule={timeIsFromScheduleById["cake_cutting"]}
-        onNavigateToSchedule={onNavigateToSchedule}
-        summaryChips={summary}
-        onRename={(t) => renameMoment("cake_cutting", t)}
+        extras={extras}
+        extraSummary={[summarizeSongs("cake_cutting", songs, "single")]}
       >
-        <div className="space-y-5">
-          <Description momentId="cake_cutting" />
-          <div className="space-y-2">
-            <MusicLink
-              phase="cake_cutting"
-              songs={songs}
-              expected="single"
-              label="Cake cutting song"
-              hint="plays as you slice"
-            />
-            {!hasSongsFor("cake_cutting") && (
-              <SkipMusicToggle
-                skip={extras?.skip_music ?? false}
-                onChange={(v) => updateExtras("cake_cutting", { skip_music: v })}
-              />
-            )}
-          </div>
-          <PrimaryField
-            icon={<Cake className="h-4 w-4 text-primary/80" />}
-            label="Feeding tradition"
-            hint="how you do the bite"
+        <MomentMusicSection
+          momentId="cake_cutting"
+          phase="cake_cutting"
+          expected="single"
+          label="Cake cutting song"
+          hint="plays as you slice"
+          songs={songs}
+          hasSongs={hasSongsFor("cake_cutting")}
+          extras={extras}
+          onSkipChange={(v) => updateExtras("cake_cutting", { skip_music: v })}
+        />
+        <PrimaryField
+          icon={<Cake className="h-4 w-4 text-primary/80" />}
+          label="Feeding tradition"
+          hint="how you do the bite"
+        >
+          <Select
+            value={data.cake_feed_style || undefined}
+            onValueChange={(v) =>
+              set({
+                cake_feed_style: (v ??
+                  "") as ReceptionData["cake_feed_style"],
+              })
+            }
           >
-            <Select
-              value={data.cake_feed_style || undefined}
-              onValueChange={(v) =>
-                set({
-                  cake_feed_style: (v ??
-                    "") as ReceptionData["cake_feed_style"],
-                })
-              }
-            >
-              <SelectTrigger className="w-full sm:w-64 h-10 text-sm">
-                <SelectValue placeholder="Select feeding style">
-                  {(v: string | null) =>
-                    v === "feed_each_other"
-                      ? "Feed each other"
-                      : v === "clean_cut"
-                        ? "Clean cut, no feeding"
-                        : v === "skip"
-                          ? "Skip the cutting"
-                          : "Select feeding style"
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="feed_each_other">Feed each other</SelectItem>
-                <SelectItem value="clean_cut">Clean cut, no feeding</SelectItem>
-                <SelectItem value="skip">Skip the cutting</SelectItem>
-              </SelectContent>
-            </Select>
-          </PrimaryField>
-          <PrimaryField
-            icon={<Users2 className="h-4 w-4 text-primary/80" />}
-            label="Who cuts"
-            hint="couple cuts; usually a server steps in to plate + serve"
-          >
-            <Input
-              placeholder="e.g., Couple cuts together; banquet captain plates"
-              value={data.cake_cutter ?? ""}
-              onChange={(e) => set({ cake_cutter: e.target.value })}
-              className="h-10 text-sm"
-            />
-          </PrimaryField>
-          <PrimaryField
-            icon={<ShieldCheck className="h-4 w-4 text-primary/80" />}
-            label="Top tier"
-            hint="save the top for your 1-year anniversary?"
-          >
-            <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
-              <Checkbox
-                checked={data.cake_top_tier_saved ?? false}
-                onCheckedChange={(v) => set({ cake_top_tier_saved: !!v })}
-              />
-              Save the top tier — baker boxes it; coordinator stores it
-            </label>
-          </PrimaryField>
-          <MomentUniformFields
-            momentId="cake_cutting"
-            extras={extras}
-            onChange={(patch) => updateExtras("cake_cutting", patch)}
-            receptionData={data}
-            scheduleOwnsTime={timeIsFromScheduleById["cake_cutting"]}
-            onNavigateToSchedule={onNavigateToSchedule}
+            <SelectTrigger className="w-full sm:w-64 h-10 text-sm">
+              <SelectValue placeholder="Select feeding style">
+                {(v: string | null) =>
+                  v === "feed_each_other"
+                    ? "Feed each other"
+                    : v === "clean_cut"
+                      ? "Clean cut, no feeding"
+                      : v === "skip"
+                        ? "Skip the cutting"
+                        : "Select feeding style"
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="feed_each_other">Feed each other</SelectItem>
+              <SelectItem value="clean_cut">Clean cut, no feeding</SelectItem>
+              <SelectItem value="skip">Skip the cutting</SelectItem>
+            </SelectContent>
+          </Select>
+        </PrimaryField>
+        <PrimaryField
+          icon={<Users2 className="h-4 w-4 text-primary/80" />}
+          label="Who cuts"
+          hint="couple cuts; usually a server steps in to plate + serve"
+        >
+          <Input
+            placeholder="e.g., Couple cuts together; banquet captain plates"
+            value={data.cake_cutter ?? ""}
+            onChange={(e) => set({ cake_cutter: e.target.value })}
+            className="h-10 text-sm"
           />
-        </div>
-      </MomentCard>
+        </PrimaryField>
+        <PrimaryField
+          icon={<ShieldCheck className="h-4 w-4 text-primary/80" />}
+          label="Top tier"
+          hint="save the top for your 1-year anniversary?"
+        >
+          <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+            <Checkbox
+              checked={data.cake_top_tier_saved ?? false}
+              onCheckedChange={(v) => set({ cake_top_tier_saved: !!v })}
+            />
+            Save the top tier — baker boxes it; coordinator stores it
+          </label>
+        </PrimaryField>
+      </BuiltInMomentCard>
     );
   }
 
   function renderLastDance(title: string, extras: MomentExtras | undefined) {
-    const summary = chips([
-      summarizeSongs("last_dance", songs, "single"),
-      ...extrasChips(extras),
-    ]);
     return (
-      <MomentCard
-        key="last_dance"
+      <BuiltInMomentCard
+        ctx={ctx}
         id="last_dance"
         title={title}
-        time={effectiveTimeById["last_dance"]}
-        timeFromSchedule={timeIsFromScheduleById["last_dance"]}
-        onNavigateToSchedule={onNavigateToSchedule}
-        summaryChips={summary}
-        onRename={(t) => renameMoment("last_dance", t)}
+        extras={extras}
+        extraSummary={[summarizeSongs("last_dance", songs, "single")]}
       >
-        <div className="space-y-5">
-          <Description momentId="last_dance" />
-          <div className="space-y-2">
-            <MusicLink
-              phase="last_dance"
-              songs={songs}
-              expected="single"
-              label="Last dance song"
-              hint="the night's final song; last chance on the floor"
-            />
-            {!hasSongsFor("last_dance") && (
-              <SkipMusicToggle
-                skip={extras?.skip_music ?? false}
-                onChange={(v) => updateExtras("last_dance", { skip_music: v })}
-              />
-            )}
-          </div>
-          <PrimaryField
-            icon={<Clock className="h-4 w-4 text-primary/80" />}
-            label="Song length"
-            hint="full track keeps people on the floor"
-          >
-            <SongLengthInput
-              editKey="last_dance"
-              value={data.last_dance_length_minutes}
-              onChange={(v) => set({ last_dance_length_minutes: v })}
-            />
-          </PrimaryField>
-          <MomentUniformFields
-            momentId="last_dance"
-            extras={extras}
-            onChange={(patch) => updateExtras("last_dance", patch)}
-            receptionData={data}
-            scheduleOwnsTime={timeIsFromScheduleById["last_dance"]}
-            onNavigateToSchedule={onNavigateToSchedule}
+        <MomentMusicSection
+          momentId="last_dance"
+          phase="last_dance"
+          expected="single"
+          label="Last dance song"
+          hint="the night's final song; last chance on the floor"
+          songs={songs}
+          hasSongs={hasSongsFor("last_dance")}
+          extras={extras}
+          onSkipChange={(v) => updateExtras("last_dance", { skip_music: v })}
+        />
+        <PrimaryField
+          icon={<Clock className="h-4 w-4 text-primary/80" />}
+          label="Song length"
+          hint="full track keeps people on the floor"
+        >
+          <SongLengthInput
+            editKey="last_dance"
+            value={data.last_dance_length_minutes}
+            onChange={(v) => set({ last_dance_length_minutes: v })}
           />
-        </div>
-      </MomentCard>
+        </PrimaryField>
+      </BuiltInMomentCard>
     );
   }
 
   function renderExit(title: string, extras: MomentExtras | undefined) {
-    const summary = chips([
-      data.exit_style && data.exit_style !== "none" ? data.exit_style.replace(/_/g, " ") : null,
-      data.exit_song?.trim(),
-      ...extrasChips(extras),
-    ]);
     return (
-      <MomentCard
-        key="exit"
+      <BuiltInMomentCard
+        ctx={ctx}
         id="exit"
         title={title}
-        time={effectiveTimeById["exit"]}
-        timeFromSchedule={timeIsFromScheduleById["exit"]}
-        onNavigateToSchedule={onNavigateToSchedule}
-        summaryChips={summary}
-        onRename={(t) => renameMoment("exit", t)}
+        extras={extras}
+        extraSummary={[
+          data.exit_style && data.exit_style !== "none" ? data.exit_style.replace(/_/g, " ") : null,
+          data.exit_song?.trim(),
+        ]}
       >
-        <div className="space-y-5">
-          <Description momentId="exit" />
-          <PrimaryField
-            icon={<LogOut className="h-4 w-4 text-primary/80" />}
-            label="Exit style"
-            hint="planners say this is the biggest footgun"
+        <PrimaryField
+          icon={<LogOut className="h-4 w-4 text-primary/80" />}
+          label="Exit style"
+          hint="planners say this is the biggest footgun"
+        >
+          <Select
+            value={data.exit_style || undefined}
+            onValueChange={(v) =>
+              set({ exit_style: (v ?? "none") as ReceptionData["exit_style"] })
+            }
           >
-            <Select
-              value={data.exit_style || undefined}
-              onValueChange={(v) =>
-                set({ exit_style: (v ?? "none") as ReceptionData["exit_style"] })
-              }
+            <SelectTrigger className="w-full sm:w-64 h-10 text-sm">
+              <SelectValue placeholder="Select exit style">
+                {(v: string | null) =>
+                  v === "none"
+                    ? "None / just leave"
+                    : v === "sparklers"
+                      ? "Sparklers"
+                      : v === "bubbles"
+                        ? "Bubbles"
+                        : v === "confetti"
+                          ? "Confetti"
+                          : v === "ribbon_wands"
+                            ? "Ribbon wands"
+                            : v === "other"
+                              ? "Other"
+                              : "Select exit style"
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None / just leave</SelectItem>
+              <SelectItem value="sparklers">Sparklers</SelectItem>
+              <SelectItem value="bubbles">Bubbles</SelectItem>
+              <SelectItem value="confetti">Confetti</SelectItem>
+              <SelectItem value="ribbon_wands">Ribbon wands</SelectItem>
+              <SelectItem value="other">Other</SelectItem>
+            </SelectContent>
+          </Select>
+        </PrimaryField>
+        {data.exit_style && data.exit_style !== "none" && (
+          <>
+            <PrimaryField
+              icon={<Music className="h-4 w-4 text-primary/80" />}
+              label="Exit song"
+              hint="what plays as you walk out"
             >
-              <SelectTrigger className="w-full sm:w-64 h-10 text-sm">
-                <SelectValue placeholder="Select exit style">
-                  {(v: string | null) =>
-                    v === "none"
-                      ? "None / just leave"
-                      : v === "sparklers"
-                        ? "Sparklers"
-                        : v === "bubbles"
-                          ? "Bubbles"
-                          : v === "confetti"
-                            ? "Confetti"
-                            : v === "ribbon_wands"
-                              ? "Ribbon wands"
-                              : v === "other"
-                                ? "Other"
-                                : "Select exit style"
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None / just leave</SelectItem>
-                <SelectItem value="sparklers">Sparklers</SelectItem>
-                <SelectItem value="bubbles">Bubbles</SelectItem>
-                <SelectItem value="confetti">Confetti</SelectItem>
-                <SelectItem value="ribbon_wands">Ribbon wands</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-          </PrimaryField>
-          {data.exit_style && data.exit_style !== "none" && (
-            <>
-              <PrimaryField
-                icon={<Music className="h-4 w-4 text-primary/80" />}
-                label="Exit song"
-                hint="what plays as you walk out"
+              <MomentMusicBlock
+                skip={extras?.skip_music ?? false}
+                onSkipChange={(v) =>
+                  updateExtras("exit", { skip_music: v })
+                }
               >
-                <MomentMusicBlock
-                  skip={extras?.skip_music ?? false}
-                  onSkipChange={(v) =>
-                    updateExtras("exit", { skip_music: v })
+                <Input
+                  placeholder='e.g., "End of the Road" by Boyz II Men'
+                  value={data.exit_song}
+                  onChange={(e) => set({ exit_song: e.target.value })}
+                  className="h-10 text-sm"
+                />
+              </MomentMusicBlock>
+            </PrimaryField>
+            <PrimaryField
+              icon={<ShieldCheck className="h-4 w-4 text-primary/80" />}
+              label="Exit details"
+              hint="confirm these 2 weeks out; biggest footgun"
+            >
+              <div className="rounded-md border border-border/60 bg-muted/30 p-3 space-y-2.5">
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={data.exit_plan?.venue_policy_confirmed ?? false}
+                    onCheckedChange={(v) =>
+                      set({
+                        exit_plan: {
+                          ...(data.exit_plan || { point_person: "", rain_backup: "", notes: "", venue_policy_confirmed: false }),
+                          venue_policy_confirmed: !!v,
+                        } as ExitPlan,
+                      })
+                    }
+                  />
+                  Venue confirmed OK with flames / litter / timing
+                </label>
+                <Input
+                  placeholder="Point person (who lights / hands out / signals the exit)"
+                  value={data.exit_plan?.point_person ?? ""}
+                  onChange={(e) =>
+                    set({
+                      exit_plan: {
+                        ...(data.exit_plan || { point_person: "", rain_backup: "", notes: "", venue_policy_confirmed: false }),
+                        point_person: e.target.value,
+                      } as ExitPlan,
+                    })
                   }
-                >
-                  <Input
-                    placeholder='e.g., "End of the Road" by Boyz II Men'
-                    value={data.exit_song}
-                    onChange={(e) => set({ exit_song: e.target.value })}
-                    className="h-10 text-sm"
-                  />
-                </MomentMusicBlock>
-              </PrimaryField>
-              <PrimaryField
-                icon={<ShieldCheck className="h-4 w-4 text-primary/80" />}
-                label="Exit details"
-                hint="confirm these 2 weeks out; biggest footgun"
-              >
-                <div className="rounded-md border border-border/60 bg-muted/30 p-3 space-y-2.5">
-                  <label className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={data.exit_plan?.venue_policy_confirmed ?? false}
-                      onCheckedChange={(v) =>
-                        set({
-                          exit_plan: {
-                            ...(data.exit_plan || { point_person: "", rain_backup: "", notes: "", venue_policy_confirmed: false }),
-                            venue_policy_confirmed: !!v,
-                          } as ExitPlan,
-                        })
-                      }
-                    />
-                    Venue confirmed OK with flames / litter / timing
-                  </label>
-                  <Input
-                    placeholder="Point person (who lights / hands out / signals the exit)"
-                    value={data.exit_plan?.point_person ?? ""}
-                    onChange={(e) =>
-                      set({
-                        exit_plan: {
-                          ...(data.exit_plan || { point_person: "", rain_backup: "", notes: "", venue_policy_confirmed: false }),
-                          point_person: e.target.value,
-                        } as ExitPlan,
-                      })
-                    }
-                    className="h-9 text-sm"
-                  />
-                  <Input
-                    placeholder="Rain / backup plan"
-                    value={data.exit_plan?.rain_backup ?? ""}
-                    onChange={(e) =>
-                      set({
-                        exit_plan: {
-                          ...(data.exit_plan || { point_person: "", rain_backup: "", notes: "", venue_policy_confirmed: false }),
-                          rain_backup: e.target.value,
-                        } as ExitPlan,
-                      })
-                    }
-                    className="h-9 text-sm"
-                  />
-                  <Input
-                    placeholder="Other notes (count, storage, staging…)"
-                    value={data.exit_plan?.notes ?? ""}
-                    onChange={(e) =>
-                      set({
-                        exit_plan: {
-                          ...(data.exit_plan || { point_person: "", rain_backup: "", notes: "", venue_policy_confirmed: false }),
-                          notes: e.target.value,
-                        } as ExitPlan,
-                      })
-                    }
-                    className="h-9 text-sm"
-                  />
-                </div>
-              </PrimaryField>
-            </>
-          )}
-          <MomentUniformFields
-            momentId="exit"
-            extras={extras}
-            onChange={(patch) => updateExtras("exit", patch)}
-            receptionData={data}
-            scheduleOwnsTime={timeIsFromScheduleById["exit"]}
-            onNavigateToSchedule={onNavigateToSchedule}
-          />
-        </div>
-      </MomentCard>
+                  className="h-9 text-sm"
+                />
+                <Input
+                  placeholder="Rain / backup plan"
+                  value={data.exit_plan?.rain_backup ?? ""}
+                  onChange={(e) =>
+                    set({
+                      exit_plan: {
+                        ...(data.exit_plan || { point_person: "", rain_backup: "", notes: "", venue_policy_confirmed: false }),
+                        rain_backup: e.target.value,
+                      } as ExitPlan,
+                    })
+                  }
+                  className="h-9 text-sm"
+                />
+                <Input
+                  placeholder="Other notes (count, storage, staging…)"
+                  value={data.exit_plan?.notes ?? ""}
+                  onChange={(e) =>
+                    set({
+                      exit_plan: {
+                        ...(data.exit_plan || { point_person: "", rain_backup: "", notes: "", venue_policy_confirmed: false }),
+                        notes: e.target.value,
+                      } as ExitPlan,
+                    })
+                  }
+                  className="h-9 text-sm"
+                />
+              </div>
+            </PrimaryField>
+          </>
+        )}
+      </BuiltInMomentCard>
     );
   }
 
   function renderToss(id: TossMomentId, title: string, extras: MomentExtras | undefined) {
-    const tossSummary: MomentSummaryChip[] = chips([
-      extras?.song?.trim(),
-      ...extrasChips(extras),
-    ]);
     return (
-      <MomentCard
-        key={id}
+      <BuiltInMomentCard
+        ctx={ctx}
         id={id}
         title={title}
-        time={effectiveTimeById[id]}
-        timeFromSchedule={timeIsFromScheduleById[id]}
-        onNavigateToSchedule={onNavigateToSchedule}
-        summaryChips={tossSummary}
-        onRename={(t) => renameMoment(id, t)}
+        extras={extras}
+        extraSummary={[extras?.song?.trim()]}
         onRemove={() => removeTossFromSchedule(id)}
         removeLabel="Remove from timeline"
       >
-        <div className="space-y-5">
-          <Description momentId={id} />
-          <PrimaryField
-            icon={<Music className="h-4 w-4 text-primary/80" />}
-            label="Music cue"
-            hint="optional. song title or playlist note"
+        <PrimaryField
+          icon={<Music className="h-4 w-4 text-primary/80" />}
+          label="Music cue"
+          hint="optional. song title or playlist note"
+        >
+          <MomentMusicBlock
+            skip={extras?.skip_music ?? false}
+            onSkipChange={(v) => updateExtras(id, { skip_music: v })}
           >
-            <MomentMusicBlock
-              skip={extras?.skip_music ?? false}
-              onSkipChange={(v) => updateExtras(id, { skip_music: v })}
-            >
-              <Input
-                placeholder="Song — or describe the playlist"
-                value={extras?.song ?? ""}
-                onChange={(e) => updateExtras(id, { song: e.target.value })}
-                className="h-10 text-sm"
-              />
-            </MomentMusicBlock>
-          </PrimaryField>
-          <MomentUniformFields
-            momentId={id}
-            extras={extras}
-            onChange={(patch) => updateExtras(id, patch)}
-            receptionData={data}
-            scheduleOwnsTime={timeIsFromScheduleById[id]}
-            onNavigateToSchedule={onNavigateToSchedule}
-          />
-        </div>
-      </MomentCard>
+            <Input
+              placeholder="Song — or describe the playlist"
+              value={extras?.song ?? ""}
+              onChange={(e) => updateExtras(id, { song: e.target.value })}
+              className="h-10 text-sm"
+            />
+          </MomentMusicBlock>
+        </PrimaryField>
+      </BuiltInMomentCard>
     );
   }
 
@@ -2100,6 +1890,42 @@ export function ReceptionSection({
   }
 }
 
+// ── Summary chip helpers (pure) ────────────────────────────────────────
+// Build MomentSummaryChip[] from mixed inputs. Falsy/blank items dropped.
+type ChipInput =
+  | string
+  | null
+  | undefined
+  | false
+  | { label: string; tone?: MomentSummaryChip["tone"] };
+
+function chips(items: ChipInput[]): MomentSummaryChip[] {
+  const out: MomentSummaryChip[] = [];
+  for (const x of items) {
+    if (!x) continue;
+    if (typeof x === "string") {
+      const trimmed = x.trim();
+      if (trimmed) out.push({ label: trimmed, tone: "neutral" });
+    } else {
+      const trimmed = x.label.trim();
+      if (trimmed) out.push({ label: trimmed, tone: x.tone ?? "neutral" });
+    }
+  }
+  return out;
+}
+
+// Common extras chips appended to every moment's summary.
+function extrasChips(extras: MomentExtras | undefined): MomentSummaryChip[] {
+  const out: MomentSummaryChip[] = [];
+  if (extras?.skip_music) out.push({ label: "no music", tone: "muted" });
+  if (extras?.mc_needed) out.push({ label: "needs MC", tone: "accent" });
+  if (extras?.guest_action?.trim())
+    out.push({ label: extras.guest_action.trim(), tone: "muted" });
+  if (extras?.notes?.trim())
+    out.push({ label: "has notes", tone: "muted" });
+  return out;
+}
+
 // ── "Skip music for this moment" toggle — kept for edge cases where
 //    couples want explicit silence (so the DJ knows it's intentional).
 function SkipMusicToggle({
@@ -2122,6 +1948,137 @@ function SkipMusicToggle({
         · silence is intentional, vendors will know
       </span>
     </label>
+  );
+}
+
+// ── Description (1-liner under the moment title in expanded view) ──────
+function Description({
+  momentId,
+  fallback,
+}: {
+  momentId: string;
+  fallback?: string;
+}) {
+  const text = MOMENT_DESCRIPTIONS[momentId] ?? fallback;
+  if (!text) return null;
+  return (
+    <p className="text-xs text-muted-foreground leading-relaxed -mt-1">
+      {text}
+    </p>
+  );
+}
+
+// ── Bundle of common dependencies passed into every BuiltInMomentCard ──
+// Lets per-moment renders stay terse without re-passing the same props
+// 8 times. Built once per ReceptionSection render.
+type MomentCtx = {
+  data: ReceptionData;
+  songs: WeddingSong[];
+  effectiveTimeById: Record<string, string | undefined>;
+  timeIsFromScheduleById: Record<string, boolean>;
+  onNavigateToSchedule?: () => void;
+  updateExtras: (id: string, patch: Partial<MomentExtras>) => void;
+  renameMoment: (id: string, t: string) => void;
+  hasSongsFor: (phase: string) => boolean;
+};
+
+// ── BuiltInMomentCard — wraps the boilerplate every built-in shares ────
+// Renders: MomentCard outer → space-y-5 inner → Description → children →
+// MomentUniformFields. Per-moment renderers only supply the unique middle
+// JSX (music link + per-moment fields) via children.
+function BuiltInMomentCard({
+  ctx,
+  id,
+  title,
+  extras,
+  extraSummary = [],
+  onRemove,
+  removeLabel,
+  children,
+}: {
+  ctx: MomentCtx;
+  id: string;
+  title: string;
+  extras: MomentExtras | undefined;
+  extraSummary?: ChipInput[];
+  onRemove?: () => void;
+  removeLabel?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <MomentCard
+      key={id}
+      id={id}
+      title={title}
+      time={ctx.effectiveTimeById[id]}
+      timeFromSchedule={ctx.timeIsFromScheduleById[id]}
+      onNavigateToSchedule={ctx.onNavigateToSchedule}
+      summaryChips={chips([...extraSummary, ...extrasChips(extras)])}
+      onRename={(t) => ctx.renameMoment(id, t)}
+      onRemove={onRemove}
+      removeLabel={removeLabel}
+    >
+      <div className="space-y-5">
+        <Description momentId={id} />
+        {children}
+        <MomentUniformFields
+          momentId={id}
+          extras={extras}
+          onChange={(patch) => ctx.updateExtras(id, patch)}
+          receptionData={ctx.data}
+          scheduleOwnsTime={ctx.timeIsFromScheduleById[id]}
+          onNavigateToSchedule={ctx.onNavigateToSchedule}
+        />
+      </div>
+    </MomentCard>
+  );
+}
+
+// ── MomentMusicSection — MusicLink + (conditional) SkipMusicToggle ─────
+// Used by 6 of 8 built-in moments. Skip toggle hides automatically when
+// any song already exists for the phase (showing "no music" alongside a
+// queued song would be contradictory).
+function MomentMusicSection({
+  momentId,
+  phase,
+  expected,
+  label,
+  hint,
+  songs,
+  hasSongs,
+  extras,
+  onSkipChange,
+  skipLabel,
+}: {
+  momentId: string;
+  phase: string;
+  expected: "single" | "playlist";
+  label: string;
+  hint: string;
+  songs: WeddingSong[];
+  hasSongs: boolean;
+  extras: MomentExtras | undefined;
+  onSkipChange: (v: boolean) => void;
+  skipLabel?: string;
+}) {
+  void momentId; // reserved for future per-moment instrumentation
+  return (
+    <div className="space-y-2">
+      <MusicLink
+        phase={phase}
+        songs={songs}
+        expected={expected}
+        label={label}
+        hint={hint}
+      />
+      {!hasSongs && (
+        <SkipMusicToggle
+          skip={extras?.skip_music ?? false}
+          onChange={onSkipChange}
+          {...(skipLabel ? { label: skipLabel } : {})}
+        />
+      )}
+    </div>
   );
 }
 
