@@ -853,99 +853,113 @@ export function ReceptionSection({
     const [draft, setDraft] = useState<string>(
       value !== undefined ? formatSongLength(value) : ""
     );
-    if (editing) {
-      return (
-        <div className="flex items-center gap-1">
+    // Click any common chip while the input is open → commit chip value
+    // and collapse the input. Lets the user "back out" of editing by
+    // picking a preset, not just by typing or pressing Esc.
+    function pickPreset(v: number | undefined) {
+      onChange(v);
+      if (editing) toggleLengthEditing(editKey, false);
+    }
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1 flex-wrap">
+          {COMMON_LENGTHS.map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => pickPreset(v)}
+              className={cn(
+                "h-7 px-2 rounded-md text-xs tabular-nums transition-colors border",
+                value === v && !editing
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border bg-background text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {formatSongLength(v)}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => pickPreset(undefined)}
+            className={cn(
+              "h-7 px-2 rounded-md text-xs transition-colors border",
+              value === undefined && !editing
+                ? "bg-primary text-primary-foreground border-primary"
+                : "border-border bg-background text-muted-foreground hover:text-foreground"
+            )}
+            title="Play the full song"
+          >
+            Full
+          </button>
           <button
             type="button"
             onClick={() => {
-              const parsed = parseSongLength(draft);
-              if (parsed != null) onChange(parsed);
-              else if (draft.trim() === "") onChange(undefined);
-              toggleLengthEditing(editKey, false);
-            }}
-            className="h-7 px-2 rounded-md text-xs border border-border bg-background text-muted-foreground hover:text-foreground transition-colors inline-flex items-center"
-            title="Back"
-            aria-label="Back to common cuts"
-          >
-            ←
-          </button>
-          <Input
-            type="text"
-            autoFocus
-            inputMode="numeric"
-            placeholder="1:15"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={() => {
-              const parsed = parseSongLength(draft);
-              if (parsed != null) {
-                onChange(parsed);
-                setDraft(formatSongLength(parsed));
-              } else if (draft.trim() === "") {
-                onChange(undefined);
+              if (editing) {
+                // Already editing — clicking the custom chip closes the
+                // input and commits whatever's in the draft.
+                const parsed = parseSongLength(draft);
+                if (parsed != null) onChange(parsed);
+                else if (draft.trim() === "") onChange(undefined);
+                toggleLengthEditing(editKey, false);
               } else {
                 setDraft(value !== undefined ? formatSongLength(value) : "");
+                toggleLengthEditing(editKey, true);
               }
             }}
-            onFocus={(e) => e.currentTarget.select()}
-            className="h-7 w-16 text-xs tabular-nums px-1.5"
-          />
-        </div>
-      );
-    }
-    return (
-      <div className="flex items-center gap-1 flex-wrap">
-        {COMMON_LENGTHS.map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => onChange(v)}
             className={cn(
-              "h-7 px-2 rounded-md text-xs tabular-nums transition-colors border",
-              value === v
+              "h-7 px-2 rounded-md text-xs tabular-nums transition-colors border inline-flex items-center gap-1",
+              isCustom || editing
                 ? "bg-primary text-primary-foreground border-primary"
                 : "border-border bg-background text-muted-foreground hover:text-foreground"
             )}
           >
-            {formatSongLength(v)}
+            {isCustom || editing ? (
+              formatSongLength(value) || "Custom"
+            ) : (
+              <>
+                <Plus className="h-3 w-3" />
+                Other
+              </>
+            )}
           </button>
-        ))}
-        <button
-          type="button"
-          onClick={() => onChange(undefined)}
-          className={cn(
-            "h-7 px-2 rounded-md text-xs transition-colors border",
-            value === undefined
-              ? "bg-primary text-primary-foreground border-primary"
-              : "border-border bg-background text-muted-foreground hover:text-foreground"
-          )}
-          title="Play the full song"
-        >
-          Full
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setDraft(value !== undefined ? formatSongLength(value) : "");
-            toggleLengthEditing(editKey, true);
-          }}
-          className={cn(
-            "h-7 px-2 rounded-md text-xs tabular-nums transition-colors border inline-flex items-center gap-1",
-            isCustom
-              ? "bg-primary text-primary-foreground border-primary"
-              : "border-border bg-background text-muted-foreground hover:text-foreground"
-          )}
-        >
-          {isCustom ? (
-            formatSongLength(value)
-          ) : (
-            <>
-              <Plus className="h-3 w-3" />
-              Other
-            </>
-          )}
-        </button>
+        </div>
+        {editing && (
+          <div className="flex items-center gap-1.5 pl-1">
+            <Input
+              type="text"
+              autoFocus
+              inputMode="numeric"
+              placeholder="1:15"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => {
+                const parsed = parseSongLength(draft);
+                if (parsed != null) {
+                  onChange(parsed);
+                  setDraft(formatSongLength(parsed));
+                } else if (draft.trim() === "") {
+                  onChange(undefined);
+                } else {
+                  setDraft(value !== undefined ? formatSongLength(value) : "");
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  (e.currentTarget as HTMLInputElement).blur();
+                  toggleLengthEditing(editKey, false);
+                } else if (e.key === "Escape") {
+                  setDraft(value !== undefined ? formatSongLength(value) : "");
+                  toggleLengthEditing(editKey, false);
+                }
+              }}
+              onFocus={(e) => e.currentTarget.select()}
+              className="h-7 w-20 text-xs tabular-nums px-1.5"
+            />
+            <span className="text-[10px] text-muted-foreground/60">
+              M:SS or minutes (Esc to cancel)
+            </span>
+          </div>
+        )}
       </div>
     );
   }
