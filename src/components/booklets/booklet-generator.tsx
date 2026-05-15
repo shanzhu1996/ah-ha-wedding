@@ -51,7 +51,11 @@ import {
   effectiveEmergencyContacts,
   effectiveRoles,
   formatSongLength,
+  defaultMcLineForMoment,
+  TYPICAL_MC_MOMENTS,
+  PHOTOGRAPHER_FOCUS_OPTIONS,
   type ScheduleData,
+  type ScheduleEntry,
   type GettingReadyData,
   type CeremonyData,
   type CocktailData,
@@ -180,6 +184,85 @@ function formatTime(time: string | null): string {
   return `${display}:${m} ${ampm}`;
 }
 
+// Build a per-row "is blank" map for a rendered booklet canvas. A row is
+// blank when every pixel is near-white (R/G/B ≥ 240). Used by the PDF slicer
+// to find natural section breaks so a page cut never bisects a line of text.
+// Reads the canvas in 500-row chunks to avoid allocating a multi-megabyte
+// ImageData for tall booklets.
+function computeBlankRowMap(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number
+): Uint8Array {
+  const blanks = new Uint8Array(height);
+  // Inset 8% from each side so the page's rounded border (1px gray running
+  // down the full edge of every captured row) doesn't disqualify otherwise-
+  // empty rows. We only care about content gaps, not the page chrome.
+  const xStart = Math.floor(width * 0.08);
+  const xEnd = Math.ceil(width * 0.92);
+  const CHUNK = 500;
+  for (let chunkStart = 0; chunkStart < height; chunkStart += CHUNK) {
+    const chunkH = Math.min(CHUNK, height - chunkStart);
+    let data: Uint8ClampedArray;
+    try {
+      data = ctx.getImageData(0, chunkStart, width, chunkH).data;
+    } catch {
+      return blanks; // tainted canvas; fall through to dumb slicing
+    }
+    for (let y = 0; y < chunkH; y++) {
+      let blank = 1;
+      for (let x = xStart; x < xEnd; x++) {
+        const i = (y * width + x) * 4;
+        if (data[i] < 240 || data[i + 1] < 240 || data[i + 2] < 240) {
+          blank = 0;
+          break;
+        }
+      }
+      blanks[chunkStart + y] = blank;
+    }
+  }
+  return blanks;
+}
+
+// Scan backward in [minY, maxY) for a run of `minRun` consecutive blank rows.
+// Returns the bottom row of that run (a safe cut point), or -1 if no such
+// run exists in the window.
+function findBlankCut(
+  blanks: Uint8Array,
+  minY: number,
+  maxY: number,
+  minRun: number
+): number {
+  let consecutive = 0;
+  for (let y = maxY - 1; y >= minY; y--) {
+    if (blanks[y]) {
+      consecutive++;
+      if (consecutive >= minRun) {
+        return y + consecutive;
+      }
+    } else {
+      consecutive = 0;
+    }
+  }
+  return -1;
+}
+
+// Schedule entries store time as a display string like "10:30 AM" / "3:30 PM".
+// Convert to 24h "HH:MM" so formatTime() can re-render it consistently with
+// timeline_events.event_time (already 24h). Returns the input unchanged if
+// it doesn't match the expected shape.
+function scheduleTimeTo24h(t: string): string {
+  if (!t) return "";
+  const match = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?$/);
+  if (!match) return t;
+  let h = parseInt(match[1], 10);
+  const m = match[2];
+  const period = match[3]?.toUpperCase();
+  if (period === "PM" && h < 12) h += 12;
+  if (period === "AM" && h === 12) h = 0;
+  return `${h.toString().padStart(2, "0")}:${m}`;
+}
+
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "TBD";
   const date = new Date(dateStr + "T00:00:00");
@@ -191,32 +274,152 @@ function formatDate(dateStr: string | null): string {
   });
 }
 
+// ── Cocktail summary ───────────────────────────────────────────────────
+// Cocktail tab's UI collects vendor-relevant fields (location, duration,
+// music mood, activities, photographer focus, cultural notes). This helper
+// turns the raw shape into display strings so each booklet (Coordinator,
+// Photographer, DJ) can render only what's relevant to that vendor.
+
+const COCKTAIL_LOCATION_LABEL: Record<
+  NonNullable<CocktailData["location"]>,
+  string
+> = {
+  "": "",
+  same_venue: "Same venue",
+  different_area: "Different area",
+  outdoor: "Outdoor",
+};
+
+const COCKTAIL_DURATION_LABEL: Record<
+  NonNullable<CocktailData["duration"]>,
+  string
+> = {
+  "": "",
+  "45": "45 min",
+  "60": "60 min",
+  "90": "90 min",
+  custom: "Custom",
+};
+
+const COCKTAIL_MOOD_LABEL: Record<
+  NonNullable<CocktailData["music_mood"]>,
+  string
+> = {
+  "": "",
+  background_jazz: "Background jazz",
+  acoustic: "Acoustic",
+  dj_playlist: "DJ playlist",
+  live_band: "Live band",
+};
+
+function summarizeCocktail(c: CocktailData | undefined): {
+  hasAny: boolean;
+  location: string;
+  duration: string;
+  musicMood: string;
+  activities: string[];
+  photographerFocus: string[];
+  photographerNotes: string;
+  culturalNotes: string;
+} {
+  if (!c) {
+    return {
+      hasAny: false,
+      location: "",
+      duration: "",
+      musicMood: "",
+      activities: [],
+      photographerFocus: [],
+      photographerNotes: "",
+      culturalNotes: "",
+    };
+  }
+
+  let location = c.location ? COCKTAIL_LOCATION_LABEL[c.location] : "";
+  const detail = c.location_detail?.trim();
+  if (
+    location &&
+    detail &&
+    (c.location === "different_area" || c.location === "outdoor")
+  ) {
+    location = `${location} · ${detail}`;
+  }
+
+  let duration = c.duration ? COCKTAIL_DURATION_LABEL[c.duration] : "";
+  if (c.duration === "custom") {
+    const m = c.duration_custom?.trim();
+    duration = m ? `${m} min` : "Custom";
+  }
+
+  const musicMood = c.music_mood ? COCKTAIL_MOOD_LABEL[c.music_mood] : "";
+
+  const activities: string[] = [];
+  if (c.activities_lawn_games) activities.push("Lawn games");
+  if (c.activities_photo_booth) activities.push("Photo booth");
+  if (c.activities_live_music) activities.push("Live music");
+  for (const a of c.custom_activities || []) {
+    const v = a.trim();
+    if (v) activities.push(v);
+  }
+
+  const focusValues = c.photographer_focus || [];
+  const photographerFocus = PHOTOGRAPHER_FOCUS_OPTIONS.filter((o) =>
+    focusValues.includes(o.value)
+  ).map((o) => o.label);
+
+  const photographerNotes = c.photographer_notes?.trim() || "";
+  const culturalNotes = c.cultural_notes?.trim() || "";
+
+  const hasAny =
+    !!location ||
+    !!duration ||
+    !!musicMood ||
+    activities.length > 0 ||
+    photographerFocus.length > 0 ||
+    !!photographerNotes ||
+    !!culturalNotes;
+
+  return {
+    hasAny,
+    location,
+    duration,
+    musicMood,
+    activities,
+    photographerFocus,
+    photographerNotes,
+    culturalNotes,
+  };
+}
+
 // ── Per-vendor timeline filter ─────────────────────────────────────────
 // DJ doesn't care that hair & makeup starts at 8am; florist doesn't need
 // to know about the last dance. Each vendor sees only the beats that
 // intersect their job. Coordinator + venue see everything.
 
+// Title-substring patterns. Schedule entries we renamed (e.g. "Ceremony
+// begins" → "Ceremony", "Family formal photos" → "Group Photos") must match
+// here too, otherwise a vendor sees an empty / incomplete timeline.
 const timelineKeepPatterns: Partial<Record<VendorType, RegExp[]>> = {
   photographer: [
-    /hair\s*&?\s*makeup|first look|detail shots?|wedding party photos?|family (formal )?photos?|ceremony|cocktail|grand entrance|first dance|cake|toast|last dance|send[-\s]?off|exit/i,
+    /hair\s*&?\s*makeup|photographer arriv|first look|detail shots?|wedding party photos?|bridal party.*photos?|family (formal )?photos?|group photos?|ceremony|private moment|cocktail|grand entrance|first dance|parent dance|cake|toast|speech|last dance|send[-\s]?off|exit/i,
   ],
   videographer: [
-    /first look|ceremony|grand entrance|first dance|toast|cake|last dance|send[-\s]?off|exit/i,
+    /photographer arriv|first look|ceremony|group photos?|grand entrance|first dance|parent dance|toast|speech|cake|last dance|send[-\s]?off|exit/i,
   ],
   dj: [
-    /guests? (begin )?arriv|ceremony begins?|cocktail|reception|grand entrance|first dance|dinner|toast|parent dance|cake cut|bouquet|garter|dance floor|last dance|send[-\s]?off|exit/i,
+    /guests? (begin |are )?(arriv|seated)|ceremony|cocktail|reception|grand entrance|first dance|dinner|toast|speech|parent dance|cake cut|bouquet|garter|open dancing|dance floor|last dance|send[-\s]?off|exit/i,
   ],
   band: [
-    /guests? (begin )?arriv|ceremony begins?|cocktail|reception|grand entrance|first dance|dinner|toast|parent dance|cake cut|bouquet|garter|dance floor|last dance|send[-\s]?off|exit/i,
+    /guests? (begin |are )?(arriv|seated)|ceremony|cocktail|reception|grand entrance|first dance|dinner|toast|speech|parent dance|cake cut|bouquet|garter|open dancing|dance floor|last dance|send[-\s]?off|exit/i,
   ],
   mc: [
-    /guests? (begin )?arriv|ceremony begins?|cocktail|reception|grand entrance|first dance|dinner|toast|speech|welcome|parent dance|cake cut|bouquet|garter|dance floor|last dance|send[-\s]?off|exit/i,
+    /guests? (begin |are )?(arriv|seated)|ceremony|cocktail|reception|grand entrance|first dance|dinner|toast|speech|welcome|parent dance|cake cut|bouquet|garter|open dancing|dance floor|last dance|send[-\s]?off|exit/i,
   ],
   caterer: [
-    /cocktail|guests? seated|grand entrance|dinner|toast|cake cut|champagne|vendor meal|last dance/i,
+    /cocktail|guests? (arriv|seated)|grand entrance|dinner|toast|speech|cake cut|champagne|vendor meal|last dance/i,
   ],
   florist: [
-    /florist|bouquet|ceremony begins?|cocktail|reception begins?|guests? seated/i,
+    /florist|bouquet|ceremony|cocktail|reception|guests? (arriv|seated)/i,
   ],
   baker: [/cake (delivery|cut|arrive)|dessert|baker/i],
   hair_makeup: [
@@ -229,7 +432,7 @@ const timelineKeepPatterns: Partial<Record<VendorType, RegExp[]>> = {
   transportation: [
     /transport|shuttle|arrive|depart|send[-\s]?off|exit/i,
   ],
-  photo_booth: [/photo booth|cocktail|reception|dance/i],
+  photo_booth: [/photo booth|cocktail|reception|open dancing|dance/i],
 };
 
 function filterTimelineForVendor(
@@ -326,19 +529,30 @@ function computeHandoffContact(
 // then consolidates every MC cue into one script. Name pronunciations pulled
 // from couple + speakers + parent dance "who".
 
-const MUSIC_PHASE_ORDER: { id: string; label: string; match: RegExp }[] = [
-  { id: "pre_ceremony", label: "Pre-ceremony", match: /pre[-\s_]?cere/i },
-  { id: "processional", label: "Processional", match: /processional|aisle/i },
-  { id: "ceremony", label: "Ceremony", match: /^cere(mony)?$|interlude|unity/i },
-  { id: "recessional", label: "Recessional", match: /recess/i },
-  { id: "cocktail", label: "Cocktail hour", match: /cocktail/i },
-  { id: "dinner", label: "Dinner", match: /dinner/i },
-  {
-    id: "reception",
-    label: "Reception / dancing",
-    match: /reception|dance|party/i,
-  },
+// Canonical Music-tab phase IDs (see music-manager.tsx PHASE_GROUPS), grouped
+// into the labels the DJ / Band booklet shows. Use exact-match lists, not
+// regex — earlier the loose regex `/dance/` swept first_dance / parent_dances
+// / last_dance into "Reception / dancing" alongside open_dancing, double-
+// printing songs that already live in the Key Reception Moments block.
+const MUSIC_PHASE_ORDER: { id: string; label: string; phases: string[] }[] = [
+  { id: "pre_ceremony", label: "Pre-ceremony", phases: ["prelude"] },
+  { id: "processional", label: "Processional", phases: ["processional"] },
+  { id: "recessional", label: "Recessional", phases: ["recessional"] },
+  { id: "cocktail", label: "Cocktail hour", phases: ["cocktail_hour"] },
+  { id: "dinner", label: "Dinner", phases: ["dinner"] },
+  { id: "reception", label: "Reception / dancing", phases: ["open_dancing"] },
 ];
+
+// Single-song "moments" shown in the Key Reception Moments block below the
+// phase groups. Songs with these phases are intentionally excluded from the
+// main phase groups to avoid duplicate listings.
+const RECEPTION_MOMENT_PHASES = new Set([
+  "grand_entrance",
+  "first_dance",
+  "parent_dances",
+  "cake_cutting",
+  "last_dance",
+]);
 
 function groupMusicByPhase(music: MusicSelection[]): {
   id: string;
@@ -349,16 +563,14 @@ function groupMusicByPhase(music: MusicSelection[]): {
   const groups = MUSIC_PHASE_ORDER.map((p) => ({
     id: p.id,
     label: p.label,
-    songs: mustPlay.filter((s) => p.match.test(s.phase)),
+    songs: mustPlay.filter((s) => p.phases.includes(s.phase)),
   }));
-  // Anything that didn't match a canonical phase
-  const matchedIds = new Set<string>();
-  MUSIC_PHASE_ORDER.forEach((p) => {
-    mustPlay.forEach((s) => {
-      if (p.match.test(s.phase)) matchedIds.add(s.id);
-    });
-  });
-  const leftover = mustPlay.filter((s) => !matchedIds.has(s.id));
+  // Anything not in a canonical phase AND not a reception-moment phase
+  const knownPhases = new Set([
+    ...MUSIC_PHASE_ORDER.flatMap((p) => p.phases),
+    ...RECEPTION_MOMENT_PHASES,
+  ]);
+  const leftover = mustPlay.filter((s) => !knownPhases.has(s.phase));
   if (leftover.length > 0) {
     groups.push({ id: "other", label: "Other", songs: leftover });
   }
@@ -453,8 +665,13 @@ function PartnerVendorBlock({
 }
 
 // Shared: key reception songs. Used by both DJ and Band.
+// SSoT: the Music tab (`music_selections`) is the source of truth for the
+// song title + artist of each moment. The Reception tab (`receptionDayOf`)
+// stores per-moment metadata (who, length, etc.) and legacy `<x>_song`
+// fields kept only as fallback for very old data.
 function getKeyReceptionSongs(
   receptionDayOf: ReceptionData | undefined,
+  musicSelections: MusicSelection[],
   hasText: (s?: string | null) => boolean
 ) {
   const out: {
@@ -463,6 +680,22 @@ function getKeyReceptionSongs(
     artist?: string | null;
   }[] = [];
   if (!receptionDayOf) return out;
+
+  // Look up the first must-play song for an exact phase, falling back to
+  // the legacy reception-data field when the Music tab is empty.
+  function songFor(
+    phase: string,
+    fallbackTitle?: string,
+    fallbackArtist?: string | null
+  ): { title: string; artist?: string | null } | null {
+    const m = musicSelections.find(
+      (s) => s.phase === phase && !s.is_do_not_play
+    );
+    if (m) return { title: m.song_title, artist: m.artist };
+    if (hasText(fallbackTitle)) return { title: fallbackTitle!, artist: fallbackArtist };
+    return null;
+  }
+
   // Bridal party intros come BEFORE the grand entrance — only surface
   // those with a custom song; the DJ usually plays one shared playlist
   // for the procession otherwise.
@@ -475,38 +708,81 @@ function getKeyReceptionSongs(
         artist: m.artist,
       })
     );
-  if (hasText(receptionDayOf.grand_entrance_song))
+
+  const grandEntrance = songFor("grand_entrance", receptionDayOf.grand_entrance_song);
+  if (grandEntrance) {
     out.push({
       label: "Grand entrance",
-      title: receptionDayOf.grand_entrance_song,
+      title: grandEntrance.title,
+      artist: grandEntrance.artist,
     });
-  if (hasText(receptionDayOf.first_dance_song))
+  }
+
+  const firstDance = songFor(
+    "first_dance",
+    receptionDayOf.first_dance_song,
+    receptionDayOf.first_dance_artist
+  );
+  if (firstDance) {
+    const len = receptionDayOf.first_dance_length_minutes;
     out.push({
-      label: `First dance${receptionDayOf.first_dance_length_minutes ? ` · ${formatSongLength(receptionDayOf.first_dance_length_minutes)}` : ""}`,
-      title: receptionDayOf.first_dance_song,
-      artist: receptionDayOf.first_dance_artist,
+      label: `First dance${len ? ` · ${formatSongLength(len)}` : ""}`,
+      title: firstDance.title,
+      artist: firstDance.artist,
     });
-  (receptionDayOf.parent_dances || [])
-    .filter((d) => hasText(d.song) || hasText(d.who))
-    .forEach((d) =>
-      out.push({
-        // Append " · X min" so the DJ knows whether to cut the track.
-        label: `Parent dance · ${d.who || "(who)"}${d.length_minutes ? ` · ${d.length_minutes} min` : ""}`,
-        title: d.song || "(song)",
-        artist: d.artist,
-      })
-    );
-  if (hasText(receptionDayOf.cake_cutting_song))
+  }
+
+  // Parent dances — iterate Music-tab songs (SSoT for rows). For each song,
+  // look up the matching receptionDayOf entry by song_key to pull who +
+  // length. Empty-song skeleton entries in receptionDayOf are ignored.
+  const parentDanceSongs = musicSelections.filter(
+    (s) => s.phase === "parent_dances" && !s.is_do_not_play
+  );
+  const dancePairings = new Map(
+    (receptionDayOf.parent_dances || [])
+      .filter((d) => hasText(d.song_key) || hasText(d.song))
+      .map((d) => [
+        ((d.song_key || d.song) || "").toLowerCase().trim(),
+        d,
+      ])
+  );
+  parentDanceSongs.forEach((song) => {
+    const key = song.song_title.toLowerCase().trim();
+    const pairing = dancePairings.get(key);
+    const who = pairing?.who?.trim();
+    const lenStr = pairing?.length_minutes
+      ? ` · ${formatSongLength(pairing.length_minutes)}`
+      : "";
+    out.push({
+      label: `Parent dance${who ? ` · ${who}` : ""}${lenStr}`,
+      title: song.song_title,
+      artist: song.artist,
+    });
+  });
+
+  const cakeCutting = songFor("cake_cutting", receptionDayOf.cake_cutting_song);
+  if (cakeCutting) {
     out.push({
       label: "Cake cutting",
-      title: receptionDayOf.cake_cutting_song,
+      title: cakeCutting.title,
+      artist: cakeCutting.artist,
     });
-  if (hasText(receptionDayOf.last_dance_song))
+  }
+
+  const lastDance = songFor(
+    "last_dance",
+    receptionDayOf.last_dance_song,
+    receptionDayOf.last_dance_artist
+  );
+  if (lastDance) {
+    const len = receptionDayOf.last_dance_length_minutes;
     out.push({
-      label: `Last dance${receptionDayOf.last_dance_length_minutes ? ` · ${formatSongLength(receptionDayOf.last_dance_length_minutes)}` : ""}`,
-      title: receptionDayOf.last_dance_song,
-      artist: receptionDayOf.last_dance_artist,
+      label: `Last dance${len ? ` · ${formatSongLength(len)}` : ""}`,
+      title: lastDance.title,
+      artist: lastDance.artist,
     });
+  }
+
   if (
     receptionDayOf.exit_style &&
     receptionDayOf.exit_style !== "none" &&
@@ -606,12 +882,17 @@ function MusicByPhaseBlock({
   return (
     <div className="avoid-break">
       <h4 className="font-semibold text-sm mb-2">{heading}</h4>
-      <div className="space-y-3">
+      <div className="space-y-4">
         {phaseGroups.map((g) => (
           <div key={g.id}>
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">
-              {g.label}
-            </p>
+            <div className="flex items-baseline justify-between gap-2 border-b border-foreground/25 pb-0.5 mb-1.5">
+              <p className="text-[12px] font-bold text-foreground uppercase tracking-widest">
+                {g.label}
+              </p>
+              <span className="text-[10px] text-muted-foreground tabular-nums">
+                {g.songs.length} song{g.songs.length === 1 ? "" : "s"}
+              </span>
+            </div>
             <ul className="text-sm space-y-0.5">
               {g.songs.map((s) => (
                 <li
@@ -629,9 +910,14 @@ function MusicByPhaseBlock({
         ))}
         {keyReceptionSongs.length > 0 && (
           <div>
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">
-              Key reception moments
-            </p>
+            <div className="flex items-baseline justify-between gap-2 border-b border-foreground/25 pb-0.5 mb-1.5">
+              <p className="text-[12px] font-bold text-foreground uppercase tracking-widest">
+                Key reception moments
+              </p>
+              <span className="text-[10px] text-muted-foreground tabular-nums">
+                {keyReceptionSongs.length} cue{keyReceptionSongs.length === 1 ? "" : "s"}
+              </span>
+            </div>
             <ul className="text-sm space-y-0.5">
               {keyReceptionSongs.map((k, i) => (
                 <li
@@ -742,17 +1028,103 @@ function filterKeyReceptionSongsByAssignment<
   });
 }
 
-// Unified MC script builder — used by DJ (always) and by Band (only when
-// bandleader handles MC). Speeches + MC-tagged reception moments + custom
-// moments, in a single flowing list.
+// Maps a TYPICAL_MC_MOMENTS id to the regex used to find its matching
+// schedule entry by title. Used to attach a time stamp to each MC cue so
+// the booklet reads chronologically.
+const momentToScheduleMatch: Record<string, RegExp> = {
+  grand_entrance: /grand entrance/i,
+  first_dance: /first dance/i,
+  parent_dances: /parent dances?/i,
+  dinner: /dinner/i,
+  speeches: /speech|toast/i,
+  cake_cutting: /cake cut/i,
+  last_dance: /last dance/i,
+  exit: /exit|send[-\s]?off/i,
+  bouquet_toss: /bouquet/i,
+  garter_toss: /garter/i,
+  anniversary_dance: /anniversary/i,
+  shoe_game: /shoe game/i,
+  slideshow: /slideshow/i,
+  dessert_bar: /dessert/i,
+};
+
+const CANONICAL_MC_ORDER: Record<string, number> = {
+  grand_entrance: 1,
+  welcome_toast: 2,
+  dinner: 3,
+  speeches: 4,
+  toasts: 4,
+  first_dance: 5,
+  parent_dances: 6,
+  cake_cutting: 7,
+  anniversary_dance: 8,
+  shoe_game: 9,
+  slideshow: 10,
+  dessert_bar: 11,
+  bouquet_toss: 12,
+  garter_toss: 13,
+  bouquet_garter: 12,
+  dance_floor: 14,
+  last_dance: 15,
+  exit: 16,
+};
+
+function titleCaseMomentId(id: string): string {
+  const words = id.replace(/_/g, " ").split(" ");
+  return words.map((w) => w[0]?.toUpperCase() + w.slice(1)).join(" ");
+}
+
+// Unified MC script builder — used by DJ (always), Band (only when
+// bandleader handles MC), and the dedicated MC vendor booklet.
+//
+// Sources, in order:
+//   1. Speeches (each speaker → "Please welcome X, our Y." cue)
+//   2. Bridal party intros (each member, ordered just before grand entrance)
+//   3. TYPICAL_MC_MOMENTS — auto-emit a cue for every canonical moment with
+//      a sensible default line. Couple's `moment_extras[id].mc_line` (if set)
+//      overrides the default. Skipped only when the couple has explicitly
+//      opted out (`moment_extras[id].mc_needed === false`).
+//   4. Non-typical `moment_extras` entries with `mc_needed=true` + filled
+//      `mc_line` (covers Schedule-custom moments tagged for MC).
+//   5. Custom moments (`custom_moments[]`) with mc_needed + line.
+//
+// Each cue carries a time pulled from the Schedule tab so the booklet
+// renders chronologically. Cues without a matching schedule entry fall to
+// the end, ordered by canonical sequence.
 function buildMcCues(
   receptionDayOf: ReceptionData | undefined,
+  scheduleEntries: ScheduleEntry[],
   hasText: (s?: string | null) => boolean
-): { orderHint: number; label: string; line: string }[] {
-  const cues: { orderHint: number; label: string; line: string }[] = [];
+): {
+  orderHint: number;
+  label: string;
+  line: string;
+  time?: string;
+  time24?: string;
+}[] {
+  const cues: {
+    orderHint: number;
+    label: string;
+    line: string;
+    time?: string;
+    time24?: string;
+  }[] = [];
   if (!receptionDayOf) return cues;
-  // Bridal party intros — each member becomes an MC cue, ordered before
-  // the grand entrance. Skips empty rows (no name and no role).
+
+  // momentId → schedule entry time. Use first matching entry's time.
+  const timeForMoment = new Map<string, { time: string; time24: string }>();
+  for (const [id, rx] of Object.entries(momentToScheduleMatch)) {
+    const entry = scheduleEntries.find((e) => hasText(e.title) && rx.test(e.title));
+    if (entry) {
+      timeForMoment.set(id, {
+        time: entry.time,
+        time24: scheduleTimeTo24h(entry.time),
+      });
+    }
+  }
+  const grandEntranceTime = timeForMoment.get("grand_entrance");
+
+  // 1. Bridal party intros — sit just before the grand entrance.
   (receptionDayOf.bridal_party_intros || []).forEach((m, i) => {
     if (!hasText(m.name) && !hasText(m.role)) return;
     cues.push({
@@ -761,48 +1133,81 @@ function buildMcCues(
       line: m.name
         ? `Please welcome ${hasText(m.role) ? `our ${m.role!.toLowerCase()}, ` : ""}${m.name}!`
         : `Please welcome ${hasText(m.role) ? `our ${m.role!.toLowerCase()}` : "the next member of our party"}!`,
+      time: grandEntranceTime?.time,
+      time24: grandEntranceTime?.time24,
     });
   });
-  if (receptionDayOf.moment_extras) {
-    const canonicalOrder: Record<string, number> = {
-      grand_entrance: 1,
-      first_dance: 2,
-      welcome_toast: 3,
-      dinner: 4,
-      toasts: 5,
-      cake_cutting: 6,
-      parent_dances: 7,
-      bouquet_garter: 8,
-      dance_floor: 9,
-      last_dance: 10,
-    };
-    Object.entries(receptionDayOf.moment_extras).forEach(([id, e]) => {
-      if (e && e.mc_needed && hasText(e.mc_line)) {
-        cues.push({
-          orderHint: canonicalOrder[id] ?? 50,
-          label: id.replace(/_/g, " "),
-          line: e.mc_line!.trim(),
-        });
-      }
+
+  // 2. Typical MC moments — emit default cue ONLY when there's evidence the
+  // moment is actually happening: matching schedule entry, OR explicit
+  // mc_needed=true, OR couple has filled a custom mc_line. Without any signal,
+  // the moment isn't planned (e.g., couple isn't doing a shoe game) so the
+  // MC doesn't need a cue for it.
+  const seenMomentIds = new Set<string>();
+  TYPICAL_MC_MOMENTS.forEach((id) => {
+    seenMomentIds.add(id);
+    const extras = receptionDayOf.moment_extras?.[id];
+    if (extras?.mc_needed === false) return; // explicit opt-out
+    const t = timeForMoment.get(id);
+    const customLine = extras?.mc_line?.trim();
+    const planned =
+      !!t || extras?.mc_needed === true || !!customLine;
+    if (!planned) return;
+    const line = customLine || defaultMcLineForMoment(id, receptionDayOf).trim();
+    if (!line) return;
+    cues.push({
+      orderHint: CANONICAL_MC_ORDER[id] ?? 50,
+      label: titleCaseMomentId(id),
+      line,
+      time: t?.time,
+      time24: t?.time24,
     });
-  }
+  });
+
+  // 3. Speeches — each speaker is its own cue, anchored at "Speeches" time.
+  const speechTime = timeForMoment.get("speeches");
   (receptionDayOf.speeches || []).forEach((s, i) => {
     cues.push({
-      orderHint: 5 + i * 0.1,
+      orderHint: (CANONICAL_MC_ORDER.speeches ?? 4) + i * 0.01,
       label: `Intro speaker: ${hasText(s.speaker) ? s.speaker : "(speaker)"}${hasText(s.role) ? ` — ${s.role}` : ""}`,
       line: mcIntroFor(s),
+      time: speechTime?.time,
+      time24: speechTime?.time24,
     });
   });
-  (receptionDayOf.custom_moments || []).forEach((m) => {
-    if (m.mc_needed && hasText(m.mc_line)) {
-      cues.push({
-        orderHint: 40,
-        label: m.title || "Custom moment",
-        line: m.mc_line!.trim(),
-      });
-    }
+
+  // 4. Non-typical moment_extras (Schedule-custom or one-off ids) with MC on.
+  Object.entries(receptionDayOf.moment_extras || {}).forEach(([id, e]) => {
+    if (seenMomentIds.has(id)) return;
+    if (!e?.mc_needed || !hasText(e.mc_line)) return;
+    const t = timeForMoment.get(id);
+    cues.push({
+      orderHint: 40,
+      label: titleCaseMomentId(id),
+      line: e.mc_line!.trim(),
+      time: t?.time,
+      time24: t?.time24,
+    });
   });
-  cues.sort((a, b) => a.orderHint - b.orderHint);
+
+  // 5. Custom moments — couple-defined entries with MC line.
+  (receptionDayOf.custom_moments || []).forEach((m) => {
+    if (!m.mc_needed || !hasText(m.mc_line)) return;
+    cues.push({
+      orderHint: 40,
+      label: m.title || "Custom moment",
+      line: m.mc_line!.trim(),
+    });
+  });
+
+  // Sort by schedule time first (chronological), then canonical order for ties
+  // / un-timed cues. Un-timed cues fall to the end.
+  cues.sort((a, b) => {
+    const ta = a.time24 || "99:99";
+    const tb = b.time24 || "99:99";
+    if (ta !== tb) return ta.localeCompare(tb);
+    return a.orderHint - b.orderHint;
+  });
   return cues;
 }
 
@@ -811,7 +1216,7 @@ function McScriptBlock({
   speechesTotalMin,
   note,
 }: {
-  cues: { orderHint: number; label: string; line: string }[];
+  cues: { orderHint: number; label: string; line: string; time?: string }[];
   speechesTotalMin: number;
   note?: string;
 }) {
@@ -820,15 +1225,23 @@ function McScriptBlock({
     <div className="avoid-break">
       <h4 className="font-semibold text-sm mb-2">MC Script</h4>
       <p className="text-[11px] text-muted-foreground mb-2 italic">
-        {note ?? "Read in order. Lines are couple-approved."}
+        {note ?? "Read in chronological order. Defaults pre-filled; couple may have customized — confirm the night before."}
       </p>
-      <ol className="space-y-2 text-sm">
+      <ol className="space-y-3 text-sm">
         {cues.map((c, i) => (
-          <li key={i} className="border-l-2 border-primary/30 pl-3 py-0.5">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {c.label}
-            </p>
-            <p className="italic">&ldquo;{c.line}&rdquo;</p>
+          <li
+            key={i}
+            className="flex gap-3 border-l-2 border-primary/30 pl-3 py-0.5"
+          >
+            <span className="text-[11px] font-mono font-medium text-muted-foreground w-16 shrink-0 pt-0.5 tabular-nums">
+              {c.time || "—:—"}
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground">
+                {c.label}
+              </p>
+              <p className="mt-0.5 leading-relaxed">&ldquo;{c.line}&rdquo;</p>
+            </div>
           </li>
         ))}
       </ol>
@@ -849,6 +1262,7 @@ function renderDjAddendum(
   vendor: Vendor,
   musicSelections: MusicSelection[],
   receptionDayOf: ReceptionData | undefined,
+  scheduleEntries: ScheduleEntry[],
   wedding: Wedding,
   hasText: (s?: string | null) => boolean,
   vendorList: Vendor[],
@@ -862,12 +1276,12 @@ function renderDjAddendum(
   const phaseGroups = groupMusicByPhase(myMusicSongs);
   const doNotPlay = musicSelections.filter((s) => s.is_do_not_play);
   const keyReceptionSongs = filterKeyReceptionSongsByAssignment(
-    getKeyReceptionSongs(receptionDayOf, hasText),
+    getKeyReceptionSongs(receptionDayOf, musicSelections, hasText),
     vendor.id,
     phaseAssignments
   );
   const pronunciations = getPronunciations(wedding, receptionDayOf, hasText);
-  const mcCues = buildMcCues(receptionDayOf, hasText);
+  const mcCues = buildMcCues(receptionDayOf, scheduleEntries, hasText);
   const extra =
     (vendor.extra_details as { requests_policy?: string } | null) || {};
   const requestsPolicy = extra.requests_policy;
@@ -986,6 +1400,7 @@ function renderBandAddendum(
   vendor: Vendor,
   musicSelections: MusicSelection[],
   receptionDayOf: ReceptionData | undefined,
+  scheduleEntries: ScheduleEntry[],
   wedding: Wedding,
   hasText: (s?: string | null) => boolean,
   vendorList: Vendor[],
@@ -999,12 +1414,12 @@ function renderBandAddendum(
   const phaseGroups = groupMusicByPhase(myMusicSongs);
   const doNotPlay = musicSelections.filter((s) => s.is_do_not_play);
   const keyReceptionSongs = filterKeyReceptionSongsByAssignment(
-    getKeyReceptionSongs(receptionDayOf, hasText),
+    getKeyReceptionSongs(receptionDayOf, musicSelections, hasText),
     vendor.id,
     phaseAssignments
   );
   const pronunciations = getPronunciations(wedding, receptionDayOf, hasText);
-  const mcCues = buildMcCues(receptionDayOf, hasText);
+  const mcCues = buildMcCues(receptionDayOf, scheduleEntries, hasText);
 
   const extra =
     (vendor.extra_details as {
@@ -1317,12 +1732,19 @@ export function BookletGenerator({
   const [savingNote, setSavingNote] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
-  const dayOfEvents = timelineEvents
-    .filter((e) => e.type === "day_of")
-    .sort((a, b) => {
-      if (a.event_time && b.event_time) return a.event_time.localeCompare(b.event_time);
-      return a.sort_order - b.sort_order;
-    });
+  // Day-of timeline lives in `wedding_day_details.schedule.entries` as a JSON
+  // blob (the Day-of Details > Schedule tab). The legacy `timeline_events`
+  // table only stores pre-wedding planning items, so we map schedule entries
+  // into the same TimelineEvent shape the booklet timeline page expects.
+  const scheduleEntries = dayOfDetails?.schedule?.entries || [];
+  const dayOfEvents: TimelineEvent[] = scheduleEntries.map((e, i) => ({
+    id: e.id,
+    type: "day_of" as const,
+    event_time: scheduleTimeTo24h(e.time),
+    title: e.title,
+    description: e.notes || null,
+    sort_order: i,
+  }));
 
   const coordinator = vendorList.find((v) => v.type === "coordinator");
 
@@ -1371,9 +1793,16 @@ export function BookletGenerator({
     if (!printRef.current) return;
     setDownloadingPdf(true);
     try {
-      // Dynamic import so the 450KB PDF lib only loads when actually used.
-      const mod = await import("html2pdf.js");
-      const html2pdf = mod.default;
+      // html2canvas-pro is a fork of html2canvas with native support for
+      // modern CSS color funcs (oklch, lab, lch). Our theme tokens all use
+      // oklch, so the original html2pdf.js (which bundles old html2canvas)
+      // chokes on every booklet. We pair it with jsPDF directly to keep
+      // multi-page control: render each `.booklet-page` element separately
+      // and append each as a PDF page.
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import("html2canvas-pro"),
+        import("jspdf"),
+      ]);
       const nameSlug = (s: string) =>
         s
           .toLowerCase()
@@ -1388,28 +1817,119 @@ export function BookletGenerator({
           : selectedVendors.length === 1
             ? `${coupleSlug}-${nameSlug(selectedVendors[0].company_name)}-booklet.pdf`
             : `${coupleSlug}-all-vendor-booklets.pdf`;
-      // html2pdf's typings miss `pagebreak`, so widen via unknown cast.
-      await (
-        html2pdf() as unknown as {
-          set: (opts: Record<string, unknown>) => {
-            from: (el: HTMLElement) => { save: () => Promise<void> };
-          };
+
+      const pages = Array.from(
+        printRef.current.querySelectorAll<HTMLElement>(".booklet-page")
+      );
+      const targets = pages.length > 0 ? pages : [printRef.current];
+
+      const pdf = new jsPDF({
+        unit: "in",
+        format: "letter",
+        orientation: "portrait",
+      });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 0.5;
+      const printableWidth = pageWidth - margin * 2;
+      const printableHeight = pageHeight - margin * 2;
+      // Render at print width (7.5" * 96dpi = 720 CSS px) so typography
+      // rendered to canvas matches what print preview would show, instead
+      // of the dialog's narrow column width. Captured canvas is then placed
+      // 1:1 in the PDF at printableWidth (no horizontal shrinkage).
+      const RENDER_WIDTH_PX = 720;
+      const scale = 2;
+      const sliceCssHeight = RENDER_WIDTH_PX * (printableHeight / printableWidth);
+
+      let firstPage = true;
+      for (const el of targets) {
+        const originalWidth = el.style.width;
+        const originalMaxWidth = el.style.maxWidth;
+        el.style.width = `${RENDER_WIDTH_PX}px`;
+        el.style.maxWidth = `${RENDER_WIDTH_PX}px`;
+        const canvas = await html2canvas(el, {
+          scale,
+          useCORS: true,
+          logging: false,
+          backgroundColor: "#ffffff",
+          width: RENDER_WIDTH_PX,
+          windowWidth: RENDER_WIDTH_PX,
+        });
+        el.style.width = originalWidth;
+        el.style.maxWidth = originalMaxWidth;
+
+        // Precompute which canvas rows are entirely "blank" (near-white).
+        // The slicer uses these to cut at section boundaries instead of
+        // through a line of text, which kept stranding lines like
+        // "Total speaking time:" on the next page.
+        // Choose slice count up-front so the last page isn't an orphan of
+        // just one or two stranded lines. Target each slice ~equally tall,
+        // capped at the printable page height.
+        const slicePxHeight = sliceCssHeight * scale;
+        const numSlices = Math.max(1, Math.ceil(canvas.height / slicePxHeight));
+        const targetHeight = canvas.height / numSlices;
+        const ctx = canvas.getContext("2d");
+        const blanks = ctx
+          ? computeBlankRowMap(ctx, canvas.width, canvas.height)
+          : null;
+
+        const sliceCanvas = document.createElement("canvas");
+        const sctx = sliceCanvas.getContext("2d");
+        let cursor = 0;
+        for (let s = 0; s < numSlices; s++) {
+          const isLast = s === numSlices - 1;
+          const idealEnd = isLast
+            ? canvas.height
+            : Math.min(Math.round((s + 1) * targetHeight), canvas.height);
+          let endPx = idealEnd;
+          if (!isLast && blanks) {
+            // Search a ±~10% window around idealEnd for a blank cut. Prefer
+            // a "big" gap (>= ~12 CSS px = section boundary); fall back to
+            // any single blank row; last resort the fixed `idealEnd`.
+            const span = Math.floor(targetHeight * 0.2);
+            const sliceMin = Math.max(cursor + 100, idealEnd - span);
+            const sliceMax = Math.min(canvas.height, idealEnd + Math.floor(span / 2));
+            const big = findBlankCut(blanks, sliceMin, sliceMax, 12 * scale);
+            const small = big >= 0 ? big : findBlankCut(blanks, sliceMin, sliceMax, 1);
+            if (small > cursor + 100) endPx = small;
+          }
+          const sh = endPx - cursor;
+          sliceCanvas.width = canvas.width;
+          sliceCanvas.height = sh;
+          if (sctx) {
+            sctx.fillStyle = "#ffffff";
+            sctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+            sctx.drawImage(
+              canvas,
+              0,
+              cursor,
+              canvas.width,
+              sh,
+              0,
+              0,
+              canvas.width,
+              sh
+            );
+          }
+          const imgData = sliceCanvas.toDataURL("image/jpeg", 0.95);
+          const imgHeight = (sh / canvas.width) * printableWidth;
+          if (!firstPage) pdf.addPage();
+          firstPage = false;
+          pdf.addImage(
+            imgData,
+            "JPEG",
+            margin,
+            margin,
+            printableWidth,
+            imgHeight,
+            undefined,
+            "FAST"
+          );
+          cursor = endPx;
         }
-      )
-        .set({
-          margin: [0.5, 0.5, 0.5, 0.5],
-          filename,
-          image: { type: "jpeg", quality: 0.95 },
-          html2canvas: { scale: 2, useCORS: true, logging: false },
-          jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
-          pagebreak: {
-            mode: ["css", "legacy"],
-            after: ".booklet-page",
-            avoid: ".avoid-break",
-          },
-        })
-        .from(printRef.current)
-        .save();
+      }
+
+      pdf.save(filename);
     } catch (err) {
       toast.error("Could not generate PDF", {
         description: err instanceof Error ? err.message : "Try Print instead.",
@@ -1626,6 +2146,37 @@ export function BookletGenerator({
               </div>
             )}
 
+            {(() => {
+              const c = summarizeCocktail(cocktailDayOf);
+              if (c.photographerFocus.length === 0 && !c.photographerNotes)
+                return null;
+              return (
+                <div className="avoid-break">
+                  <h4 className="font-semibold text-sm mb-2">
+                    Cocktail Hour Focus
+                  </h4>
+                  {c.location && (
+                    <p className="text-[11px] text-muted-foreground mb-1.5 italic">
+                      {c.location}
+                      {c.duration && ` · ${c.duration}`}
+                    </p>
+                  )}
+                  {c.photographerFocus.length > 0 && (
+                    <ul className="text-sm space-y-0.5 list-disc list-inside">
+                      {c.photographerFocus.map((label) => (
+                        <li key={label}>{label}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {c.photographerNotes && (
+                    <p className="text-sm mt-1.5 whitespace-pre-wrap">
+                      {c.photographerNotes}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
             {receptionKeyMoments.length > 0 && (
               <div className="avoid-break">
                 <h4 className="font-semibold text-sm mb-2">
@@ -1684,6 +2235,7 @@ export function BookletGenerator({
           vendor,
           musicSelections,
           receptionDayOf,
+          scheduleEntries,
           wedding,
           hasText,
           vendorList,
@@ -1694,6 +2246,7 @@ export function BookletGenerator({
           vendor,
           musicSelections,
           receptionDayOf,
+          scheduleEntries,
           wedding,
           hasText,
           vendorList,
@@ -1706,7 +2259,7 @@ export function BookletGenerator({
           receptionDayOf,
           hasText
         );
-        const mcCues = buildMcCues(receptionDayOf, hasText);
+        const mcCues = buildMcCues(receptionDayOf, scheduleEntries, hasText);
         // Point MC at the music vendor(s) so they know who's starting /
         // stopping music for each cue.
         const musicPartners = vendorList.filter(
@@ -2514,6 +3067,42 @@ export function BookletGenerator({
                 Logistics details pending.
               </p>
             )}
+
+            {(() => {
+              const c = summarizeCocktail(cocktailDayOf);
+              if (!c.hasAny) return null;
+              const meta: { label: string; value: string }[] = [];
+              if (c.location) meta.push({ label: "Location", value: c.location });
+              if (c.duration) meta.push({ label: "Duration", value: c.duration });
+              if (c.musicMood) meta.push({ label: "Music", value: c.musicMood });
+              if (c.activities.length > 0)
+                meta.push({ label: "Activities", value: c.activities.join(" · ") });
+              return (
+                <div className="avoid-break pt-3 border-t border-dashed space-y-2">
+                  <h4 className="font-semibold text-sm">Cocktail Hour</h4>
+                  {meta.length > 0 && (
+                    <ul className="text-sm space-y-0.5">
+                      {meta.map((m) => (
+                        <li key={m.label}>
+                          <span className="text-muted-foreground">{m.label}:</span>{" "}
+                          {m.value}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {c.culturalNotes && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        Cultural or religious (cocktail hour)
+                      </p>
+                      <p className="text-sm whitespace-pre-wrap">
+                        {c.culturalNotes}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         );
 

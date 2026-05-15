@@ -8,7 +8,7 @@ import {
   Gamepad2,
   UtensilsCrossed,
   Camera,
-  Flame,
+  HandHeart,
   Wand2,
   Plus,
   X,
@@ -124,7 +124,7 @@ export function CocktailSection({
       });
     }
     if (cocktailSongSummary) {
-      chips.push({ label: `♪ ${cocktailSongSummary}`, tone: "accent" });
+      chips.push({ label: cocktailSongSummary, tone: "accent" });
     }
     return chips;
   }, [data.music_mood, cocktailSongSummary]);
@@ -178,6 +178,14 @@ export function CocktailSection({
 
   return (
     <div className="space-y-2">
+      <p className="text-xs text-muted-foreground/80 px-1">
+        Everything here flows into your{" "}
+        <span className="font-medium text-foreground/80">
+          Coordinator, Photographer, and Caterer
+        </span>{" "}
+        booklets.
+      </p>
+
       {!anyFieldSet && (
         <div className="flex items-center gap-2 flex-wrap pb-2">
           <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
@@ -287,14 +295,16 @@ export function CocktailSection({
       >
         <div className="space-y-5">
           <div className="space-y-2">
-            <div className="flex items-baseline gap-2 flex-wrap">
-              <Music className="h-[18px] w-[18px] text-primary self-center" />
-              <span className="text-[15px] font-semibold text-foreground leading-none">
-                Mood
-              </span>
-              <span className="text-[13px] text-muted-foreground">
-                — what vibe you&apos;re going for
-              </span>
+            <div className="flex items-start gap-2">
+              <Music className="h-[18px] w-[18px] text-primary mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="block text-[15px] font-semibold text-foreground leading-tight">
+                  Mood
+                </span>
+                <p className="text-[13px] text-muted-foreground mt-0.5 leading-snug">
+                  what vibe you&apos;re going for
+                </p>
+              </div>
             </div>
             <SegmentedChoice
               options={[
@@ -395,7 +405,7 @@ export function CocktailSection({
 
       {/* 7. Cultural or religious */}
       <CollapsibleSection
-        icon={<Flame />}
+        icon={<HandHeart />}
         title="Cultural or religious elements"
         hint="toasts, traditions, or customs for this hour"
         summaryChips={culturalChips}

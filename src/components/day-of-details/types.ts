@@ -719,16 +719,18 @@ export function defaultMcLineForMoment(
  */
 export const TYPICAL_MC_MOMENTS: ReadonlySet<string> = new Set([
   "grand_entrance",
+  "dinner",
   "first_dance",
+  "parent_dances",
   "cake_cutting",
-  "last_dance",
-  "exit",
-  "bouquet_toss",
-  "garter_toss",
   "anniversary_dance",
   "shoe_game",
   "slideshow",
   "dessert_bar",
+  "bouquet_toss",
+  "garter_toss",
+  "last_dance",
+  "exit",
 ]);
 
 export interface ExitPlan {
