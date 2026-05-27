@@ -131,6 +131,7 @@ export interface Database {
           dietary_restrictions: string | null;
           plus_one: boolean;
           plus_one_name: string | null;
+          plus_one_rsvp: RsvpStatus | null;
           address: string | null;
           email: string | null;
           phone: string | null;

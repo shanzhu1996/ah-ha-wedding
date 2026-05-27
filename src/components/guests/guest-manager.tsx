@@ -6,6 +6,8 @@ import Link from "next/link";
 import {
   Plus,
   Upload,
+  Download,
+  Loader2,
   Search,
   Trash2,
   Edit,
@@ -22,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -62,6 +65,9 @@ interface Guest {
   dietary_restrictions: string | null;
   plus_one: boolean;
   plus_one_name: string | null;
+  /** Plus-one's own RSVP. NULL means inherit from primary (default). Lets
+   *  the couple capture cases like "Sarah's coming but Mike isn't". */
+  plus_one_rsvp: string | null;
   address: string | null;
   email: string | null;
   phone: string | null;
@@ -75,6 +81,8 @@ interface GuestManagerProps {
   receptionFormat: string | null;
   vendorMealsTotal: number;
   vendorsWithoutMeals: number;
+  partner1Name: string;
+  partner2Name: string;
 }
 
 const rsvpColors: Record<string, string> = {
@@ -93,7 +101,287 @@ const rsvpCycle: Record<string, string> = {
 
 const NON_PLATED_FORMATS = ["buffet", "cocktail", "family-style"];
 
-export function GuestManager({ guests: initialGuests, weddingId, receptionFormat, vendorMealsTotal, vendorsWithoutMeals }: GuestManagerProps) {
+// ── Guest list export (XLSX) ─────────────────────────────────────────────
+// Couples asked for a "see-it-myself" view. We render to .xlsx (not CSV) so
+// the file looks like a real spreadsheet: bold + frozen header row, RSVP
+// colour-coded cells, plus-one rows with a subtle gray tint, auto-filter,
+// auto-sized columns, and a summary header block. Each plus-one is its own
+// row (inheriting the primary's RSVP unless plus_one_rsvp is set), so the
+// row count equals the actual head count.
+
+const FRIENDLY_RSVP: Record<string, string> = {
+  confirmed: "Attending",
+  pending: "Pending",
+  no_response: "Pending",
+  declined: "Declined",
+};
+
+// AARRGGBB hex colors for cell fills + fonts (exceljs uses ARGB ordering).
+const RSVP_COLORS: Record<string, { fill: string; text: string }> = {
+  confirmed: { fill: "FFDCFCE7", text: "FF166534" }, // green-100 / green-800
+  pending: { fill: "FFFEF3C7", text: "FF92400E" }, // amber-100 / amber-800
+  no_response: { fill: "FFFEF3C7", text: "FF92400E" },
+  declined: { fill: "FFFEE2E2", text: "FF991B1B" }, // red-100 / red-800
+};
+
+const HEADER_FILL = "FFE5E7EB"; // gray-200 — bold header row
+const TITLE_COLOR = "FF1F2937"; // gray-800
+const MUTED_COLOR = "FF6B7280"; // gray-500
+
+function slugForFilename(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function splitPlusOneName(name: string | null | undefined): {
+  first: string;
+  last: string;
+} {
+  const trimmed = name?.trim();
+  if (!trimmed) return { first: "", last: "" };
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return { first: parts[0], last: "" };
+  return { first: parts[0], last: parts.slice(1).join(" ") };
+}
+
+interface ExportRow {
+  firstName: string;
+  lastName: string;
+  rsvp: string;
+  rsvpKey: string;
+  meal: string;
+  dietary: string;
+  plusOneOf: string;
+  notes: string;
+  isPlusOne: boolean;
+}
+
+function buildExportRows(guests: Guest[]): ExportRow[] {
+  // Use the guest array as-is — same order the couple sees on /guests
+  // (the page query already does `order("last_name", ascending: true)`).
+  // Plus-ones are emitted right after their primary, so couples stay
+  // adjacent without a separate sort step. If the UI sort changes later
+  // (drag-and-drop, insertion order, etc.) the export follows for free.
+  // Couples can re-sort however they want in Excel via the auto-filter.
+  const rows: ExportRow[] = [];
+  for (const g of guests) {
+    rows.push({
+      firstName: g.first_name,
+      lastName: g.last_name,
+      rsvp: FRIENDLY_RSVP[g.rsvp_status] ?? g.rsvp_status,
+      rsvpKey: g.rsvp_status,
+      meal: g.meal_choice ?? "",
+      dietary: g.dietary_restrictions ?? "",
+      plusOneOf: "",
+      notes: g.notes ?? "",
+      isPlusOne: false,
+    });
+    if (g.plus_one) {
+      const poRsvp = g.plus_one_rsvp ?? g.rsvp_status;
+      const { first, last } = splitPlusOneName(g.plus_one_name);
+      rows.push({
+        firstName: first || "(unnamed)",
+        lastName: last,
+        rsvp: FRIENDLY_RSVP[poRsvp] ?? poRsvp,
+        rsvpKey: poRsvp,
+        meal: "",
+        dietary: "",
+        plusOneOf: `${g.first_name} ${g.last_name}`.trim(),
+        notes: "",
+        isPlusOne: true,
+      });
+    }
+  }
+  return rows;
+}
+
+async function buildGuestXlsx(
+  guests: Guest[],
+  partner1: string,
+  partner2: string
+): Promise<Blob> {
+  // Dynamic import keeps the ~700KB exceljs lib out of the initial page
+  // bundle — only loaded when the couple actually clicks Export.
+  const ExcelJS = (await import("exceljs")).default;
+
+  const rows = buildExportRows(guests);
+
+  // Head counts
+  let confirmedCount = 0;
+  let pendingCount = 0;
+  let declinedCount = 0;
+  for (const r of rows) {
+    if (r.rsvpKey === "confirmed") confirmedCount++;
+    else if (r.rsvpKey === "declined") declinedCount++;
+    else pendingCount++;
+  }
+
+  // Dietary summary
+  const dietarySet = new Set<string>();
+  for (const g of guests) {
+    const d = g.dietary_restrictions?.trim();
+    if (d) dietarySet.add(d);
+  }
+  const dietaryList = Array.from(dietarySet);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Ah-Ha";
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet("Guests", {
+    properties: { defaultRowHeight: 18 },
+  });
+
+  // Column widths — sized for typical content. exceljs uses character units
+  // (~1 char ≈ 7px) so 14 reads as ~98px etc.
+  const columns: Array<{ width: number }> = [
+    { width: 14 }, // First Name
+    { width: 14 }, // Last Name
+    { width: 12 }, // RSVP
+    { width: 14 }, // Meal
+    { width: 22 }, // Dietary
+    { width: 20 }, // Plus-One Of
+    { width: 34 }, // Notes
+  ];
+  sheet.columns = columns;
+
+  // ── Summary header block (rows 1-5) ──────────────────────────────────
+  sheet.mergeCells("A1:G1");
+  const titleCell = sheet.getCell("A1");
+  titleCell.value = `Wedding Guest List — ${partner1} & ${partner2}`;
+  titleCell.font = {
+    name: "Calibri",
+    size: 16,
+    bold: true,
+    color: { argb: TITLE_COLOR },
+  };
+  titleCell.alignment = { horizontal: "left", vertical: "middle" };
+  sheet.getRow(1).height = 28;
+
+  sheet.mergeCells("A2:G2");
+  const subCell = sheet.getCell("A2");
+  subCell.value = `Generated ${today}`;
+  subCell.font = { name: "Calibri", size: 10, color: { argb: MUTED_COLOR } };
+  sheet.getRow(2).height = 16;
+
+  sheet.mergeCells("A3:G3");
+  const statsCell = sheet.getCell("A3");
+  statsCell.value = `${rows.length} total · ${confirmedCount} attending · ${pendingCount} pending · ${declinedCount} declined`;
+  statsCell.font = { name: "Calibri", size: 11 };
+  sheet.getRow(3).height = 18;
+
+  let headerRowIndex = 5;
+  if (dietaryList.length > 0) {
+    sheet.mergeCells("A4:G4");
+    const dietCell = sheet.getCell("A4");
+    const preview = dietaryList.slice(0, 5).join(", ");
+    const more = dietaryList.length > 5 ? "…" : "";
+    dietCell.value = `${dietaryList.length} with dietary needs (${preview}${more})`;
+    dietCell.font = { name: "Calibri", size: 11 };
+    sheet.getRow(4).height = 18;
+    headerRowIndex = 6;
+  }
+
+  // ── Header row ───────────────────────────────────────────────────────
+  const headerLabels = [
+    "First Name",
+    "Last Name",
+    "RSVP",
+    "Meal",
+    "Dietary",
+    "Plus-One Of",
+    "Notes",
+  ];
+  const headerRow = sheet.getRow(headerRowIndex);
+  headerLabels.forEach((h, i) => {
+    headerRow.getCell(i + 1).value = h;
+  });
+  headerRow.height = 22;
+  headerRow.eachCell((cell, col) => {
+    if (col > headerLabels.length) return;
+    cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: TITLE_COLOR } };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: HEADER_FILL },
+    };
+    cell.alignment = { vertical: "middle", horizontal: "left" };
+    cell.border = {
+      bottom: { style: "thin", color: { argb: "FF9CA3AF" } },
+    };
+  });
+
+  // ── Data rows ────────────────────────────────────────────────────────
+  rows.forEach((r, i) => {
+    const rowIndex = headerRowIndex + 1 + i;
+    const row = sheet.getRow(rowIndex);
+    row.getCell(1).value = r.firstName;
+    row.getCell(2).value = r.lastName;
+    row.getCell(3).value = r.rsvp;
+    row.getCell(4).value = r.meal;
+    row.getCell(5).value = r.dietary;
+    row.getCell(6).value = r.plusOneOf;
+    row.getCell(7).value = r.notes;
+
+    // Base font + alignment
+    row.eachCell((c, col) => {
+      if (col > headerLabels.length) return;
+      c.font = { name: "Calibri", size: 11 };
+      c.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+    });
+
+    // RSVP cell colored by status — the only background colour in data rows.
+    // Plus-one rows share the same white background as primaries (the
+    // "Plus-One Of" column carries the distinction; the bg tint would be
+    // redundant signal for "treated the same").
+    const palette = RSVP_COLORS[r.rsvpKey];
+    if (palette) {
+      const rsvpCell = row.getCell(3);
+      rsvpCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: palette.fill },
+      };
+      rsvpCell.font = { name: "Calibri", size: 11, bold: true, color: { argb: palette.text } };
+    }
+  });
+
+  // Freeze the summary block + header row so they stay visible while
+  // scrolling through long guest lists.
+  sheet.views = [
+    {
+      state: "frozen",
+      xSplit: 0,
+      ySplit: headerRowIndex,
+    },
+  ];
+
+  // Auto-filter on the data range so couples can sort by RSVP / Dietary etc.
+  sheet.autoFilter = {
+    from: { row: headerRowIndex, column: 1 },
+    to: { row: headerRowIndex, column: headerLabels.length },
+  };
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export function GuestManager({ guests: initialGuests, weddingId, receptionFormat, vendorMealsTotal, vendorsWithoutMeals, partner1Name, partner2Name }: GuestManagerProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [filterRsvp, setFilterRsvp] = useState<string>("all");
@@ -112,6 +400,7 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showContactSection, setShowContactSection] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Form state
   const [firstName, setFirstName] = useState("");
@@ -121,6 +410,8 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
   const [dietary, setDietary] = useState("");
   const [plusOne, setPlusOne] = useState(false);
   const [plusOneName, setPlusOneName] = useState("");
+  // null = inherit from primary's RSVP
+  const [plusOneRsvp, setPlusOneRsvp] = useState<string | null>(null);
   const [guestEmail, setGuestEmail] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
   const [address, setAddress] = useState("");
@@ -140,7 +431,13 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
   // Vendors eating on-site (photographer, DJ, videographer) need plates too,
   // and couples routinely forget to add them to the caterer's final count.
   const confirmedGuests = initialGuests.filter((g) => g.rsvp_status === "confirmed");
-  const confirmedPlusOnes = confirmedGuests.filter((g) => g.plus_one).length;
+  // A plus-one only counts as a head when they're actually coming.
+  // plus_one_rsvp === "declined" means "Sarah's still coming but Mike isn't" —
+  // primary still 1 head, plus-one 0. NULL means inherit, so confirmed primary
+  // → confirmed plus-one.
+  const confirmedPlusOnes = confirmedGuests.filter(
+    (g) => g.plus_one && g.plus_one_rsvp !== "declined"
+  ).length;
   const catererGuestHeadcount = confirmed + confirmedPlusOnes;
   const catererCount = catererGuestHeadcount + vendorMealsTotal;
 
@@ -188,6 +485,7 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
     setDietary("");
     setPlusOne(false);
     setPlusOneName("");
+    setPlusOneRsvp(null);
     setGuestEmail("");
     setGuestPhone("");
     setAddress("");
@@ -206,6 +504,7 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
     setDietary(guest.dietary_restrictions || "");
     setPlusOne(guest.plus_one);
     setPlusOneName(guest.plus_one_name || "");
+    setPlusOneRsvp(guest.plus_one_rsvp);
     setGuestEmail(guest.email || "");
     setGuestPhone(guest.phone || "");
     setAddress(guest.address || "");
@@ -230,6 +529,8 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
       dietary_restrictions: dietary || null,
       plus_one: plusOne,
       plus_one_name: plusOneName || null,
+      // Clear plus_one_rsvp when there's no plus-one — keeps the column tidy.
+      plus_one_rsvp: plusOne ? plusOneRsvp : null,
       email: guestEmail || null,
       phone: guestPhone || null,
       address: address || null,
@@ -253,9 +554,44 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
     router.refresh();
   }
 
+  async function handleExport() {
+    if (initialGuests.length === 0) {
+      toast.error("No guests to export yet");
+      return;
+    }
+    setExporting(true);
+    try {
+      const blob = await buildGuestXlsx(initialGuests, partner1Name, partner2Name);
+      const today = new Date().toISOString().slice(0, 10);
+      const filename = `${slugForFilename(partner1Name)}-${slugForFilename(partner2Name)}-guest-list-${today}.xlsx`;
+      downloadBlob(blob, filename);
+      toast.success(`Exported ${initialGuests.length} guests`);
+    } catch (err) {
+      toast.error("Could not generate spreadsheet", {
+        description: err instanceof Error ? err.message : "Try again or refresh.",
+      });
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function quickRsvpUpdate(id: string, newStatus: string) {
     const supabase = createClient();
     await supabase.from("guests").update({ rsvp_status: newStatus }).eq("id", id);
+    router.refresh();
+  }
+
+  // Toggle plus-one's RSVP between Coming (NULL = inherits primary) and
+  // Not Coming (= "declined"). Only meaningful when the primary is confirmed
+  // — otherwise the plus-one's "own" RSVP doesn't change anything visible.
+  async function quickPlusOneToggle(guest: Guest) {
+    if (guest.rsvp_status !== "confirmed" || !guest.plus_one) return;
+    const supabase = createClient();
+    const next = guest.plus_one_rsvp === "declined" ? null : "declined";
+    await supabase
+      .from("guests")
+      .update({ plus_one_rsvp: next })
+      .eq("id", guest.id);
     router.refresh();
   }
 
@@ -430,7 +766,7 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
                 href="/vendors"
                 className="mt-2 inline-flex items-center gap-1 text-xs text-amber-700 hover:underline"
               >
-                {vendorsWithoutMeals} vendor{vendorsWithoutMeals === 1 ? "" : "s"} missing meal count &rarr;
+                {`${vendorsWithoutMeals} ${vendorsWithoutMeals === 1 ? "vendor" : "vendors"} missing meal count →`}
               </Link>
             )}
           </>
@@ -501,6 +837,22 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
             <Upload className="h-3.5 w-3.5" />
             Bulk Add
           </Button>
+          {initialGuests.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              disabled={exporting}
+              size="sm"
+              className="gap-1.5 text-xs h-9"
+            >
+              {exporting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              Export
+            </Button>
+          )}
           <Button
             onClick={() => {
               resetForm();
@@ -697,11 +1049,49 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
                       <span className="text-sm font-medium text-foreground">
                         {guest.first_name} {guest.last_name}
                       </span>
-                      {guest.plus_one && (
-                        <span className="text-xs text-muted-foreground">
-                          {guest.plus_one_name ? `+ ${guest.plus_one_name}` : "+1"}
-                        </span>
-                      )}
+                      {guest.plus_one &&
+                        (() => {
+                          // Effectively not coming = primary declined (plus-one
+                          // can't come without their host) OR plus_one_rsvp
+                          // explicitly declined ("Sarah's coming, Mike isn't").
+                          const notComing =
+                            guest.rsvp_status === "declined" ||
+                            guest.plus_one_rsvp === "declined";
+                          // Only togglable when primary is confirmed — that's
+                          // the only state where the plus-one's own RSVP can
+                          // diverge from the primary's. Other states inherit.
+                          const togglable = guest.rsvp_status === "confirmed";
+                          const label = guest.plus_one_name
+                            ? `+ ${guest.plus_one_name}`
+                            : "+1";
+                          const inner = (
+                            <span
+                              className={cn(
+                                "text-xs",
+                                notComing
+                                  ? "text-muted-foreground/60 line-through"
+                                  : "text-muted-foreground"
+                              )}
+                            >
+                              {label}
+                            </span>
+                          );
+                          if (!togglable) return inner;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => quickPlusOneToggle(guest)}
+                              title={
+                                notComing
+                                  ? "Mark plus-one as coming"
+                                  : "Mark plus-one as not coming"
+                              }
+                              className="cursor-pointer hover:opacity-80 transition-opacity"
+                            >
+                              {inner}
+                            </button>
+                          );
+                        })()}
                     </div>
                   </td>
 
@@ -833,6 +1223,43 @@ export function GuestManager({ guests: initialGuests, weddingId, receptionFormat
                   value={plusOneName}
                   onChange={(e) => setPlusOneName(e.target.value)}
                 />
+              </div>
+            )}
+            {/* Plus-one own RSVP — only matters when the primary is confirmed.
+                Default ("Coming") stores NULL, which the export reader treats
+                as "inherits primary". Explicit "Not coming" flips just the
+                plus-one without touching the primary's RSVP. */}
+            {plusOne && editingGuest && rsvpStatus === "confirmed" && (
+              <div className="space-y-2">
+                <Label className="font-normal text-xs text-muted-foreground">
+                  Plus-one also coming?
+                </Label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPlusOneRsvp(null)}
+                    className={cn(
+                      "px-3 py-1.5 text-xs rounded-md border transition-colors",
+                      plusOneRsvp !== "declined"
+                        ? "border-primary bg-primary/5 text-foreground"
+                        : "border-border/50 text-muted-foreground hover:border-primary/30"
+                    )}
+                  >
+                    Coming
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPlusOneRsvp("declined")}
+                    className={cn(
+                      "px-3 py-1.5 text-xs rounded-md border transition-colors",
+                      plusOneRsvp === "declined"
+                        ? "border-primary bg-primary/5 text-foreground"
+                        : "border-border/50 text-muted-foreground hover:border-primary/30"
+                    )}
+                  >
+                    Not coming
+                  </button>
+                </div>
               </div>
             )}
 

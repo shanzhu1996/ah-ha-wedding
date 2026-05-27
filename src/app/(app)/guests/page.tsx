@@ -37,6 +37,8 @@ export default async function GuestsPage() {
       receptionFormat={wedding.reception_format}
       vendorMealsTotal={vendorMealsTotal}
       vendorsWithoutMeals={vendorsWithoutMeals}
+      partner1Name={wedding.partner1_name}
+      partner2Name={wedding.partner2_name}
     />
   );
 }
