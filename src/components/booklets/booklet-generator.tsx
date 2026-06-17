@@ -113,9 +113,45 @@ interface Guest {
   id: string;
   first_name: string;
   last_name: string;
+  rsvp_status: string;
   meal_choice: string | null;
   dietary_restrictions: string | null;
+  plus_one: boolean;
+  /** Plus-one's own RSVP. NULL = inherit the primary's (mirrors guests table). */
+  plus_one_rsvp: string | null;
   relationship_tag: string | null;
+}
+
+/**
+ * Attending headcount that respects RSVP status + plus-ones. Caterers and
+ * transportation need the *attending* number, not total invited — counting
+ * every invitee means over-ordering food / over-booking seats. Plus-ones
+ * inherit the primary's RSVP unless plus_one_rsvp overrides (mirrors
+ * guest-manager's row-expansion logic).
+ */
+function computeAttendance(guests: Guest[]): {
+  attending: number;
+  pending: number;
+  plusOnesAttending: number;
+} {
+  const isPending = (s: string) => s === "pending" || s === "no_response";
+  let attending = 0;
+  let pending = 0;
+  let plusOnesAttending = 0;
+  for (const g of guests) {
+    if (g.rsvp_status === "confirmed") attending++;
+    else if (isPending(g.rsvp_status)) pending++;
+    if (g.plus_one) {
+      const po = g.plus_one_rsvp ?? g.rsvp_status;
+      if (po === "confirmed") {
+        attending++;
+        plusOnesAttending++;
+      } else if (isPending(po)) {
+        pending++;
+      }
+    }
+  }
+  return { attending, pending, plusOnesAttending };
 }
 
 interface DelegationTask {
@@ -174,6 +210,33 @@ const vendorTypeConfig: Record<
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────
+
+/** Non-empty after trimming. Shared by every addendum renderer. */
+function hasText(s?: string | null): boolean {
+  return !!s && s.trim().length > 0;
+}
+
+/**
+ * Everything a per-vendor addendum renderer needs, bundled so each
+ * `renderXxxAddendum(vendor, ctx)` takes two args instead of a long
+ * positional list. Built once per render in BookletGenerator.
+ */
+interface AddendumContext {
+  wedding: Wedding;
+  guests: Guest[];
+  /** Live vendor list (optimistic note edits applied). */
+  vendors: Vendor[];
+  musicSelections: MusicSelection[];
+  delegationTasks: DelegationTask[];
+  scheduleEntries: ScheduleEntry[];
+  phaseAssignments: Record<string, string>;
+  ceremony?: CeremonyData;
+  reception?: ReceptionData;
+  photos?: PhotoShotListData;
+  gettingReady?: GettingReadyData;
+  cocktail?: CocktailData;
+  logistics?: LogisticsData;
+}
 
 function formatTime(time: string | null): string {
   if (!time) return "";
@@ -1260,14 +1323,16 @@ function McScriptBlock({
 
 function renderDjAddendum(
   vendor: Vendor,
-  musicSelections: MusicSelection[],
-  receptionDayOf: ReceptionData | undefined,
-  scheduleEntries: ScheduleEntry[],
-  wedding: Wedding,
-  hasText: (s?: string | null) => boolean,
-  vendorList: Vendor[],
-  phaseAssignments: Record<string, string>
+  ctx: AddendumContext
 ): React.ReactNode {
+  const {
+    musicSelections,
+    reception: receptionDayOf,
+    scheduleEntries,
+    wedding,
+    vendors: vendorList,
+    phaseAssignments,
+  } = ctx;
   const myMusicSongs = filterSongsByAssignment(
     musicSelections,
     vendor.id,
@@ -1398,14 +1463,16 @@ function renderDjAddendum(
 
 function renderBandAddendum(
   vendor: Vendor,
-  musicSelections: MusicSelection[],
-  receptionDayOf: ReceptionData | undefined,
-  scheduleEntries: ScheduleEntry[],
-  wedding: Wedding,
-  hasText: (s?: string | null) => boolean,
-  vendorList: Vendor[],
-  phaseAssignments: Record<string, string>
+  ctx: AddendumContext
 ): React.ReactNode {
+  const {
+    musicSelections,
+    reception: receptionDayOf,
+    scheduleEntries,
+    wedding,
+    vendors: vendorList,
+    phaseAssignments,
+  } = ctx;
   const myMusicSongs = filterSongsByAssignment(
     musicSelections,
     vendor.id,
@@ -1695,6 +1762,1491 @@ const readinessStyle: Record<
   },
 };
 
+// ── Logistics-only addendums (rentals / transportation / photo booth) ──
+
+function renderRentalsAddendum(vendor: Vendor): React.ReactNode {
+  return (
+    <div className="space-y-5">
+      <div className="avoid-break grid grid-cols-2 gap-4 text-sm">
+        {vendor.arrival_time && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Delivery time
+            </p>
+            <p>{formatTime(vendor.arrival_time)}</p>
+          </div>
+        )}
+        {vendor.setup_time_minutes != null && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Setup window
+            </p>
+            <p>{vendor.setup_time_minutes} minutes</p>
+          </div>
+        )}
+        {vendor.setup_location && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Setup location
+            </p>
+            <p>{vendor.setup_location}</p>
+          </div>
+        )}
+        {vendor.breakdown_time && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Pickup time
+            </p>
+            <p>{formatTime(vendor.breakdown_time)}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="avoid-break">
+        <h4 className="font-semibold text-sm mb-2">Item List</h4>
+        <p className="text-xs text-muted-foreground italic mb-2">
+          Qty · item · setup notes (e.g., "60 chiavari chairs,
+          ceremony aisle and reception"). Attach full invoice for
+          reference.
+        </p>
+        {[...Array(8)].map((_, i) => (
+          <div
+            key={i}
+            className="border-b border-dashed border-border/50 h-6"
+          />
+        ))}
+      </div>
+
+      {vendor.notes && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Notes from the couple
+          </p>
+          <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderTransportationAddendum(
+  vendor: Vendor,
+  ctx: AddendumContext
+): React.ReactNode {
+  const { guests } = ctx;
+  return (
+    <div className="space-y-5">
+      <div className="avoid-break grid grid-cols-2 gap-4 text-sm">
+        {vendor.arrival_time && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              First pickup
+            </p>
+            <p>{formatTime(vendor.arrival_time)}</p>
+          </div>
+        )}
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Attending guests
+          </p>
+          <p>
+            {computeAttendance(guests).attending}
+            <span className="text-muted-foreground text-xs">
+              {" "}
+              · confirm how many need rides
+            </span>
+          </p>
+        </div>
+      </div>
+
+      <div className="avoid-break">
+        <h4 className="font-semibold text-sm mb-2">Pickup Schedule</h4>
+        <p className="text-xs text-muted-foreground italic mb-2">
+          Time · pickup location · passengers · drop-off. Include
+          hotel shuttles, wedding party transport, and return trips.
+        </p>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-[10px] uppercase tracking-wider text-muted-foreground">
+              <th className="text-left py-1 font-normal">Time</th>
+              <th className="text-left py-1 font-normal">Pickup</th>
+              <th className="text-left py-1 font-normal">Pax</th>
+              <th className="text-left py-1 font-normal">Drop-off</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...Array(6)].map((_, i) => (
+              <tr key={i} className="border-b border-dashed border-border/40">
+                <td className="py-2">&nbsp;</td>
+                <td className="py-2">&nbsp;</td>
+                <td className="py-2">&nbsp;</td>
+                <td className="py-2">&nbsp;</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="avoid-break">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+          Route notes
+        </p>
+        <p className="text-xs text-muted-foreground italic">
+          Preferred routes, timed photo stops, and where to wait
+          during the ceremony.
+        </p>
+        {[...Array(3)].map((_, i) => (
+          <div
+            key={i}
+            className="border-b border-dashed border-border/50 h-6"
+          />
+        ))}
+      </div>
+
+      {vendor.notes && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Notes from the couple
+          </p>
+          <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderPhotoBoothAddendum(vendor: Vendor): React.ReactNode {
+  return (
+    <div className="space-y-5">
+      <div className="avoid-break grid grid-cols-2 gap-4 text-sm">
+        {vendor.arrival_time && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Setup arrival
+            </p>
+            <p>{formatTime(vendor.arrival_time)}</p>
+          </div>
+        )}
+        {vendor.breakdown_time && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Breakdown
+            </p>
+            <p>{formatTime(vendor.breakdown_time)}</p>
+          </div>
+        )}
+        {vendor.setup_location && (
+          <div className="col-span-2">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Setup location
+            </p>
+            <p>{vendor.setup_location}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="avoid-break">
+        <h4 className="font-semibold text-sm mb-2">
+          Space &amp; Power Requirements
+        </h4>
+        <p className="text-xs text-muted-foreground italic mb-2">
+          Confirm footprint, clearance, and outlet distance with the
+          venue before the day.
+        </p>
+        {[...Array(4)].map((_, i) => (
+          <div
+            key={i}
+            className="border-b border-dashed border-border/50 h-6"
+          />
+        ))}
+      </div>
+
+      <div className="avoid-break">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+          Template / props
+        </p>
+        <p className="text-xs text-muted-foreground italic">
+          Wedding color palette, custom print template, prop style
+          preferences.
+        </p>
+        {[...Array(3)].map((_, i) => (
+          <div
+            key={i}
+            className="border-b border-dashed border-border/50 h-6"
+          />
+        ))}
+      </div>
+
+      {vendor.notes && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Notes from the couple
+          </p>
+          <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderBakerAddendum(
+  vendor: Vendor,
+  ctx: AddendumContext
+): React.ReactNode {
+  const { reception: receptionDayOf } = ctx;
+  return (
+    <div className="space-y-5">
+      <div className="avoid-break grid grid-cols-2 gap-4 text-sm">
+        {vendor.arrival_time && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Delivery window
+            </p>
+            <p>{formatTime(vendor.arrival_time)}</p>
+          </div>
+        )}
+        {vendor.setup_location && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Delivery location
+            </p>
+            <p>{vendor.setup_location}</p>
+          </div>
+        )}
+        {receptionDayOf && hasText(receptionDayOf.cake_cutting_song) && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Cake cutting song
+            </p>
+            <p>{receptionDayOf.cake_cutting_song}</p>
+          </div>
+        )}
+      </div>
+
+      {receptionDayOf &&
+        (receptionDayOf.cake_feed_style ||
+          hasText(receptionDayOf.cake_cutter) ||
+          receptionDayOf.cake_top_tier_saved) && (
+          <div className="avoid-break rounded-md border border-dashed p-3 bg-muted/30 space-y-2 text-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Cutting plan
+            </p>
+            {receptionDayOf.cake_feed_style && (
+              <p>
+                <span className="text-muted-foreground">Style:</span>{" "}
+                {receptionDayOf.cake_feed_style === "feed_each_other"
+                  ? "Couple feeds each other"
+                  : receptionDayOf.cake_feed_style === "clean_cut"
+                    ? "Clean cut — no feeding"
+                    : "Skipping the cutting"}
+              </p>
+            )}
+            {hasText(receptionDayOf.cake_cutter) && (
+              <p>
+                <span className="text-muted-foreground">Who cuts:</span>{" "}
+                {receptionDayOf.cake_cutter}
+              </p>
+            )}
+            {receptionDayOf.cake_top_tier_saved && (
+              <p className="font-medium">
+                ⚑ Box the top tier — couple saves it for their 1-year
+                anniversary.
+              </p>
+            )}
+          </div>
+        )}
+
+      <div className="avoid-break">
+        <h4 className="font-semibold text-sm mb-2">Cake Specs</h4>
+        <p className="text-xs text-muted-foreground italic mb-2">
+          Tiers, flavors per tier, fillings, allergens, topper,
+          display stand. Confirm with couple a week before delivery.
+        </p>
+        {[...Array(5)].map((_, i) => (
+          <div
+            key={i}
+            className="border-b border-dashed border-border/50 h-6"
+          />
+        ))}
+      </div>
+
+      <div className="avoid-break">
+        <h4 className="font-semibold text-sm mb-2">Dessert Table</h4>
+        <p className="text-xs text-muted-foreground italic mb-2">
+          If applicable — items, quantities, display notes.
+        </p>
+        {[...Array(3)].map((_, i) => (
+          <div
+            key={i}
+            className="border-b border-dashed border-border/50 h-6"
+          />
+        ))}
+      </div>
+
+      {vendor.notes && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Notes from the couple
+          </p>
+          <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderCoordinatorAddendum(
+  vendor: Vendor,
+  ctx: AddendumContext
+): React.ReactNode {
+  const { logistics: logisticsDayOf, cocktail: cocktailDayOf } = ctx;
+  return (
+    <div className="space-y-3">
+      <h4 className="font-semibold text-sm">Logistics &amp; Roles</h4>
+      {logisticsDayOf ? (
+        <div className="space-y-2 text-sm">
+          {hasText(logisticsDayOf.rain_plan) && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Rain plan
+              </p>
+              <p className="whitespace-pre-wrap">{logisticsDayOf.rain_plan}</p>
+            </div>
+          )}
+          {hasText(logisticsDayOf.transportation) && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Transportation
+              </p>
+              <p className="whitespace-pre-wrap">{logisticsDayOf.transportation}</p>
+            </div>
+          )}
+          {(() => {
+            const contacts = effectiveEmergencyContacts(logisticsDayOf).filter(
+              (c) => hasText(c.name) || hasText(c.phone)
+            );
+            if (contacts.length === 0) return null;
+            return (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Emergency contacts
+                </p>
+                <ul className="list-disc list-inside">
+                  {contacts.map((c) => (
+                    <li key={c.id}>
+                      {c.name}
+                      {hasText(c.phone) && ` · ${c.phone}`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
+          {(() => {
+            const roles = effectiveRoles(logisticsDayOf).filter((r) =>
+              hasText(r.assignee)
+            );
+            if (roles.length === 0) return null;
+            return (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Day-of roles
+                </p>
+                <ul className="list-disc list-inside">
+                  {roles.map((r) => (
+                    <li key={r.id}>
+                      <strong>{r.label}:</strong> {r.assignee}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
+          {hasText(logisticsDayOf.cultural_notes) && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Cultural or religious logistics
+              </p>
+              <p className="whitespace-pre-wrap">{logisticsDayOf.cultural_notes}</p>
+            </div>
+          )}
+          {hasText(logisticsDayOf.notes) && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Additional notes
+              </p>
+              <p className="whitespace-pre-wrap">{logisticsDayOf.notes}</p>
+            </div>
+          )}
+        </div>
+      ) : vendor.notes ? (
+        <p className="text-sm whitespace-pre-wrap">{vendor.notes}</p>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Logistics details pending.
+        </p>
+      )}
+
+      {(() => {
+        const c = summarizeCocktail(cocktailDayOf);
+        if (!c.hasAny) return null;
+        const meta: { label: string; value: string }[] = [];
+        if (c.location) meta.push({ label: "Location", value: c.location });
+        if (c.duration) meta.push({ label: "Duration", value: c.duration });
+        if (c.musicMood) meta.push({ label: "Music", value: c.musicMood });
+        if (c.activities.length > 0)
+          meta.push({ label: "Activities", value: c.activities.join(" · ") });
+        return (
+          <div className="avoid-break pt-3 border-t border-dashed space-y-2">
+            <h4 className="font-semibold text-sm">Cocktail Hour</h4>
+            {meta.length > 0 && (
+              <ul className="text-sm space-y-0.5">
+                {meta.map((m) => (
+                  <li key={m.label}>
+                    <span className="text-muted-foreground">{m.label}:</span>{" "}
+                    {m.value}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {c.culturalNotes && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Cultural or religious (cocktail hour)
+                </p>
+                <p className="text-sm whitespace-pre-wrap">
+                  {c.culturalNotes}
+                </p>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+function renderOfficiantAddendum(
+  vendor: Vendor,
+  ctx: AddendumContext
+): React.ReactNode {
+  const { wedding, ceremony: ceremonyDayOf } = ctx;
+  // Name pronunciations: couple + anyone in recessional with a name.
+  const namesForPronunciation: { name: string; context: string }[] = [
+    { name: wedding.partner1_name, context: "Partner 1" },
+    { name: wedding.partner2_name, context: "Partner 2" },
+  ];
+  (ceremonyDayOf?.recessional || []).forEach((r) => {
+    if (hasText(r.name)) {
+      namesForPronunciation.push({
+        name: r.name!,
+        context: r.role || "Wedding party",
+      });
+    }
+  });
+  const seenNames = new Set<string>();
+  const uniqueNames = namesForPronunciation.filter((n) => {
+    const k = n.name.toLowerCase();
+    if (seenNames.has(k)) return false;
+    seenNames.add(k);
+    return true;
+  });
+
+  return (
+    <div className="space-y-5">
+      {ceremonyDayOf ? (
+        <div className="space-y-2 text-sm avoid-break">
+          <h4 className="font-semibold text-sm mb-1">Ceremony Flow</h4>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Vows
+            </p>
+            <p>{ceremonyDayOf.vows_style || "not yet decided"}</p>
+          </div>
+          {(ceremonyDayOf.recessional || []).some(
+            (r) => r.role?.trim() || r.name?.trim()
+          ) && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Recessional
+              </p>
+              <ol className="list-decimal list-inside space-y-0.5">
+                {ceremonyDayOf.recessional.map((r) => (
+                  <li key={r.id}>
+                    {r.role || "(role)"}
+                    {hasText(r.name) && ` — ${r.name}`}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+          {ceremonyDayOf.unity_ceremony &&
+            ceremonyDayOf.unity_ceremony !== "none" && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Unity ceremony
+                </p>
+                <p>
+                  {ceremonyDayOf.unity_ceremony.replace(/_/g, " ")}
+                  {hasText(ceremonyDayOf.unity_notes) &&
+                    ` · ${ceremonyDayOf.unity_notes}`}
+                </p>
+              </div>
+            )}
+          {(ceremonyDayOf.readings || []).length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Readings
+              </p>
+              <ul className="list-disc list-inside space-y-0.5">
+                {ceremonyDayOf.readings.map((r) => (
+                  <li key={r.id}>
+                    {r.title || "(untitled)"}
+                    {hasText(r.reader) && ` — ${r.reader}`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {hasText(ceremonyDayOf.officiant_notes) && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Notes from the couple
+              </p>
+              <p className="whitespace-pre-wrap">
+                {ceremonyDayOf.officiant_notes}
+              </p>
+            </div>
+          )}
+          {hasText(ceremonyDayOf.cultural_notes) && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Cultural / religious elements
+              </p>
+              <p className="whitespace-pre-wrap">
+                {ceremonyDayOf.cultural_notes}
+              </p>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {/* Name pronunciations — same pattern as DJ booklet */}
+      {uniqueNames.length > 0 && (
+        <div className="avoid-break">
+          <h4 className="font-semibold text-sm mb-2">
+            Name Pronunciations
+          </h4>
+          <p className="text-[11px] text-muted-foreground mb-1.5 italic">
+            Please confirm pronunciations with the couple before the
+            ceremony.
+          </p>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground">
+                <th className="text-left py-1 font-normal">Name</th>
+                <th className="text-left py-1 font-normal">Role</th>
+                <th className="text-left py-1 font-normal">Phonetic</th>
+              </tr>
+            </thead>
+            <tbody>
+              {uniqueNames.map((p, i) => (
+                <tr
+                  key={i}
+                  className="border-b border-dashed border-border/40"
+                >
+                  <td className="py-1 font-medium">{p.name}</td>
+                  <td className="py-1 text-muted-foreground text-xs">
+                    {p.context}
+                  </td>
+                  <td className="py-1 text-muted-foreground text-xs italic">
+                    _______________
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Marriage license signing */}
+      <div className="avoid-break">
+        <h4 className="font-semibold text-sm mb-1">
+          Marriage License Signing
+        </h4>
+        <p className="text-[11px] text-muted-foreground italic mb-2">
+          Two witnesses required (age varies by jurisdiction —
+          usually 18+). Sign after the ceremony, before guests leave.
+        </p>
+        <div className="space-y-2 text-xs">
+          <div>
+            <span className="text-muted-foreground">Witness 1:</span>{" "}
+            <span className="inline-block min-w-[260px] border-b border-dashed border-border">
+              &nbsp;
+            </span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Witness 2:</span>{" "}
+            <span className="inline-block min-w-[260px] border-b border-dashed border-border">
+              &nbsp;
+            </span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">
+              Signing location:
+            </span>{" "}
+            <span className="inline-block min-w-[260px] border-b border-dashed border-border">
+              &nbsp;
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {vendor.notes && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Additional notes
+          </p>
+          <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
+        </div>
+      )}
+
+      {!ceremonyDayOf && !vendor.notes && (
+        <p className="text-sm text-muted-foreground">
+          Ceremony details pending. Fill out Day-of Details &gt;
+          Ceremony.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function renderHairMakeupAddendum(
+  vendor: Vendor,
+  ctx: AddendumContext
+): React.ReactNode {
+  const { gettingReady: gettingReadyDayOf } = ctx;
+  const staysForTouchups = Boolean(
+    gettingReadyDayOf?.hair_makeup_stays_for_touchups
+  );
+  const stations = gettingReadyDayOf?.stations || [];
+  // Fall back to the two legacy groups if stations is empty
+  const legacyGroups = [
+    gettingReadyDayOf?.group_1,
+    gettingReadyDayOf?.group_2,
+  ].filter(
+    (g) =>
+      g && (hasText(g.time) || hasText(g.location) || hasText(g.who))
+  );
+  const touchupSlots =
+    gettingReadyDayOf?.touchup_schedule &&
+    gettingReadyDayOf.touchup_schedule.length > 0
+      ? gettingReadyDayOf.touchup_schedule
+      : // Canonical defaults when the couple has opted in but hasn't
+        // scheduled specific slots yet.
+        [
+          { id: "d1", time: "", location: "", who: "Bride · pre-ceremony touch-up", notes: "15–20 min before ceremony" },
+          { id: "d2", time: "", location: "", who: "Bride + moms · after family photos", notes: "During cocktail hour" },
+          { id: "d3", time: "", location: "", who: "Bride · before grand entrance", notes: "5 min pre-reception" },
+        ];
+
+  return (
+    <div className="space-y-5">
+      <div className="avoid-break">
+        <h4 className="font-semibold text-sm mb-2">
+          Morning Schedule
+        </h4>
+        {vendor.arrival_time && (
+          <p className="text-sm mb-2">
+            <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
+              Arrive at venue:{" "}
+            </span>
+            <span className="font-medium">
+              {formatTime(vendor.arrival_time)}
+            </span>
+          </p>
+        )}
+        {stations.length > 0 ? (
+          <ul className="text-sm space-y-1.5">
+            {stations.map((s) => (
+              <li
+                key={s.id}
+                className="flex gap-3 py-1 border-b border-dashed border-border/40 last:border-0"
+              >
+                <span className="flex-1">
+                  <span className="font-medium">
+                    {s.who || "(who)"}
+                  </span>
+                  {hasText(s.location) && (
+                    <span className="text-muted-foreground text-xs">
+                      {" "}
+                      · {s.location}
+                    </span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : legacyGroups.length > 0 ? (
+          <ul className="text-sm space-y-1">
+            {legacyGroups.map((g, i) => (
+              <li key={i}>
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  {g!.label || `Group ${i + 1}`}:
+                </span>{" "}
+                {[g!.time, g!.location, g!.who]
+                  .filter(hasText)
+                  .join(" · ")}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Add a morning schedule in Day-of Details &gt; Getting Ready.
+          </p>
+        )}
+        {hasText(gettingReadyDayOf?.hair_makeup_notes) && (
+          <p className="text-sm mt-2 italic text-muted-foreground whitespace-pre-wrap">
+            {gettingReadyDayOf!.hair_makeup_notes}
+          </p>
+        )}
+      </div>
+
+      {/* Touch-up section — only when the couple has opted in */}
+      {staysForTouchups ? (
+        <div className="avoid-break rounded-md border-2 border-dashed border-primary/30 p-4">
+          <h4 className="font-semibold text-sm mb-1">
+            Touch-up Schedule
+          </h4>
+          <p className="text-[11px] text-muted-foreground italic mb-2">
+            You&apos;re staying on-site for touch-ups. Please plan to be
+            available for each of these moments.
+          </p>
+          <ul className="text-sm space-y-2">
+            {touchupSlots.map((t) => (
+              <li
+                key={t.id}
+                className="flex gap-3 py-1 border-b border-dashed border-border/40 last:border-0"
+              >
+                <span className="text-xs tabular-nums w-20 shrink-0 text-muted-foreground">
+                  {hasText(t.time) ? t.time : "TBD"}
+                </span>
+                <span className="flex-1">
+                  <span className="font-medium">{t.who}</span>
+                  {hasText(t.location) && (
+                    <span className="text-muted-foreground text-xs">
+                      {" "}
+                      · {t.location}
+                    </span>
+                  )}
+                  {hasText(t.notes) && (
+                    <span className="block text-xs text-muted-foreground mt-0.5">
+                      {t.notes}
+                    </span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-muted-foreground italic mt-2">
+            Touch-up kit: setting spray, blotting paper, powder, couple&apos;s
+            lip color, bobby pins, mini hairspray.
+          </p>
+        </div>
+      ) : (
+        <p className="text-[11px] text-muted-foreground italic">
+          Morning service only — no on-site touch-ups scheduled. If
+          that changes, let the couple know.
+        </p>
+      )}
+
+      {vendor.notes && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Notes from the couple
+          </p>
+          <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderFloristAddendum(vendor: Vendor): React.ReactNode {
+  // Structured categories — each section is a template with space for
+  // the couple's notes. Florists work from per-item counts + locations;
+  // this layout mirrors standard florist contracts.
+  const categories: { title: string; lines: string[]; prompt: string }[] = [
+    {
+      title: "Personal flowers",
+      lines: [],
+      prompt:
+        "Partner 1 bouquet · Partner 2 boutonniere · MOH / bridesmaid bouquets · Best man / groomsman boutonnieres · Parent/grandparent corsages & boutonnieres",
+    },
+    {
+      title: "Ceremony pieces",
+      lines: [],
+      prompt:
+        "Arch / arbor · Aisle arrangements · Sweetheart / unity table · Petals for flower crew · Welcome sign flowers",
+    },
+    {
+      title: "Reception pieces",
+      lines: [],
+      prompt:
+        "Centerpieces (count + table type) · Head / sweetheart table · Entryway · Bar · Cake flowers · Restroom accents",
+    },
+    {
+      title: "Double-duty plan (ceremony → reception)",
+      lines: [],
+      prompt:
+        "Which ceremony arrangements move to the reception? Who moves them? When? (Coordinator usually handles; confirm with them.)",
+    },
+    {
+      title: "End of night",
+      lines: [],
+      prompt:
+        "Who takes what home? (e.g., both mothers get ceremony arrangements; head table centerpieces to the couple; the rest stays at venue.)",
+    },
+  ];
+
+  // If the couple has dumped structured notes into vendor.notes, we
+  // can't know the shape — so for MVP we present the template blank
+  // and let the couple fill via the per-vendor note editor on the
+  // Booklets page. The vendor gets a clear framework regardless.
+  const vendorNote = vendor.notes?.trim();
+
+  return (
+    <div className="space-y-4">
+      <h4 className="font-semibold text-sm">Floral Delivery &amp; Setup</h4>
+      {(vendor.arrival_time || vendor.setup_location) && (
+        <div className="grid grid-cols-2 gap-4 text-sm avoid-break">
+          {vendor.arrival_time && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Delivery window
+              </p>
+              <p>{formatTime(vendor.arrival_time)}</p>
+            </div>
+          )}
+          {vendor.setup_location && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Delivery location
+              </p>
+              <p>{vendor.setup_location}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {categories.map((c) => (
+          <div key={c.title} className="avoid-break">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+              {c.title}
+            </p>
+            <p className="text-xs text-muted-foreground italic mb-1">
+              {c.prompt}
+            </p>
+            {/* Empty lines for hand-written counts on the printed page */}
+            {[...Array(3)].map((_, i) => (
+              <div
+                key={i}
+                className="border-b border-dashed border-border/50 h-6"
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {vendorNote && (
+        <div className="avoid-break pt-2 border-t border-dashed">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+            Notes from the couple
+          </p>
+          <p className="text-sm whitespace-pre-wrap">{vendorNote}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderCatererAddendum(
+  vendor: Vendor,
+  ctx: AddendumContext
+): React.ReactNode {
+  const {
+    guests,
+    vendors,
+    logistics: logisticsDayOf,
+    cocktail: cocktailDayOf,
+    reception: receptionDayOf,
+  } = ctx;
+  const confirmedGuests = guests.filter((g) => g.meal_choice);
+  const mealCounts: Record<string, number> = {};
+  confirmedGuests.forEach((g) => {
+    const choice = g.meal_choice || "unspecified";
+    mealCounts[choice] = (mealCounts[choice] || 0) + 1;
+  });
+  const restrictions = guests
+    .filter((g) => g.dietary_restrictions)
+    .map((g) => ({
+      name: `${g.first_name} ${g.last_name}`,
+      restriction: g.dietary_restrictions!,
+    }));
+  const kidsCount = confirmedGuests.filter(
+    (g) => g.meal_choice === "kids"
+  ).length;
+  const headcount = computeAttendance(guests);
+  // Aggregate vendor meal counts across all vendors (caterer excluded —
+  // their own meal count is shown separately above). This is the total
+  // number of extra plates the caterer needs to prep for staff on-site.
+  const otherVendors = vendors.filter((v) => v.id !== vendor.id);
+  const otherVendorMealsTotal = otherVendors.reduce(
+    (sum, v) => sum + (v.meals_needed || 0),
+    0
+  );
+  const vendorsWithDietary = otherVendors.filter(
+    (v) => v.dietary_notes && v.dietary_notes.trim()
+  );
+  // Pull service style from vendor.extra_details if present.
+  const extra = (vendor.extra_details as { service_style?: string } | null) || {};
+  const serviceStyle = extra.service_style;
+
+  return (
+    <div className="space-y-5">
+      <div className="avoid-break">
+        <h4 className="font-semibold text-sm mb-2">
+          Guest Meal Breakdown
+        </h4>
+        <div className="text-sm flex items-baseline gap-4 mb-2 flex-wrap">
+          <span>
+            Attending: <strong>{headcount.attending}</strong>
+          </span>
+          {headcount.pending > 0 && (
+            <span className="text-muted-foreground text-xs">
+              Pending: <strong>{headcount.pending}</strong>
+            </span>
+          )}
+          {kidsCount > 0 && (
+            <span className="text-muted-foreground text-xs">
+              Kids: <strong>{kidsCount}</strong>
+            </span>
+          )}
+          {vendor.meals_needed != null && vendor.meals_needed > 0 && (
+            <span className="text-muted-foreground text-xs">
+              Vendor meals: <strong>{vendor.meals_needed}</strong>
+            </span>
+          )}
+        </div>
+        {headcount.plusOnesAttending > 0 && (
+          <p className="text-[11px] text-muted-foreground italic mb-2">
+            Includes {headcount.plusOnesAttending} plus-one
+            {headcount.plusOnesAttending === 1 ? "" : "s"}. Final count
+            firms up as pending guests reply.
+          </p>
+        )}
+        {Object.keys(mealCounts).length > 0 ? (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="text-left py-1 font-medium">
+                  Meal Choice
+                </th>
+                <th className="text-right py-1 font-medium">Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(mealCounts)
+                .sort(([, a], [, b]) => b - a)
+                .map(([choice, count]) => (
+                  <tr key={choice} className="border-b border-dashed">
+                    <td className="py-1 capitalize">{choice}</td>
+                    <td className="text-right py-1">{count}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="text-muted-foreground text-sm">
+            No meal choices have been submitted yet.
+          </p>
+        )}
+      </div>
+
+      <div className="avoid-break">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+          Service style
+        </p>
+        {serviceStyle ? (
+          <p className="text-sm capitalize">
+            {serviceStyle.replace(/_/g, " ")}
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground italic">
+            Plated · Buffet · Family-style · Stations — confirm with
+            couple.
+          </p>
+        )}
+      </div>
+
+      {restrictions.length > 0 && (
+        <div className="avoid-break">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+            Dietary Restrictions
+          </p>
+          <ul className="text-sm space-y-1">
+            {restrictions.map((r, i) => (
+              <li key={i}>
+                <strong>{r.name}:</strong> {r.restriction}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {(otherVendorMealsTotal > 0 || vendorsWithDietary.length > 0) && (
+        <div className="avoid-break">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+            Other Vendors On-Site
+          </p>
+          {otherVendorMealsTotal > 0 && (
+            <p className="text-sm mb-2">
+              Additional staff plates:{" "}
+              <strong>{otherVendorMealsTotal}</strong> (beyond guest count).
+            </p>
+          )}
+          {vendorsWithDietary.length > 0 && (
+            <ul className="text-sm space-y-1">
+              {vendorsWithDietary.map((v) => (
+                <li key={v.id}>
+                  <strong>{v.company_name}</strong>
+                  {v.meals_needed ? ` (${v.meals_needed} meal${v.meals_needed === 1 ? "" : "s"})` : ""}
+                  : {v.dietary_notes}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {(hasText(logisticsDayOf?.vendor_meals_timing) ||
+        hasText(cocktailDayOf?.catering_notes) ||
+        receptionDayOf?.speeches?.length) && (
+        <div className="avoid-break pt-3 border-t border-dashed space-y-2">
+          <h4 className="font-semibold text-sm">Service Coordination</h4>
+          {hasText(cocktailDayOf?.catering_notes) && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Cocktail hour
+              </p>
+              <p className="text-sm">{cocktailDayOf!.catering_notes}</p>
+            </div>
+          )}
+          {hasText(logisticsDayOf?.vendor_meals_timing) && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Vendor meals timing
+              </p>
+              <p className="text-sm">
+                {logisticsDayOf!.vendor_meals_timing}
+              </p>
+            </div>
+          )}
+          {(receptionDayOf?.speeches?.length ?? 0) > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Champagne / toast timing
+              </p>
+              <p className="text-sm">
+                Champagne poured before toasts begin —{" "}
+                {receptionDayOf!.speeches.length} speaker
+                {receptionDayOf!.speeches.length === 1 ? "" : "s"},{" "}
+                ~{speechesTotalMinutes(receptionDayOf!.speeches)} min
+                total. Coordinate with DJ/MC for cue.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {vendor.notes && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Additional notes
+          </p>
+          <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderMcAddendum(
+  vendor: Vendor,
+  ctx: AddendumContext
+): React.ReactNode {
+  const {
+    wedding,
+    reception: receptionDayOf,
+    scheduleEntries,
+    vendors: vendorList,
+  } = ctx;
+  const pronunciations = getPronunciations(
+    wedding,
+    receptionDayOf,
+    hasText
+  );
+  const mcCues = buildMcCues(receptionDayOf, scheduleEntries, hasText);
+  // Point MC at the music vendor(s) so they know who's starting /
+  // stopping music for each cue.
+  const musicPartners = vendorList.filter(
+    (v) => v.type === "dj" || v.type === "band"
+  );
+  return (
+    <div className="space-y-5">
+      {musicPartners.length > 0 ? (
+        <div className="avoid-break rounded-md border bg-muted/30 p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+            ⚡ Music partners
+          </p>
+          <ul className="text-sm space-y-0.5">
+            {musicPartners.map((m) => {
+              const cfg =
+                vendorTypeConfig[m.type] || vendorTypeConfig.other;
+              return (
+                <li key={m.id}>
+                  <span className="font-medium">{cfg.label}</span> —{" "}
+                  {m.company_name}
+                  {(m.contact_name || m.phone) && (
+                    <span className="text-muted-foreground text-xs">
+                      {" "}
+                      · {[m.contact_name, m.phone]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-xs mt-2 leading-relaxed">
+            Coordinate cue-ins for every announcement — confirm song
+            starts, fade-outs, and mic hand-offs at rehearsal.
+          </p>
+        </div>
+      ) : null}
+
+      <PronunciationsTable
+        entries={pronunciations}
+        intro="Practice these before the event. Ask the couple to record pronunciations if any are tricky."
+      />
+
+      <McScriptBlock
+        cues={mcCues}
+        speechesTotalMin={
+          receptionDayOf?.speeches
+            ? speechesTotalMinutes(receptionDayOf.speeches)
+            : 0
+        }
+        note="Read in order. Couple-approved script. Adapt tone to the room."
+      />
+
+      {/* Rehearsal coordination — MC-specific */}
+      <div className="avoid-break rounded-md border p-3">
+        <h4 className="font-semibold text-sm mb-1">
+          Rehearsal &amp; Mic Check
+        </h4>
+        <p className="text-xs text-muted-foreground italic mb-2">
+          Plan a 15-min walk-through with the couple + music vendor(s)
+          before guests arrive.
+        </p>
+        <div className="space-y-2 text-xs">
+          <div>
+            <span className="text-muted-foreground">
+              Walk-through time:
+            </span>{" "}
+            <span className="inline-block min-w-[220px] border-b border-dashed border-border">
+              &nbsp;
+            </span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Mic type:</span>{" "}
+            <span className="inline-block min-w-[220px] border-b border-dashed border-border">
+              &nbsp;
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {vendor.notes && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Notes from the couple
+          </p>
+          <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderPhotographerAddendum(
+  vendor: Vendor,
+  ctx: AddendumContext
+): React.ReactNode {
+  const {
+    guests,
+    photos: photosDayOf,
+    reception: receptionDayOf,
+    ceremony: ceremonyDayOf,
+    gettingReady: gettingReadyDayOf,
+    cocktail: cocktailDayOf,
+  } = ctx;
+  const includedSections: [string, { included: boolean; label: string; notes: string }[]][] = photosDayOf
+    ? [
+        ["Pre-ceremony", photosDayOf.pre_ceremony || []],
+        ["Ceremony & family", photosDayOf.ceremony_family || []],
+        ["Reception", photosDayOf.reception || []],
+      ]
+    : [];
+  const hasShotList = includedSections.some(([, list]) =>
+    list.some((s) => s.included)
+  );
+  // VIP guests — anyone the couple tagged (grandparents, honored
+  // family, etc.) so the photographer can seek them out during the
+  // event for portraits and candids.
+  const vipGuests = guests.filter(
+    (g) =>
+      g.relationship_tag &&
+      g.relationship_tag.trim() &&
+      !/general|other/i.test(g.relationship_tag)
+  );
+  // Reception beats the photographer should stake out.
+  const receptionKeyMoments: string[] = [];
+  if (receptionDayOf) {
+    // Bridal party procession — each member is a photo opportunity
+    // before the couple's grand entrance.
+    const introCount = (receptionDayOf.bridal_party_intros || []).filter(
+      (m) => hasText(m.name) || hasText(m.role)
+    ).length;
+    if (introCount > 0)
+      receptionKeyMoments.push(
+        `Bridal party intros (${introCount} ${introCount === 1 ? "member" : "members"})`
+      );
+    if (hasText(receptionDayOf.grand_entrance_song))
+      receptionKeyMoments.push("Grand entrance");
+    if (hasText(receptionDayOf.first_dance_song))
+      receptionKeyMoments.push("First dance");
+    (receptionDayOf.parent_dances || []).forEach((d) => {
+      if (hasText(d.song) || hasText(d.who))
+        receptionKeyMoments.push(
+          `Parent dance${d.who ? ` · ${d.who}` : ""}`
+        );
+    });
+    if (hasText(receptionDayOf.cake_cutting_song))
+      receptionKeyMoments.push("Cake cutting");
+    if ((receptionDayOf.speeches || []).length > 0)
+      receptionKeyMoments.push(
+        `Toasts (${receptionDayOf.speeches.length} speakers)`
+      );
+    if (hasText(receptionDayOf.last_dance_song))
+      receptionKeyMoments.push("Last dance");
+    if (
+      receptionDayOf.exit_style &&
+      receptionDayOf.exit_style !== "none"
+    )
+      receptionKeyMoments.push(
+        `Send-off (${receptionDayOf.exit_style.replace(/_/g, " ")})`
+      );
+  }
+  const isVideo = vendor.type === "videographer";
+  return (
+    <div className="space-y-5">
+      {/* Unplugged ceremony notice (pulled from ceremony day-of if set) */}
+      {ceremonyDayOf && /unplugged/i.test(ceremonyDayOf.officiant_notes ?? "") ? (
+        <div className="rounded-md border border-dashed p-3 bg-muted/30 avoid-break">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-0.5">
+            Unplugged ceremony
+          </p>
+          <p className="text-sm">
+            Couple has requested an unplugged ceremony — you&apos;re
+            the only camera in the aisle.
+          </p>
+        </div>
+      ) : null}
+
+      <div className="avoid-break">
+        <h4 className="font-semibold text-sm mb-2">
+          Shot List &amp; Family Groupings
+        </h4>
+        {hasShotList ? (
+          includedSections.map(([label, list]) => {
+            const picked = list.filter((s) => s.included);
+            if (picked.length === 0) return null;
+            return (
+              <div key={label} className="mb-3">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+                  {label}
+                </p>
+                <ul className="text-sm space-y-0.5 list-disc list-inside">
+                  {picked.map((s, i) => (
+                    <li key={i}>
+                      {(s as { label?: string }).label || "(shot)"}
+                      {hasText(s.notes) && (
+                        <span className="text-muted-foreground text-xs">
+                          {" "}
+                          · {s.notes}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No shot list items selected yet. Add shots in Day-of
+            Details &gt; Photos.
+          </p>
+        )}
+      </div>
+
+      {hasText(photosDayOf?.do_not_shoot_notes) && (
+        <div className="avoid-break rounded-md border border-dashed border-destructive/40 bg-destructive/5 p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-destructive mb-1">
+            Do not shoot
+          </p>
+          <p className="text-sm whitespace-pre-wrap">
+            {photosDayOf!.do_not_shoot_notes}
+          </p>
+        </div>
+      )}
+
+      {gettingReadyDayOf?.first_look && (
+        <div className="avoid-break">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-0.5">
+            First Look
+          </p>
+          <p className="text-sm">
+            {[
+              gettingReadyDayOf.first_look_time,
+              gettingReadyDayOf.first_look_location,
+            ]
+              .filter(hasText)
+              .join(" · ") || "Planned"}
+          </p>
+        </div>
+      )}
+
+      {vipGuests.length > 0 && (
+        <div className="avoid-break">
+          <h4 className="font-semibold text-sm mb-2">VIP Guests</h4>
+          <p className="text-[11px] text-muted-foreground mb-1.5 italic">
+            People to flag for portraits and candids. Ask the couple
+            or coordinator to point them out.
+          </p>
+          <ul className="text-sm space-y-0.5 grid grid-cols-2 gap-x-6">
+            {vipGuests.map((g) => (
+              <li key={g.id}>
+                <span className="font-medium">
+                  {g.first_name} {g.last_name}
+                </span>
+                <span className="text-muted-foreground text-xs">
+                  {" "}
+                  · {g.relationship_tag}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {(() => {
+        const c = summarizeCocktail(cocktailDayOf);
+        if (c.photographerFocus.length === 0 && !c.photographerNotes)
+          return null;
+        return (
+          <div className="avoid-break">
+            <h4 className="font-semibold text-sm mb-2">
+              Cocktail Hour Focus
+            </h4>
+            {c.location && (
+              <p className="text-[11px] text-muted-foreground mb-1.5 italic">
+                {c.location}
+                {c.duration && ` · ${c.duration}`}
+              </p>
+            )}
+            {c.photographerFocus.length > 0 && (
+              <ul className="text-sm space-y-0.5 list-disc list-inside">
+                {c.photographerFocus.map((label) => (
+                  <li key={label}>{label}</li>
+                ))}
+              </ul>
+            )}
+            {c.photographerNotes && (
+              <p className="text-sm mt-1.5 whitespace-pre-wrap">
+                {c.photographerNotes}
+              </p>
+            )}
+          </div>
+        );
+      })()}
+
+      {receptionKeyMoments.length > 0 && (
+        <div className="avoid-break">
+          <h4 className="font-semibold text-sm mb-2">
+            Reception Key Moments
+          </h4>
+          <p className="text-[11px] text-muted-foreground mb-1.5 italic">
+            Be positioned and ready at these beats. Timing from the
+            day-of timeline.
+          </p>
+          <ul className="text-sm space-y-0.5 list-disc list-inside">
+            {receptionKeyMoments.map((m, i) => (
+              <li key={i}>{m}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {isVideo && (
+        <div className="avoid-break rounded-md border border-dashed p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+            Audio &amp; video-specific
+          </p>
+          <ul className="text-sm space-y-0.5 list-disc list-inside">
+            <li>
+              Capture clean audio at the officiant, couple&apos;s
+              vows, and toasts microphones.
+            </li>
+            <li>
+              Drone / elevated shots — confirm permission with the
+              venue before the day.
+            </li>
+            <li>
+              Coordinate position with the photographer for the first
+              look, first dance, and send-off.
+            </li>
+          </ul>
+        </div>
+      )}
+
+      {vendor.notes && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Notes from the couple
+          </p>
+          <p className="text-sm mt-1 whitespace-pre-wrap">
+            {vendor.notes}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────
 
 export function BookletGenerator({
@@ -1714,7 +3266,6 @@ export function BookletGenerator({
   const cocktailDayOf = dayOfDetails?.cocktail;
   const logisticsDayOf = dayOfDetails?.logistics;
 
-  const hasText = (s?: string | null) => !!s && s.trim().length > 0;
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewMode, setPreviewMode] = useState<"booklets" | "emergency">(
     "booklets"
@@ -1747,6 +3298,25 @@ export function BookletGenerator({
   }));
 
   const coordinator = vendorList.find((v) => v.type === "coordinator");
+
+  // Bundle everything the per-vendor addendum renderers need, built once so
+  // each renderXxxAddendum(vendor, ctx) takes two args instead of a long
+  // positional list.
+  const ctx: AddendumContext = {
+    wedding,
+    guests,
+    vendors: vendorList,
+    musicSelections,
+    delegationTasks,
+    scheduleEntries,
+    phaseAssignments,
+    ceremony: ceremonyDayOf,
+    reception: receptionDayOf,
+    photos: photosDayOf,
+    gettingReady: gettingReadyDayOf,
+    cocktail: cocktailDayOf,
+    logistics: logisticsDayOf,
+  };
 
   function openSingleBooklet(vendor: Vendor) {
     setSelectedVendors([vendor]);
@@ -1985,1439 +3555,44 @@ export function BookletGenerator({
   function renderAddendum(vendor: Vendor) {
     switch (vendor.type) {
       case "photographer":
-      case "videographer": {
-        const includedSections: [string, { included: boolean; label: string; notes: string }[]][] = photosDayOf
-          ? [
-              ["Pre-ceremony", photosDayOf.pre_ceremony || []],
-              ["Ceremony & family", photosDayOf.ceremony_family || []],
-              ["Reception", photosDayOf.reception || []],
-            ]
-          : [];
-        const hasShotList = includedSections.some(([, list]) =>
-          list.some((s) => s.included)
-        );
-        // VIP guests — anyone the couple tagged (grandparents, honored
-        // family, etc.) so the photographer can seek them out during the
-        // event for portraits and candids.
-        const vipGuests = guests.filter(
-          (g) =>
-            g.relationship_tag &&
-            g.relationship_tag.trim() &&
-            !/general|other/i.test(g.relationship_tag)
-        );
-        // Reception beats the photographer should stake out.
-        const receptionKeyMoments: string[] = [];
-        if (receptionDayOf) {
-          // Bridal party procession — each member is a photo opportunity
-          // before the couple's grand entrance.
-          const introCount = (receptionDayOf.bridal_party_intros || []).filter(
-            (m) => hasText(m.name) || hasText(m.role)
-          ).length;
-          if (introCount > 0)
-            receptionKeyMoments.push(
-              `Bridal party intros (${introCount} ${introCount === 1 ? "member" : "members"})`
-            );
-          if (hasText(receptionDayOf.grand_entrance_song))
-            receptionKeyMoments.push("Grand entrance");
-          if (hasText(receptionDayOf.first_dance_song))
-            receptionKeyMoments.push("First dance");
-          (receptionDayOf.parent_dances || []).forEach((d) => {
-            if (hasText(d.song) || hasText(d.who))
-              receptionKeyMoments.push(
-                `Parent dance${d.who ? ` · ${d.who}` : ""}`
-              );
-          });
-          if (hasText(receptionDayOf.cake_cutting_song))
-            receptionKeyMoments.push("Cake cutting");
-          if ((receptionDayOf.speeches || []).length > 0)
-            receptionKeyMoments.push(
-              `Toasts (${receptionDayOf.speeches.length} speakers)`
-            );
-          if (hasText(receptionDayOf.last_dance_song))
-            receptionKeyMoments.push("Last dance");
-          if (
-            receptionDayOf.exit_style &&
-            receptionDayOf.exit_style !== "none"
-          )
-            receptionKeyMoments.push(
-              `Send-off (${receptionDayOf.exit_style.replace(/_/g, " ")})`
-            );
-        }
-        const isVideo = vendor.type === "videographer";
-        return (
-          <div className="space-y-5">
-            {/* Unplugged ceremony notice (pulled from ceremony day-of if set) */}
-            {ceremonyDayOf && /unplugged/i.test(ceremonyDayOf.officiant_notes ?? "") ? (
-              <div className="rounded-md border border-dashed p-3 bg-muted/30 avoid-break">
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-0.5">
-                  Unplugged ceremony
-                </p>
-                <p className="text-sm">
-                  Couple has requested an unplugged ceremony — you&apos;re
-                  the only camera in the aisle.
-                </p>
-              </div>
-            ) : null}
-
-            <div className="avoid-break">
-              <h4 className="font-semibold text-sm mb-2">
-                Shot List &amp; Family Groupings
-              </h4>
-              {hasShotList ? (
-                includedSections.map(([label, list]) => {
-                  const picked = list.filter((s) => s.included);
-                  if (picked.length === 0) return null;
-                  return (
-                    <div key={label} className="mb-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-                        {label}
-                      </p>
-                      <ul className="text-sm space-y-0.5 list-disc list-inside">
-                        {picked.map((s, i) => (
-                          <li key={i}>
-                            {(s as { label?: string }).label || "(shot)"}
-                            {hasText(s.notes) && (
-                              <span className="text-muted-foreground text-xs">
-                                {" "}
-                                · {s.notes}
-                              </span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  );
-                })
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No shot list items selected yet. Add shots in Day-of
-                  Details &gt; Photos.
-                </p>
-              )}
-            </div>
-
-            {hasText(photosDayOf?.do_not_shoot_notes) && (
-              <div className="avoid-break rounded-md border border-dashed border-destructive/40 bg-destructive/5 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-destructive mb-1">
-                  Do not shoot
-                </p>
-                <p className="text-sm whitespace-pre-wrap">
-                  {photosDayOf!.do_not_shoot_notes}
-                </p>
-              </div>
-            )}
-
-            {gettingReadyDayOf?.first_look && (
-              <div className="avoid-break">
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-0.5">
-                  First Look
-                </p>
-                <p className="text-sm">
-                  {[
-                    gettingReadyDayOf.first_look_time,
-                    gettingReadyDayOf.first_look_location,
-                  ]
-                    .filter(hasText)
-                    .join(" · ") || "Planned"}
-                </p>
-              </div>
-            )}
-
-            {vipGuests.length > 0 && (
-              <div className="avoid-break">
-                <h4 className="font-semibold text-sm mb-2">VIP Guests</h4>
-                <p className="text-[11px] text-muted-foreground mb-1.5 italic">
-                  People to flag for portraits and candids. Ask the couple
-                  or coordinator to point them out.
-                </p>
-                <ul className="text-sm space-y-0.5 grid grid-cols-2 gap-x-6">
-                  {vipGuests.map((g) => (
-                    <li key={g.id}>
-                      <span className="font-medium">
-                        {g.first_name} {g.last_name}
-                      </span>
-                      <span className="text-muted-foreground text-xs">
-                        {" "}
-                        · {g.relationship_tag}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {(() => {
-              const c = summarizeCocktail(cocktailDayOf);
-              if (c.photographerFocus.length === 0 && !c.photographerNotes)
-                return null;
-              return (
-                <div className="avoid-break">
-                  <h4 className="font-semibold text-sm mb-2">
-                    Cocktail Hour Focus
-                  </h4>
-                  {c.location && (
-                    <p className="text-[11px] text-muted-foreground mb-1.5 italic">
-                      {c.location}
-                      {c.duration && ` · ${c.duration}`}
-                    </p>
-                  )}
-                  {c.photographerFocus.length > 0 && (
-                    <ul className="text-sm space-y-0.5 list-disc list-inside">
-                      {c.photographerFocus.map((label) => (
-                        <li key={label}>{label}</li>
-                      ))}
-                    </ul>
-                  )}
-                  {c.photographerNotes && (
-                    <p className="text-sm mt-1.5 whitespace-pre-wrap">
-                      {c.photographerNotes}
-                    </p>
-                  )}
-                </div>
-              );
-            })()}
-
-            {receptionKeyMoments.length > 0 && (
-              <div className="avoid-break">
-                <h4 className="font-semibold text-sm mb-2">
-                  Reception Key Moments
-                </h4>
-                <p className="text-[11px] text-muted-foreground mb-1.5 italic">
-                  Be positioned and ready at these beats. Timing from the
-                  day-of timeline.
-                </p>
-                <ul className="text-sm space-y-0.5 list-disc list-inside">
-                  {receptionKeyMoments.map((m, i) => (
-                    <li key={i}>{m}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {isVideo && (
-              <div className="avoid-break rounded-md border border-dashed p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-                  Audio &amp; video-specific
-                </p>
-                <ul className="text-sm space-y-0.5 list-disc list-inside">
-                  <li>
-                    Capture clean audio at the officiant, couple&apos;s
-                    vows, and toasts microphones.
-                  </li>
-                  <li>
-                    Drone / elevated shots — confirm permission with the
-                    venue before the day.
-                  </li>
-                  <li>
-                    Coordinate position with the photographer for the first
-                    look, first dance, and send-off.
-                  </li>
-                </ul>
-              </div>
-            )}
-
-            {vendor.notes && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Notes from the couple
-                </p>
-                <p className="text-sm mt-1 whitespace-pre-wrap">
-                  {vendor.notes}
-                </p>
-              </div>
-            )}
-          </div>
-        );
-      }
+      case "videographer":
+        return renderPhotographerAddendum(vendor, ctx);
 
       case "dj":
-        return renderDjAddendum(
-          vendor,
-          musicSelections,
-          receptionDayOf,
-          scheduleEntries,
-          wedding,
-          hasText,
-          vendorList,
-          phaseAssignments
-        );
+        return renderDjAddendum(vendor, ctx);
       case "band":
-        return renderBandAddendum(
-          vendor,
-          musicSelections,
-          receptionDayOf,
-          scheduleEntries,
-          wedding,
-          hasText,
-          vendorList,
-          phaseAssignments
-        );
+        return renderBandAddendum(vendor, ctx);
 
-      case "mc": {
-        const pronunciations = getPronunciations(
-          wedding,
-          receptionDayOf,
-          hasText
-        );
-        const mcCues = buildMcCues(receptionDayOf, scheduleEntries, hasText);
-        // Point MC at the music vendor(s) so they know who's starting /
-        // stopping music for each cue.
-        const musicPartners = vendorList.filter(
-          (v) => v.type === "dj" || v.type === "band"
-        );
-        return (
-          <div className="space-y-5">
-            {musicPartners.length > 0 ? (
-              <div className="avoid-break rounded-md border bg-muted/30 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-                  ⚡ Music partners
-                </p>
-                <ul className="text-sm space-y-0.5">
-                  {musicPartners.map((m) => {
-                    const cfg =
-                      vendorTypeConfig[m.type] || vendorTypeConfig.other;
-                    return (
-                      <li key={m.id}>
-                        <span className="font-medium">{cfg.label}</span> —{" "}
-                        {m.company_name}
-                        {(m.contact_name || m.phone) && (
-                          <span className="text-muted-foreground text-xs">
-                            {" "}
-                            · {[m.contact_name, m.phone]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-                <p className="text-xs mt-2 leading-relaxed">
-                  Coordinate cue-ins for every announcement — confirm song
-                  starts, fade-outs, and mic hand-offs at rehearsal.
-                </p>
-              </div>
-            ) : null}
+      case "mc":
+        return renderMcAddendum(vendor, ctx);
 
-            <PronunciationsTable
-              entries={pronunciations}
-              intro="Practice these before the event. Ask the couple to record pronunciations if any are tricky."
-            />
+      case "caterer":
+        return renderCatererAddendum(vendor, ctx);
 
-            <McScriptBlock
-              cues={mcCues}
-              speechesTotalMin={
-                receptionDayOf?.speeches
-                  ? speechesTotalMinutes(receptionDayOf.speeches)
-                  : 0
-              }
-              note="Read in order. Couple-approved script. Adapt tone to the room."
-            />
+      case "florist":
+        return renderFloristAddendum(vendor);
 
-            {/* Rehearsal coordination — MC-specific */}
-            <div className="avoid-break rounded-md border p-3">
-              <h4 className="font-semibold text-sm mb-1">
-                Rehearsal &amp; Mic Check
-              </h4>
-              <p className="text-xs text-muted-foreground italic mb-2">
-                Plan a 15-min walk-through with the couple + music vendor(s)
-                before guests arrive.
-              </p>
-              <div className="space-y-2 text-xs">
-                <div>
-                  <span className="text-muted-foreground">
-                    Walk-through time:
-                  </span>{" "}
-                  <span className="inline-block min-w-[220px] border-b border-dashed border-border">
-                    &nbsp;
-                  </span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Mic type:</span>{" "}
-                  <span className="inline-block min-w-[220px] border-b border-dashed border-border">
-                    &nbsp;
-                  </span>
-                </div>
-              </div>
-            </div>
+      case "hair_makeup":
+        return renderHairMakeupAddendum(vendor, ctx);
 
-            {vendor.notes && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Notes from the couple
-                </p>
-                <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
-              </div>
-            )}
-          </div>
-        );
-      }
-
-      case "caterer": {
-        const confirmedGuests = guests.filter((g) => g.meal_choice);
-        const mealCounts: Record<string, number> = {};
-        confirmedGuests.forEach((g) => {
-          const choice = g.meal_choice || "unspecified";
-          mealCounts[choice] = (mealCounts[choice] || 0) + 1;
-        });
-        const restrictions = guests
-          .filter((g) => g.dietary_restrictions)
-          .map((g) => ({
-            name: `${g.first_name} ${g.last_name}`,
-            restriction: g.dietary_restrictions!,
-          }));
-        const kidsCount = confirmedGuests.filter(
-          (g) => g.meal_choice === "kids"
-        ).length;
-        // Aggregate vendor meal counts across all vendors (caterer excluded —
-        // their own meal count is shown separately above). This is the total
-        // number of extra plates the caterer needs to prep for staff on-site.
-        const otherVendors = vendors.filter((v) => v.id !== vendor.id);
-        const otherVendorMealsTotal = otherVendors.reduce(
-          (sum, v) => sum + (v.meals_needed || 0),
-          0
-        );
-        const vendorsWithDietary = otherVendors.filter(
-          (v) => v.dietary_notes && v.dietary_notes.trim()
-        );
-        // Pull service style from vendor.extra_details if present.
-        const extra = (vendor.extra_details as { service_style?: string } | null) || {};
-        const serviceStyle = extra.service_style;
-
-        return (
-          <div className="space-y-5">
-            <div className="avoid-break">
-              <h4 className="font-semibold text-sm mb-2">
-                Guest Meal Breakdown
-              </h4>
-              <div className="text-sm flex items-baseline gap-4 mb-2">
-                <span>
-                  Total guests: <strong>{guests.length}</strong>
-                </span>
-                {kidsCount > 0 && (
-                  <span className="text-muted-foreground text-xs">
-                    Kids: <strong>{kidsCount}</strong>
-                  </span>
-                )}
-                {vendor.meals_needed != null && vendor.meals_needed > 0 && (
-                  <span className="text-muted-foreground text-xs">
-                    Vendor meals: <strong>{vendor.meals_needed}</strong>
-                  </span>
-                )}
-              </div>
-              {Object.keys(mealCounts).length > 0 ? (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-1 font-medium">
-                        Meal Choice
-                      </th>
-                      <th className="text-right py-1 font-medium">Count</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(mealCounts)
-                      .sort(([, a], [, b]) => b - a)
-                      .map(([choice, count]) => (
-                        <tr key={choice} className="border-b border-dashed">
-                          <td className="py-1 capitalize">{choice}</td>
-                          <td className="text-right py-1">{count}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              ) : (
-                <p className="text-muted-foreground text-sm">
-                  No meal choices have been submitted yet.
-                </p>
-              )}
-            </div>
-
-            <div className="avoid-break">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-                Service style
-              </p>
-              {serviceStyle ? (
-                <p className="text-sm capitalize">
-                  {serviceStyle.replace(/_/g, " ")}
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground italic">
-                  Plated · Buffet · Family-style · Stations — confirm with
-                  couple.
-                </p>
-              )}
-            </div>
-
-            {restrictions.length > 0 && (
-              <div className="avoid-break">
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-                  Dietary Restrictions
-                </p>
-                <ul className="text-sm space-y-1">
-                  {restrictions.map((r, i) => (
-                    <li key={i}>
-                      <strong>{r.name}:</strong> {r.restriction}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {(otherVendorMealsTotal > 0 || vendorsWithDietary.length > 0) && (
-              <div className="avoid-break">
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-                  Other Vendors On-Site
-                </p>
-                {otherVendorMealsTotal > 0 && (
-                  <p className="text-sm mb-2">
-                    Additional staff plates:{" "}
-                    <strong>{otherVendorMealsTotal}</strong> (beyond guest count).
-                  </p>
-                )}
-                {vendorsWithDietary.length > 0 && (
-                  <ul className="text-sm space-y-1">
-                    {vendorsWithDietary.map((v) => (
-                      <li key={v.id}>
-                        <strong>{v.company_name}</strong>
-                        {v.meals_needed ? ` (${v.meals_needed} meal${v.meals_needed === 1 ? "" : "s"})` : ""}
-                        : {v.dietary_notes}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-
-            {(hasText(logisticsDayOf?.vendor_meals_timing) ||
-              hasText(cocktailDayOf?.catering_notes) ||
-              receptionDayOf?.speeches?.length) && (
-              <div className="avoid-break pt-3 border-t border-dashed space-y-2">
-                <h4 className="font-semibold text-sm">Service Coordination</h4>
-                {hasText(cocktailDayOf?.catering_notes) && (
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                      Cocktail hour
-                    </p>
-                    <p className="text-sm">{cocktailDayOf!.catering_notes}</p>
-                  </div>
-                )}
-                {hasText(logisticsDayOf?.vendor_meals_timing) && (
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                      Vendor meals timing
-                    </p>
-                    <p className="text-sm">
-                      {logisticsDayOf!.vendor_meals_timing}
-                    </p>
-                  </div>
-                )}
-                {(receptionDayOf?.speeches?.length ?? 0) > 0 && (
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                      Champagne / toast timing
-                    </p>
-                    <p className="text-sm">
-                      Champagne poured before toasts begin —{" "}
-                      {receptionDayOf!.speeches.length} speaker
-                      {receptionDayOf!.speeches.length === 1 ? "" : "s"},{" "}
-                      ~{speechesTotalMinutes(receptionDayOf!.speeches)} min
-                      total. Coordinate with DJ/MC for cue.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {vendor.notes && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Additional notes
-                </p>
-                <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
-              </div>
-            )}
-          </div>
-        );
-      }
-
-      case "florist": {
-        // Structured categories — each section is a template with space for
-        // the couple's notes. Florists work from per-item counts + locations;
-        // this layout mirrors standard florist contracts.
-        const categories: { title: string; lines: string[]; prompt: string }[] =
-          [
-            {
-              title: "Personal flowers",
-              lines: [],
-              prompt:
-                "Partner 1 bouquet · Partner 2 boutonniere · MOH / bridesmaid bouquets · Best man / groomsman boutonnieres · Parent/grandparent corsages & boutonnieres",
-            },
-            {
-              title: "Ceremony pieces",
-              lines: [],
-              prompt:
-                "Arch / arbor · Aisle arrangements · Sweetheart / unity table · Petals for flower crew · Welcome sign flowers",
-            },
-            {
-              title: "Reception pieces",
-              lines: [],
-              prompt:
-                "Centerpieces (count + table type) · Head / sweetheart table · Entryway · Bar · Cake flowers · Restroom accents",
-            },
-            {
-              title: "Double-duty plan (ceremony → reception)",
-              lines: [],
-              prompt:
-                "Which ceremony arrangements move to the reception? Who moves them? When? (Coordinator usually handles; confirm with them.)",
-            },
-            {
-              title: "End of night",
-              lines: [],
-              prompt:
-                "Who takes what home? (e.g., both mothers get ceremony arrangements; head table centerpieces to the couple; the rest stays at venue.)",
-            },
-          ];
-
-        // If the couple has dumped structured notes into vendor.notes, we
-        // can't know the shape — so for MVP we present the template blank
-        // and let the couple fill via the per-vendor note editor on the
-        // Booklets page. The vendor gets a clear framework regardless.
-        const vendorNote = vendor.notes?.trim();
-
-        return (
-          <div className="space-y-4">
-            <h4 className="font-semibold text-sm">Floral Delivery &amp; Setup</h4>
-            {(vendor.arrival_time || vendor.setup_location) && (
-              <div className="grid grid-cols-2 gap-4 text-sm avoid-break">
-                {vendor.arrival_time && (
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                      Delivery window
-                    </p>
-                    <p>{formatTime(vendor.arrival_time)}</p>
-                  </div>
-                )}
-                {vendor.setup_location && (
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                      Delivery location
-                    </p>
-                    <p>{vendor.setup_location}</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-3">
-              {categories.map((c) => (
-                <div key={c.title} className="avoid-break">
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-                    {c.title}
-                  </p>
-                  <p className="text-xs text-muted-foreground italic mb-1">
-                    {c.prompt}
-                  </p>
-                  {/* Empty lines for hand-written counts on the printed page */}
-                  {[...Array(3)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="border-b border-dashed border-border/50 h-6"
-                    />
-                  ))}
-                </div>
-              ))}
-            </div>
-
-            {vendorNote && (
-              <div className="avoid-break pt-2 border-t border-dashed">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                  Notes from the couple
-                </p>
-                <p className="text-sm whitespace-pre-wrap">{vendorNote}</p>
-              </div>
-            )}
-          </div>
-        );
-      }
-
-      case "hair_makeup": {
-        const staysForTouchups = Boolean(
-          gettingReadyDayOf?.hair_makeup_stays_for_touchups
-        );
-        const stations = gettingReadyDayOf?.stations || [];
-        // Fall back to the two legacy groups if stations is empty
-        const legacyGroups = [
-          gettingReadyDayOf?.group_1,
-          gettingReadyDayOf?.group_2,
-        ].filter(
-          (g) =>
-            g && (hasText(g.time) || hasText(g.location) || hasText(g.who))
-        );
-        const touchupSlots =
-          gettingReadyDayOf?.touchup_schedule &&
-          gettingReadyDayOf.touchup_schedule.length > 0
-            ? gettingReadyDayOf.touchup_schedule
-            : // Canonical defaults when the couple has opted in but hasn't
-              // scheduled specific slots yet.
-              [
-                { id: "d1", time: "", location: "", who: "Bride · pre-ceremony touch-up", notes: "15–20 min before ceremony" },
-                { id: "d2", time: "", location: "", who: "Bride + moms · after family photos", notes: "During cocktail hour" },
-                { id: "d3", time: "", location: "", who: "Bride · before grand entrance", notes: "5 min pre-reception" },
-              ];
-
-        return (
-          <div className="space-y-5">
-            <div className="avoid-break">
-              <h4 className="font-semibold text-sm mb-2">
-                Morning Schedule
-              </h4>
-              {vendor.arrival_time && (
-                <p className="text-sm mb-2">
-                  <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                    Arrive at venue:{" "}
-                  </span>
-                  <span className="font-medium">
-                    {formatTime(vendor.arrival_time)}
-                  </span>
-                </p>
-              )}
-              {stations.length > 0 ? (
-                <ul className="text-sm space-y-1.5">
-                  {stations.map((s) => (
-                    <li
-                      key={s.id}
-                      className="flex gap-3 py-1 border-b border-dashed border-border/40 last:border-0"
-                    >
-                      <span className="flex-1">
-                        <span className="font-medium">
-                          {s.who || "(who)"}
-                        </span>
-                        {hasText(s.location) && (
-                          <span className="text-muted-foreground text-xs">
-                            {" "}
-                            · {s.location}
-                          </span>
-                        )}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : legacyGroups.length > 0 ? (
-                <ul className="text-sm space-y-1">
-                  {legacyGroups.map((g, i) => (
-                    <li key={i}>
-                      <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                        {g!.label || `Group ${i + 1}`}:
-                      </span>{" "}
-                      {[g!.time, g!.location, g!.who]
-                        .filter(hasText)
-                        .join(" · ")}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Add a morning schedule in Day-of Details &gt; Getting Ready.
-                </p>
-              )}
-              {hasText(gettingReadyDayOf?.hair_makeup_notes) && (
-                <p className="text-sm mt-2 italic text-muted-foreground whitespace-pre-wrap">
-                  {gettingReadyDayOf!.hair_makeup_notes}
-                </p>
-              )}
-            </div>
-
-            {/* Touch-up section — only when the couple has opted in */}
-            {staysForTouchups ? (
-              <div className="avoid-break rounded-md border-2 border-dashed border-primary/30 p-4">
-                <h4 className="font-semibold text-sm mb-1">
-                  Touch-up Schedule
-                </h4>
-                <p className="text-[11px] text-muted-foreground italic mb-2">
-                  You&apos;re staying on-site for touch-ups. Please plan to be
-                  available for each of these moments.
-                </p>
-                <ul className="text-sm space-y-2">
-                  {touchupSlots.map((t) => (
-                    <li
-                      key={t.id}
-                      className="flex gap-3 py-1 border-b border-dashed border-border/40 last:border-0"
-                    >
-                      <span className="text-xs tabular-nums w-20 shrink-0 text-muted-foreground">
-                        {hasText(t.time) ? t.time : "TBD"}
-                      </span>
-                      <span className="flex-1">
-                        <span className="font-medium">{t.who}</span>
-                        {hasText(t.location) && (
-                          <span className="text-muted-foreground text-xs">
-                            {" "}
-                            · {t.location}
-                          </span>
-                        )}
-                        {hasText(t.notes) && (
-                          <span className="block text-xs text-muted-foreground mt-0.5">
-                            {t.notes}
-                          </span>
-                        )}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                <p className="text-[11px] text-muted-foreground italic mt-2">
-                  Touch-up kit: setting spray, blotting paper, powder, couple&apos;s
-                  lip color, bobby pins, mini hairspray.
-                </p>
-              </div>
-            ) : (
-              <p className="text-[11px] text-muted-foreground italic">
-                Morning service only — no on-site touch-ups scheduled. If
-                that changes, let the couple know.
-              </p>
-            )}
-
-            {vendor.notes && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Notes from the couple
-                </p>
-                <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
-              </div>
-            )}
-          </div>
-        );
-      }
-
-      case "officiant": {
-        // Name pronunciations: couple + anyone in recessional with a name.
-        const namesForPronunciation: { name: string; context: string }[] = [
-          { name: wedding.partner1_name, context: "Partner 1" },
-          { name: wedding.partner2_name, context: "Partner 2" },
-        ];
-        (ceremonyDayOf?.recessional || []).forEach((r) => {
-          if (hasText(r.name)) {
-            namesForPronunciation.push({
-              name: r.name!,
-              context: r.role || "Wedding party",
-            });
-          }
-        });
-        const seenNames = new Set<string>();
-        const uniqueNames = namesForPronunciation.filter((n) => {
-          const k = n.name.toLowerCase();
-          if (seenNames.has(k)) return false;
-          seenNames.add(k);
-          return true;
-        });
-
-        return (
-          <div className="space-y-5">
-            {ceremonyDayOf ? (
-              <div className="space-y-2 text-sm avoid-break">
-                <h4 className="font-semibold text-sm mb-1">Ceremony Flow</h4>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    Vows
-                  </p>
-                  <p>{ceremonyDayOf.vows_style || "not yet decided"}</p>
-                </div>
-                {(ceremonyDayOf.recessional || []).some(
-                  (r) => r.role?.trim() || r.name?.trim()
-                ) && (
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                      Recessional
-                    </p>
-                    <ol className="list-decimal list-inside space-y-0.5">
-                      {ceremonyDayOf.recessional.map((r) => (
-                        <li key={r.id}>
-                          {r.role || "(role)"}
-                          {hasText(r.name) && ` — ${r.name}`}
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                )}
-                {ceremonyDayOf.unity_ceremony &&
-                  ceremonyDayOf.unity_ceremony !== "none" && (
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                        Unity ceremony
-                      </p>
-                      <p>
-                        {ceremonyDayOf.unity_ceremony.replace(/_/g, " ")}
-                        {hasText(ceremonyDayOf.unity_notes) &&
-                          ` · ${ceremonyDayOf.unity_notes}`}
-                      </p>
-                    </div>
-                  )}
-                {(ceremonyDayOf.readings || []).length > 0 && (
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                      Readings
-                    </p>
-                    <ul className="list-disc list-inside space-y-0.5">
-                      {ceremonyDayOf.readings.map((r) => (
-                        <li key={r.id}>
-                          {r.title || "(untitled)"}
-                          {hasText(r.reader) && ` — ${r.reader}`}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {hasText(ceremonyDayOf.officiant_notes) && (
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                      Notes from the couple
-                    </p>
-                    <p className="whitespace-pre-wrap">
-                      {ceremonyDayOf.officiant_notes}
-                    </p>
-                  </div>
-                )}
-                {hasText(ceremonyDayOf.cultural_notes) && (
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                      Cultural / religious elements
-                    </p>
-                    <p className="whitespace-pre-wrap">
-                      {ceremonyDayOf.cultural_notes}
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : null}
-
-            {/* Name pronunciations — same pattern as DJ booklet */}
-            {uniqueNames.length > 0 && (
-              <div className="avoid-break">
-                <h4 className="font-semibold text-sm mb-2">
-                  Name Pronunciations
-                </h4>
-                <p className="text-[11px] text-muted-foreground mb-1.5 italic">
-                  Please confirm pronunciations with the couple before the
-                  ceremony.
-                </p>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground">
-                      <th className="text-left py-1 font-normal">Name</th>
-                      <th className="text-left py-1 font-normal">Role</th>
-                      <th className="text-left py-1 font-normal">Phonetic</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {uniqueNames.map((p, i) => (
-                      <tr
-                        key={i}
-                        className="border-b border-dashed border-border/40"
-                      >
-                        <td className="py-1 font-medium">{p.name}</td>
-                        <td className="py-1 text-muted-foreground text-xs">
-                          {p.context}
-                        </td>
-                        <td className="py-1 text-muted-foreground text-xs italic">
-                          _______________
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Marriage license signing */}
-            <div className="avoid-break">
-              <h4 className="font-semibold text-sm mb-1">
-                Marriage License Signing
-              </h4>
-              <p className="text-[11px] text-muted-foreground italic mb-2">
-                Two witnesses required (age varies by jurisdiction —
-                usually 18+). Sign after the ceremony, before guests leave.
-              </p>
-              <div className="space-y-2 text-xs">
-                <div>
-                  <span className="text-muted-foreground">Witness 1:</span>{" "}
-                  <span className="inline-block min-w-[260px] border-b border-dashed border-border">
-                    &nbsp;
-                  </span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Witness 2:</span>{" "}
-                  <span className="inline-block min-w-[260px] border-b border-dashed border-border">
-                    &nbsp;
-                  </span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">
-                    Signing location:
-                  </span>{" "}
-                  <span className="inline-block min-w-[260px] border-b border-dashed border-border">
-                    &nbsp;
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {vendor.notes && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Additional notes
-                </p>
-                <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
-              </div>
-            )}
-
-            {!ceremonyDayOf && !vendor.notes && (
-              <p className="text-sm text-muted-foreground">
-                Ceremony details pending. Fill out Day-of Details &gt;
-                Ceremony.
-              </p>
-            )}
-          </div>
-        );
-      }
+      case "officiant":
+        return renderOfficiantAddendum(vendor, ctx);
 
       case "coordinator":
       case "venue":
-        return (
-          <div className="space-y-3">
-            <h4 className="font-semibold text-sm">Logistics &amp; Roles</h4>
-            {logisticsDayOf ? (
-              <div className="space-y-2 text-sm">
-                {hasText(logisticsDayOf.rain_plan) && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Rain plan
-                    </p>
-                    <p className="whitespace-pre-wrap">{logisticsDayOf.rain_plan}</p>
-                  </div>
-                )}
-                {hasText(logisticsDayOf.transportation) && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Transportation
-                    </p>
-                    <p className="whitespace-pre-wrap">{logisticsDayOf.transportation}</p>
-                  </div>
-                )}
-                {(() => {
-                  const contacts = effectiveEmergencyContacts(logisticsDayOf).filter(
-                    (c) => hasText(c.name) || hasText(c.phone)
-                  );
-                  if (contacts.length === 0) return null;
-                  return (
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                        Emergency contacts
-                      </p>
-                      <ul className="list-disc list-inside">
-                        {contacts.map((c) => (
-                          <li key={c.id}>
-                            {c.name}
-                            {hasText(c.phone) && ` · ${c.phone}`}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  );
-                })()}
-                {(() => {
-                  const roles = effectiveRoles(logisticsDayOf).filter((r) =>
-                    hasText(r.assignee)
-                  );
-                  if (roles.length === 0) return null;
-                  return (
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                        Day-of roles
-                      </p>
-                      <ul className="list-disc list-inside">
-                        {roles.map((r) => (
-                          <li key={r.id}>
-                            <strong>{r.label}:</strong> {r.assignee}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  );
-                })()}
-                {hasText(logisticsDayOf.cultural_notes) && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Cultural or religious logistics
-                    </p>
-                    <p className="whitespace-pre-wrap">{logisticsDayOf.cultural_notes}</p>
-                  </div>
-                )}
-                {hasText(logisticsDayOf.notes) && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Additional notes
-                    </p>
-                    <p className="whitespace-pre-wrap">{logisticsDayOf.notes}</p>
-                  </div>
-                )}
-              </div>
-            ) : vendor.notes ? (
-              <p className="text-sm whitespace-pre-wrap">{vendor.notes}</p>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Logistics details pending.
-              </p>
-            )}
-
-            {(() => {
-              const c = summarizeCocktail(cocktailDayOf);
-              if (!c.hasAny) return null;
-              const meta: { label: string; value: string }[] = [];
-              if (c.location) meta.push({ label: "Location", value: c.location });
-              if (c.duration) meta.push({ label: "Duration", value: c.duration });
-              if (c.musicMood) meta.push({ label: "Music", value: c.musicMood });
-              if (c.activities.length > 0)
-                meta.push({ label: "Activities", value: c.activities.join(" · ") });
-              return (
-                <div className="avoid-break pt-3 border-t border-dashed space-y-2">
-                  <h4 className="font-semibold text-sm">Cocktail Hour</h4>
-                  {meta.length > 0 && (
-                    <ul className="text-sm space-y-0.5">
-                      {meta.map((m) => (
-                        <li key={m.label}>
-                          <span className="text-muted-foreground">{m.label}:</span>{" "}
-                          {m.value}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {c.culturalNotes && (
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                        Cultural or religious (cocktail hour)
-                      </p>
-                      <p className="text-sm whitespace-pre-wrap">
-                        {c.culturalNotes}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        );
+        return renderCoordinatorAddendum(vendor, ctx);
 
       case "baker":
-        return (
-          <div className="space-y-5">
-            <div className="avoid-break grid grid-cols-2 gap-4 text-sm">
-              {vendor.arrival_time && (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    Delivery window
-                  </p>
-                  <p>{formatTime(vendor.arrival_time)}</p>
-                </div>
-              )}
-              {vendor.setup_location && (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    Delivery location
-                  </p>
-                  <p>{vendor.setup_location}</p>
-                </div>
-              )}
-              {receptionDayOf && hasText(receptionDayOf.cake_cutting_song) && (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    Cake cutting song
-                  </p>
-                  <p>{receptionDayOf.cake_cutting_song}</p>
-                </div>
-              )}
-            </div>
-
-            {receptionDayOf &&
-              (receptionDayOf.cake_feed_style ||
-                hasText(receptionDayOf.cake_cutter) ||
-                receptionDayOf.cake_top_tier_saved) && (
-                <div className="avoid-break rounded-md border border-dashed p-3 bg-muted/30 space-y-2 text-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    Cutting plan
-                  </p>
-                  {receptionDayOf.cake_feed_style && (
-                    <p>
-                      <span className="text-muted-foreground">Style:</span>{" "}
-                      {receptionDayOf.cake_feed_style === "feed_each_other"
-                        ? "Couple feeds each other"
-                        : receptionDayOf.cake_feed_style === "clean_cut"
-                          ? "Clean cut — no feeding"
-                          : "Skipping the cutting"}
-                    </p>
-                  )}
-                  {hasText(receptionDayOf.cake_cutter) && (
-                    <p>
-                      <span className="text-muted-foreground">Who cuts:</span>{" "}
-                      {receptionDayOf.cake_cutter}
-                    </p>
-                  )}
-                  {receptionDayOf.cake_top_tier_saved && (
-                    <p className="font-medium">
-                      ⚑ Box the top tier — couple saves it for their 1-year
-                      anniversary.
-                    </p>
-                  )}
-                </div>
-              )}
-
-            <div className="avoid-break">
-              <h4 className="font-semibold text-sm mb-2">Cake Specs</h4>
-              <p className="text-xs text-muted-foreground italic mb-2">
-                Tiers, flavors per tier, fillings, allergens, topper,
-                display stand. Confirm with couple a week before delivery.
-              </p>
-              {[...Array(5)].map((_, i) => (
-                <div
-                  key={i}
-                  className="border-b border-dashed border-border/50 h-6"
-                />
-              ))}
-            </div>
-
-            <div className="avoid-break">
-              <h4 className="font-semibold text-sm mb-2">Dessert Table</h4>
-              <p className="text-xs text-muted-foreground italic mb-2">
-                If applicable — items, quantities, display notes.
-              </p>
-              {[...Array(3)].map((_, i) => (
-                <div
-                  key={i}
-                  className="border-b border-dashed border-border/50 h-6"
-                />
-              ))}
-            </div>
-
-            {vendor.notes && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Notes from the couple
-                </p>
-                <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
-              </div>
-            )}
-          </div>
-        );
+        return renderBakerAddendum(vendor, ctx);
 
       case "rentals":
-        return (
-          <div className="space-y-5">
-            <div className="avoid-break grid grid-cols-2 gap-4 text-sm">
-              {vendor.arrival_time && (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    Delivery time
-                  </p>
-                  <p>{formatTime(vendor.arrival_time)}</p>
-                </div>
-              )}
-              {vendor.setup_time_minutes != null && (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    Setup window
-                  </p>
-                  <p>{vendor.setup_time_minutes} minutes</p>
-                </div>
-              )}
-              {vendor.setup_location && (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    Setup location
-                  </p>
-                  <p>{vendor.setup_location}</p>
-                </div>
-              )}
-              {vendor.breakdown_time && (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    Pickup time
-                  </p>
-                  <p>{formatTime(vendor.breakdown_time)}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="avoid-break">
-              <h4 className="font-semibold text-sm mb-2">Item List</h4>
-              <p className="text-xs text-muted-foreground italic mb-2">
-                Qty · item · setup notes (e.g., "60 chiavari chairs,
-                ceremony aisle and reception"). Attach full invoice for
-                reference.
-              </p>
-              {[...Array(8)].map((_, i) => (
-                <div
-                  key={i}
-                  className="border-b border-dashed border-border/50 h-6"
-                />
-              ))}
-            </div>
-
-            {vendor.notes && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Notes from the couple
-                </p>
-                <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
-              </div>
-            )}
-          </div>
-        );
+        return renderRentalsAddendum(vendor);
 
       case "transportation":
-        return (
-          <div className="space-y-5">
-            <div className="avoid-break grid grid-cols-2 gap-4 text-sm">
-              {vendor.arrival_time && (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    First pickup
-                  </p>
-                  <p>{formatTime(vendor.arrival_time)}</p>
-                </div>
-              )}
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  Passenger count
-                </p>
-                <p>{guests.length} guests (est.)</p>
-              </div>
-            </div>
-
-            <div className="avoid-break">
-              <h4 className="font-semibold text-sm mb-2">Pickup Schedule</h4>
-              <p className="text-xs text-muted-foreground italic mb-2">
-                Time · pickup location · passengers · drop-off. Include
-                hotel shuttles, wedding party transport, and return trips.
-              </p>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-[10px] uppercase tracking-wider text-muted-foreground">
-                    <th className="text-left py-1 font-normal">Time</th>
-                    <th className="text-left py-1 font-normal">Pickup</th>
-                    <th className="text-left py-1 font-normal">Pax</th>
-                    <th className="text-left py-1 font-normal">Drop-off</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...Array(6)].map((_, i) => (
-                    <tr key={i} className="border-b border-dashed border-border/40">
-                      <td className="py-2">&nbsp;</td>
-                      <td className="py-2">&nbsp;</td>
-                      <td className="py-2">&nbsp;</td>
-                      <td className="py-2">&nbsp;</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="avoid-break">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-                Route notes
-              </p>
-              <p className="text-xs text-muted-foreground italic">
-                Preferred routes, timed photo stops, and where to wait
-                during the ceremony.
-              </p>
-              {[...Array(3)].map((_, i) => (
-                <div
-                  key={i}
-                  className="border-b border-dashed border-border/50 h-6"
-                />
-              ))}
-            </div>
-
-            {vendor.notes && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Notes from the couple
-                </p>
-                <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
-              </div>
-            )}
-          </div>
-        );
+        return renderTransportationAddendum(vendor, ctx);
 
       case "photo_booth":
-        return (
-          <div className="space-y-5">
-            <div className="avoid-break grid grid-cols-2 gap-4 text-sm">
-              {vendor.arrival_time && (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    Setup arrival
-                  </p>
-                  <p>{formatTime(vendor.arrival_time)}</p>
-                </div>
-              )}
-              {vendor.breakdown_time && (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    Breakdown
-                  </p>
-                  <p>{formatTime(vendor.breakdown_time)}</p>
-                </div>
-              )}
-              {vendor.setup_location && (
-                <div className="col-span-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    Setup location
-                  </p>
-                  <p>{vendor.setup_location}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="avoid-break">
-              <h4 className="font-semibold text-sm mb-2">
-                Space &amp; Power Requirements
-              </h4>
-              <p className="text-xs text-muted-foreground italic mb-2">
-                Confirm footprint, clearance, and outlet distance with the
-                venue before the day.
-              </p>
-              {[...Array(4)].map((_, i) => (
-                <div
-                  key={i}
-                  className="border-b border-dashed border-border/50 h-6"
-                />
-              ))}
-            </div>
-
-            <div className="avoid-break">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-                Template / props
-              </p>
-              <p className="text-xs text-muted-foreground italic">
-                Wedding color palette, custom print template, prop style
-                preferences.
-              </p>
-              {[...Array(3)].map((_, i) => (
-                <div
-                  key={i}
-                  className="border-b border-dashed border-border/50 h-6"
-                />
-              ))}
-            </div>
-
-            {vendor.notes && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Notes from the couple
-                </p>
-                <p className="text-sm mt-1 whitespace-pre-wrap">{vendor.notes}</p>
-              </div>
-            )}
-          </div>
-        );
+        return renderPhotoBoothAddendum(vendor);
 
       default:
         return (
